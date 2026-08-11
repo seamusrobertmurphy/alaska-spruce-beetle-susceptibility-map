@@ -1,0 +1,224 @@
+---
+title: "Performance of deep learning methods and open satellite time series in detecting low-severity spruce beetle mortality in Southcentral Alaska"
+date: today
+author:
+  - name: Seamus Murphy
+    orcid: 0000-0002-1792-0351
+abstract: |
+  Placeholder. The confirmatory analysis is gated behind pre-registration; this draft
+  carries the framing, the data provenance and the planned design only. See
+  `docs/science-superpowers/questions/2026-08-10-detectability-floor.md`.
+format:
+  html:
+    toc: true
+    number-sections: false
+    embed-resources: true
+    code-fold: false
+    df-print: kable
+  docx:
+    prefer-html: true
+    reference-doc: ../04.references/style-formal.docx
+    highlight-style: pygments
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+  error: true
+  comment: NA
+engine: knitr
+citeproc: true
+editor: visual
+bibliography: ../04.references/references.bib
+csl: ../04.references/apa.csl
+---
+
+```{r}
+#| label: setup
+#| echo: true
+#| output: false
+library(sf)
+library(terra)
+root <- normalizePath("..")
+inputs <- file.path(root, "02.inputs")
+```
+
+# Introduction
+
+Spruce beetle (*Dendroctonus rufipennis*) has killed spruce across more than a million
+hectares of Southcentral Alaska since the outbreak began around 2016, yet the region's
+operational damage record rests on aerial sketch mapping with known gaps in low-severity
+and dispersed mortality [@Zwieback_2024]. Mapping that mortality from high-resolution
+commercial imagery is feasible: a convolutional network on WorldView-2 scenes identified
+dead spruce at 95% average accuracy and showed that roughly 90% of killed trees sit in
+stands whose areal severity is below 0.05, beneath the change signal that Landsat SWIR
+reflectance carries, which relates clearly to severity only above 0.1 [@Zwieback_2024].
+Whether freely available satellite time series can reach below that floor is untested.
+Temporal deep learning on Landsat subsequences recovers gradual and partial boreal
+disturbances that index-based change detection misses, but the evidence comes from
+defoliator outbreaks in eastern Canada [@Perbet_2024]. Reviews of the wider field flag
+insect damage attribution and low-severity detection as priority gaps in western North
+America, with Alaska excluded from their scope [@Hicke_2024], and show that early
+detection in the intensively studied European *Ips typographus* system remains below
+operational accuracy [@Kautz_2024], though the multi-year green stage of *Dendroctonus*
+systems makes the timing problem less punishing here. Prior Alaska-wide work attributed
+insect damage only through coarse survey perimeters intersected with Landsat trends
+[@Pastick_2018] or modeled beetle occurrence rather than damage [@Zabihi_2021], and
+individual-tree mortality benchmarks exist only outside Alaska [@Khatri_Chhetri_2024].
+
+**Research question.** Down to what stand-scale areal severity can models trained on
+freely available Sentinel-2 and Landsat time series detect spruce beetle associated
+mortality in Southcentral Alaska, and does temporal deep learning lower that floor
+relative to SWIR change detection?
+
+::: {.callout-note}
+## Pipeline status
+This draft precedes pre-registration. Under the project's confirmatory-analysis gate, no
+outcome data have been analysed: the live code below is restricted to provenance
+verification and descriptive context, and the planned-analysis chunks are stubs with
+`eval: false`. They activate only after the pre-registration document is complete.
+:::
+
+# Data
+
+All inputs are open-source; retrieval is scripted in `05.scripts/00_download_inputs.sh`
+and provenance recorded in `02.inputs/README.md`.
+
+## Integrity of retrieved files
+
+Every file analysed below is checksum-verified at render time against the manifest
+recorded at download (2026-08-10).
+
+```{r}
+#| label: checksums
+manifest <- read.table(file.path(inputs, "SHA256SUMS.txt"),
+                       col.names = c("sha256", "file"))
+manifest$verified <- vapply(manifest$file, function(f) {
+  h <- system2("shasum", c("-a", "256", shQuote(file.path(inputs, f))),
+               stdout = TRUE)
+  identical(strsplit(h, " ")[[1]][1],
+            manifest$sha256[manifest$file == f])
+}, logical(1))
+stopifnot(all(manifest$verified))
+manifest[, c("file", "verified")]
+```
+
+## Reference severity rasters (Zwieback et al. 2024)
+
+Stand-scale areal severity of beetle-associated dead spruce for the Talkeetna to Byers
+Lake area, 2021, derived by @Zwieback_2024 from a convolutional network applied to
+WorldView-2 imagery and released at three stand scales (Zenodo 10.5281/zenodo.8423568,
+licence clarification pending; validation use only). Metadata inspected here; values are
+not summarised or plotted before pre-registration.
+
+```{r}
+#| label: severity-metadata
+sev <- lapply(c("merged_ref_h_c30c.tif", "merged_ref_h_c90c.tif",
+                "merged_ref_h_c250c.tif"),
+              function(f) rast(file.path(inputs, "zwieback-severity", f)))
+data.frame(
+  file       = vapply(sev, function(r) basename(sources(r)), ""),
+  resolution = vapply(sev, function(r) paste(round(res(r)), collapse = " x "), ""),
+  ncell      = vapply(sev, ncell, numeric(1)),
+  crs        = vapply(sev, function(r) st_crs(crs(r))$Name, "")
+)
+```
+
+## Crown-scale labels and pre-labelling model (CC-BY 4.0)
+
+The hand-delineated dead-spruce crown labels and trained network of @Zwieback_2024
+(Zenodo 10.5281/zenodo.10569990 and 10.5281/zenodo.10569975) serve as the starting point
+for our own crown digitisation on the State of Alaska Geoportal Maxar mosaics (2020 at
+50 cm, 2023 at 30 cm; streamed under the state's university/non-commercial terms).
+
+```{r}
+#| label: labels-inventory
+lab_dir <- file.path(inputs, "zwieback-labels", "gpkg")
+labs <- list.files(lab_dir, pattern = "_labels\\.gpkg$")
+exts <- list.files(lab_dir, pattern = "_extent\\.gpkg$")
+c(label_areas = length(labs), extent_files = length(exts))
+```
+
+## Aerial detection survey polygons (USFS IDS, Region 10)
+
+Sketch-mapped damage polygons for Alaska, all survey years, US public domain. These are
+weak labels: positional accuracy is coarse, low-severity damage is under-recorded, and
+the intensity attribute counts faded trees per treed area, which is not commensurable
+with pixel-fraction severity [@Zwieback_2024]. Annual spruce beetle extent is tabulated
+here as published descriptive context, not as an outcome.
+
+```{r}
+#| label: ids-context
+gdb <- file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb")
+st_layers(gdb)
+# The OGR SQL dialect has no GROUP BY; aggregate through GDAL's SQLite dialect
+# instead, which also avoids loading 151k polygon geometries on this machine.
+ids_sql <- function(sql) {
+  tmp <- tempfile(fileext = ".csv")
+  gdal_utils("vectortranslate", gdb, tmp,
+             options = c("-dialect", "SQLite", "-sql", sql))
+  read.csv(tmp)
+}
+sb <- ids_sql('
+  SELECT SURVEY_YEAR, DCA_CODE, DCA_COMMON_NAME,
+         COUNT(*) AS n_polygons, SUM(ACRES) AS acres
+  FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10
+  WHERE DCA_COMMON_NAME LIKE "%spruce beetle%"
+  GROUP BY SURVEY_YEAR, DCA_CODE')
+aggregate(cbind(n_polygons = sb$n_polygons,
+                hectares = round(sb$acres * 0.40468564)),
+          by = list(agent = sb$DCA_COMMON_NAME), FUN = sum)
+data.frame(year = sb$SURVEY_YEAR[sb$DCA_CODE == 11009],
+           n_polygons = sb$n_polygons[sb$DCA_CODE == 11009],
+           hectares = round(sb$acres[sb$DCA_CODE == 11009] * 0.40468564))
+```
+
+## Predictor imagery (not yet touched)
+
+Sentinel-2 (2016 to present) and Landsat surface reflectance will be assembled in Google
+Earth Engine at the analysis stage; the IFSAR 5 m DEM and the Macander conifer-fraction
+map enter as covariates. None of these are loaded before pre-registration.
+
+# Planned methods
+
+The design document precedes this section and will be superseded by the
+pre-registration; the chunks below are inert stubs that fix the intended shape of the
+analysis.
+
+1. **Labels.** Dead-spruce crowns digitised on the 2020 and 2023 Geoportal Maxar
+   mosaics over stratified sample blocks, pre-labelled with the released network of
+   @Zwieback_2024 and hand-corrected, then aggregated to stand-cell severity fractions
+   at 90 m (primary) and 30 m (secondary).
+2. **Models.** A temporal deep learning model on Sentinel-2/Landsat subsequences
+   (TempCNN and Transformer, following @Perbet_2024) against a pre- to post-outbreak
+   SWIR reflectance change baseline (the null model, following @Zwieback_2024).
+3. **Evaluation.** Block spatial cross-validation; user's and producer's accuracy and
+   severity regression error reported per severity stratum; the detectability floor is
+   the lowest stratum at which skill exceeds the pre-registered threshold. The
+   independent Zwieback severity raster validates in the TBL area.
+
+```{r}
+#| label: planned-severity-strata
+#| eval: false
+# Activated after pre-registration. Severity strata for skill-by-severity reporting.
+strata <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)
+```
+
+```{r}
+#| label: planned-baseline
+#| eval: false
+# Activated after pre-registration. SWIR change baseline: pre (2014-2016) minus
+# post (2019-2021) summer means per stand cell, per Zwieback et al. (2024).
+```
+
+# Results
+
+Gated: no results before pre-registration is complete.
+
+# Data availability
+
+All inputs are publicly retrievable; the download script, checksums and provenance
+manifest are in the project repository. The Zwieback severity rasters carry no declared
+licence and are used here for validation only pending clarification with the author.
+
+# References
