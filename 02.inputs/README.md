@@ -19,8 +19,9 @@ No outcome analysis has been run on any of these files (pre-registration gate op
   WMS/WMTS via https://gis.data.alaska.gov/pages/imagery (DGGS records 30687, 30688).
   University/non-commercial streaming; no pixel download or redistribution. Read the
   live EULA before any tile scraping. Label source for our own crown delineations.
-- **Sentinel-2 and Landsat**: via Google Earth Engine at the analysis stage (8 GB local
-  pre-registration is complete.
+- **Sentinel-2 and Landsat**: via Google Earth Engine at the analysis stage; heavy
+  computation runs server-side or on cloud GPU, not on the 8 GB local machine.
+  Predictor data; annual composites cached under `composites/`.
 - **IFSAR 5 m DEM**: https://elevation.alaska.gov/ , public domain, fetch when the
   analysis design fixes the AOI.
 - **ArcticDEM 2 m strips** (CC-BY 4.0, GEE `UMN/PGC/ArcticDEM`): optional structural
