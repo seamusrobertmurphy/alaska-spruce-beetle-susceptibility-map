@@ -93,25 +93,9 @@ This study evaluates deep learning methods and open satellite time series agains
 
 We test two hypotheses, both over the complete outbreak trajectory from 2016 through the present rather than the single dates or two-epoch differences of prior work. Under the null (H0), temporal deep learning models do not exceed the skill of the SWIR change baseline below areal severity of 0.1, and the detection floor of @Zwieback_2024 stands. Under the alternative (H1), subsequence models achieve significantly higher detection skill than the baseline within the 0.01 to 0.10 severity stratum, lowering the floor at which freely available imagery can monitor spruce beetle mortality. The second hypothesis concerns temporal supervision, which single-date mapping cannot provide: under H2, models trained with mortality-onset intervals triangulated between the 2020 and 2023 label epochs date onset more accurately than the same models trained on single-epoch labels. Secondarily, we expect estimated onset years to lag true onset by one to two years, as observed for gradual disturbances elsewhere in the boreal [@Perbet_2024]. The severity strata, skill metrics and decision thresholds are fixed by pre-registration before any outcome data are analysed.
 
-# Model background
-
-This section presents the change-detection baseline and the two deep learning networks applied to time series, following the comparative design of @Perbet_2024.
-
-## Change baseline
-
-The null model reproduces the stand-scale change analysis that defines the current detection floor [@Zwieback_2024]. Pre-outbreak and post-outbreak summer mean reflectances are differenced per stand cell, and the SWIR difference, with the normalized burn ratio family it anchors [@Kennedy_2010; @Cohen_2017], predicts mortality presence and severity through a calibrated univariate model. SWIR change is the strongest single-band signal for beetle-killed spruce at Landsat scale but relates clearly to severity only above 0.1 [@Zwieback_2024], and index-based methods generally weaken on partial and gradual disturbance [@Cohen_2017; @Senf_2017].
-
-## TempCNN
-
-TempCNN applies one-dimensional convolutions along the temporal axis of a satellite time series, learning discriminative temporal features without handcrafted metrics [@Pelletier_2019]. Convolutional layers are applied to the temporal sequence without pooling, which degrades performance in this setting [@Pelletier_2019], followed by fully connected layers and a softmax or regression head. In boreal disturbance classification TempCNN matched or exceeded a LandTrendr-plus-random-forest workflow, with its largest margins on partial disturbance classes [@Perbet_2024].
-
-## Transformer
-
-The Transformer encoder classifies sequences through self-attention, weighting every observation of the series against every other and thereby capturing long-range temporal dependencies without recurrence [@Ru_wurm_2020]. For sequence-to-label tasks only the encoder stack is required: multi-head attention blocks followed by feed-forward layers. Applied to Landsat subsequences it performed within two accuracy points of TempCNN across boreal disturbance classes [@Perbet_2024]; we retain both architectures because their attention patterns differ instructively on gradual disturbances.
-
 # Materials and methods
 
-All inputs are open-source; retrieval is scripted in `05.scripts/00_download_inputs.sh` and provenance recorded in `02.inputs/README.md`.
+All inputs are open source; scripted retrieval, integrity checksums and a provenance manifest accompany the analysis code.
 
 ## Study area
 
@@ -240,7 +224,7 @@ ggsave(file.path(root, "03.outputs", "figures", "fig-studyarea.png"),
 
 ## Input datasets
 
-The study draws on nine input datasets in four roles (@tbl-inputs). Reference data are what the models learn from and are judged against: our own crown delineations digitised on the two State of Alaska Maxar mosaic epochs, seeded by the released labels and network of @Zwieback_2024, and the independent severity rasters of the same study. Predictor data are what the models see: annual Sentinel-2 and Landsat composites. Covariates condition sampling and interpretation: terrain and conifer fraction [@Macander_2022]. Weak spatial context stratifies the sample and separates surveyed absence from non-survey: the aerial detection survey polygons and their flown-area footprints. Only the four downloadable reference and context datasets are on disk at this stage, checksum-verified below; predictor assembly waits behind pre-registration.
+The study draws on nine input datasets in four roles (@tbl-inputs). Reference data are what the models learn from and are judged against: our own crown delineations digitised on the two State of Alaska Maxar mosaic epochs, seeded by the released labels and network of @Zwieback_2024, and the independent severity rasters of the same study. Predictor data are what the models see: annual Sentinel-2 and Landsat composites. Covariates condition sampling and interpretation: terrain and conifer fraction [@Macander_2022]. Weak spatial context stratifies the sample and separates surveyed absence from non-survey: the aerial detection survey polygons and their flown-area footprints. The downloadable reference and context datasets are checksum-verified at retrieval; predictor assembly precedes no outcome analysis, which waits behind pre-registration.
 
 ```{r}
 #| label: tbl-inputs
@@ -483,9 +467,17 @@ fmt_tbl(do.call(rbind, lapply(built, function(f) {
 
 Following @Perbet_2024, the composite record is cut into fixed-length subsequences rather than modelled as one full series. Subsequences span seven to ten years, and for labelled stands the mortality-onset year is placed at a randomized position within the window (never the first year) as augmentation, so models learn the trajectory shape rather than a calendar position. Subsequences are drawn so that every labelled stand is observed from pre-outbreak baseline years through the present, covering the complete outbreak trajectory from its 2016 onset. Each labelled stand cell contributes its severity fraction and its onset interval from cross-epoch triangulation. Onset supervision is interval-censored: the dating loss credits any predicted onset falling within a stand's bracket rather than forcing an arbitrary point label. Undisturbed stands, drawn from surveyed-absence areas outside recorded damage, complete the training set.
 
+## Architectures
+
+Two deep learning networks are applied to the time series, following the comparative design of @Perbet_2024. TempCNN applies one-dimensional convolutions along the temporal axis of a satellite time series, learning discriminative temporal features without handcrafted metrics; convolutional layers are applied to the temporal sequence without pooling, which degrades performance in this setting [@Pelletier_2019], followed by fully connected layers and task heads. The Transformer encoder classifies sequences through self-attention, weighting every observation of the series against every other and thereby capturing long-range temporal dependencies without recurrence [@Ru_wurm_2020]; for sequence-to-label tasks only the encoder stack is required, multi-head attention blocks followed by feed-forward layers. In boreal disturbance classification TempCNN matched or exceeded a LandTrendr-plus-random-forest workflow, with its largest margins on partial disturbance classes, and the Transformer performed within two accuracy points of it [@Perbet_2024]; both architectures are retained because their attention patterns differ instructively on gradual disturbances.
+
+## Baseline model
+
+The null model reproduces the stand-scale change analysis that defines the current detection floor [@Zwieback_2024]. Pre-outbreak and post-outbreak summer mean reflectances are differenced per stand cell, and the SWIR difference, with the normalized burn ratio family it anchors [@Kennedy_2010; @Cohen_2017], predicts mortality presence and severity through a calibrated univariate model fitted on training folds only. SWIR change is the strongest single-band signal for beetle-killed spruce at Landsat scale but relates clearly to severity only above 0.1 [@Zwieback_2024], and index-based methods generally weaken on partial and gradual disturbance [@Cohen_2017; @Senf_2017].
+
 ## Model training
 
-TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud GPU with configurations and logs archived in the repository.
+TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
 
 ## Model evaluation
 
