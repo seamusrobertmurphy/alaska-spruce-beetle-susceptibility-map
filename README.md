@@ -4,15 +4,19 @@
 
 Spruce beetle (*Dendroctonus rufipennis*) has killed spruce across Southcentral Alaska since about 2016, yet roughly ninety percent of the mortality sits in stands of areal severity below 0.05, beneath the detection floor of conventional Landsat change analysis, and the aerial survey record understates exactly this dispersed, low-severity damage. We test whether temporal deep learning on freely available satellite time series lowers that floor. Annual Sentinel-2 composites, cloud-screened with Cloud Score+ quality mosaics on a 90 m stand grid, feed subsequence models, a temporal convolutional network and a Transformer encoder, trained on dead-spruce crowns digitised from statewide sub-metre image mosaics of 2020 and 2023; comparison of the two epochs supplies interval-censored mortality-onset labels, verified pre-mortality trajectories and a cross-epoch consistency check on the labels themselves. Models are benchmarked against the pre- to post-outbreak shortwave-infrared reflectance change that defines the current floor, under block spatial cross-validation, with skill reported per severity stratum and evaluated independently against a published high-resolution severity product whose footprint no training fold touches. Quantitative results are pending execution of the pre-registered analysis: detection skill in the 0.01 to 0.10 stratum, the detectability floor per method, onset-dating error under interval supervision, and correspondence of the reconstructed 2016 to 2025 outbreak progression with the aerial survey record. The severity strata, metrics and decision rules are fixed by pre-registration before outcome data are analysed.
 
+## Status
+
+Framed, surveyed, designed and pre-registered (frozen 2026-08-11, commit `7c73de8`); now in the execution phase. Results tables are rendered as pre-registered shells with cells marked pending; no outcome data have been analysed. Sentinel-2 Cloud Score+ composites for 2019 to 2025 are built; label digitisation and model training follow the locked analysis plan.
+
 ## Figures
 
-Figure 1. Study area in Southcentral Alaska: aerial detection survey records of spruce beetle damage, 2016 to 2025, and the footprint of the independent severity reference. UTM zone 5N; graticule in WGS 84.
+Figure 1. Study area in Southcentral Alaska: aerial detection survey records of spruce beetle damage 2016 to 2025, the independent severity reference footprint, rivers and highways (Natural Earth), and settlements (Census TIGER places). Drawn in UTM zone 5N with a WGS 84 graticule.
 
 ![Study area and outbreak extent](03.outputs/figures/fig-studyarea.png)
 
 ## Tables
 
-Tables render live in `01.manuscript/manuscript.qmd`; results tables carry their final structure with values pending the pre-registered analysis.
+Tables render live in `01.manuscript/manuscript.qmd` at uniform width; results tables carry their final structure with every cell marked pending until the pre-registered analysis executes.
 
 1. Input datasets, their roles, and access terms.
 2. Assembled annual Sentinel-2 composites on the 90 m reference grid, with per-cell clear-observation density.
