@@ -456,14 +456,16 @@ for (y in 2014:2018) {
 
 ```{r}
 #| label: tbl-composites
-#| tbl-cap: "Assembled annual Sentinel-2 composites on the 90 m reference grid."
+#| tbl-cap: "Assembled annual composites on the 90 m reference grid: Landsat 8 for the 2014 to 2018 baseline and early outbreak, Sentinel-2 from 2019."
 built <- list.files(comp_dir, pattern = "^(s2|ls)_\\d{4}\\.tif$", full.names = TRUE)
 fmt_tbl(do.call(rbind, lapply(built, function(f) {
   r <- rast(f)
-  data.frame(year = gsub("\\D", "", basename(f)),
+  data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
+                             "Sentinel-2", "Landsat 8"),
+             year = gsub("\\D", "", basename(f)),
              layers = nlyr(r),
-             median_clear_obs = round(global(r$n_clear, "mean",
-                                             na.rm = TRUE)[1, 1], 1))
+             mean_clear_obs = round(global(r$n_clear, "mean",
+                                           na.rm = TRUE)[1, 1], 1))
 })), right = "year")
 ```
 
