@@ -18,12 +18,12 @@ region <- ext(project(foot, "EPSG:32605")) + 50000   # the study window
 
 ## Candidate 512 m blocks on a regular grid
 g <- rast(region, resolution = 512, crs = "EPSG:32605")
+values(g) <- seq_len(ncell(g))
 blocks <- as.polygons(g, dissolve = FALSE)
 
-## Stratum 1: conifer top cover terciles (block mean)
-con <- project(crop(rast(con_f), project(blocks, rast(con_f)), snap = "out"),
-               g, method = "average")
-bc <- extract(con, blocks, fun = mean, na.rm = TRUE)[, 2]
+## Stratum 1: conifer top cover terciles (block mean via grid aggregation)
+con <- project(rast(con_f), g, method = "average")
+bc <- values(con, mat = FALSE)
 
 ## Stratum 2: survey damage history 2016-2025 (any spruce beetle polygon)
 gdb <- file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb")
@@ -31,9 +31,8 @@ tmp <- tempfile(fileext = ".gpkg")
 gdal_utils("vectortranslate", gdb, tmp,
            options = c("-where", "SURVEY_YEAR >= 2016 AND DCA_CODE IN (11009,80007)",
                        "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10"))
-ids <- project(vect(tmp), "EPSG:32605")
-dmg <- relate(blocks, ids, "intersects")
-dmg_any <- apply(dmg, 1, any)
+ids <- st_transform(st_read(tmp, quiet = TRUE), 32605)
+dmg_any <- lengths(st_intersects(st_as_sf(blocks), ids)) > 0
 
 ## Eligibility: conifer present; keep blocks with >= 5% mean top cover
 keep <- which(!is.na(bc) & bc >= 5)
@@ -41,24 +40,28 @@ bl <- st_as_sf(blocks[keep, ]); bl$conifer <- bc[keep]; bl$damage <- dmg_any[kee
 bl$stratum <- paste0("c", cut(bl$conifer, quantile(bl$conifer, c(0, 1/3, 2/3, 1)),
                               include.lowest = TRUE, labels = 1:3),
                      "_d", as.integer(bl$damage))
+bl <- bl[!grepl("NA", bl$stratum), ]
 
 ## Sample 160 blocks proportionally, minimum 10 per stratum where available
 n_total <- 160
 tab <- table(bl$stratum)
-alloc <- pmax(10, round(n_total * tab / sum(tab)))
+alloc <- pmax(10, round(n_total * as.numeric(tab) / sum(tab)))
 alloc <- round(alloc * n_total / sum(alloc))
+names(alloc) <- names(tab)
 samp <- do.call(rbind, lapply(names(tab), function(st) {
   cand <- bl[bl$stratum == st, ]
   cand[sample(nrow(cand), min(alloc[st], nrow(cand))), ]
 }))
 
-## 8 contiguous folds from a 2 x 4 super-grid; TBL footprint wholly in fold 8
-sg <- rast(region, ncols = 2, nrows = 4, crs = "EPSG:32605")
-values(sg) <- 1:8
-samp$fold <- extract(sg, vect(st_centroid(st_geometry(samp))))[, 2]
+## 8 contiguous folds: the reference footprint is fold 8 in its entirety;
+## remaining blocks split into 7 equal-count latitude bands (contiguous).
 tbl_foot <- st_as_sf(project(foot, "EPSG:32605"))
 in_tbl <- lengths(st_intersects(samp, tbl_foot)) > 0
+samp$fold <- NA_integer_
 samp$fold[in_tbl] <- 8L
+yy <- st_coordinates(st_centroid(st_geometry(samp)))[, 2]
+samp$fold[!in_tbl] <- as.integer(cut(rank(yy[!in_tbl], ties.method = "first"),
+                                     7, labels = FALSE))
 
 ## Write the lock: geometries local, CSV committed
 dir.create(file.path(inputs, "derived"), showWarnings = FALSE)
