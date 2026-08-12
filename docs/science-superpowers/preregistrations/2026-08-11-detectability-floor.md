@@ -51,3 +51,29 @@ H1 is disconfirmed by a fold-wise difference distribution centred at or below ze
 ## Deviations
 
 Any deviation is documented in the manuscript and renders the affected analysis exploratory.
+
+## Amendment 1, 2026-08-12
+
+Made before any severity label exists and before any outcome value has been read,
+plotted or joined to predictors; the sample lock (commit 0d5de75) is unchanged.
+
+1. **Climate covariates added to model inputs.** Annual, biologically motivated
+   variables from Daymet daily forcings (Thornton et al. 2021), computed per stand
+   cell and year: (a) summer warmth index, cumulative degree-hours above 17 C during
+   June to September, following the univoltinism threshold of Hansen et al. (2001,
+   verbatim: "cumulative hours above the threshold of 17 degrees Celsius elapsed
+   from 40 to 90 days following peak adult funnel-trap captures", approximated by a
+   fixed seasonal window because flight timing is unobserved); (b) winter minimum
+   daily temperature, November to March; (c) two-year lagged mean summer temperature
+   (Berg et al. 2006). These enter as additional subsequence channels.
+2. **H3 (directional, added to the Holm family, now three tests):** TempCNN with
+   climate channels achieves higher recall at 0.90 precision in the 0.01 to 0.10
+   stratum than spectral-only TempCNN. Tested by the same fold-wise ablation design
+   as H2. Disconfirmed by a paired difference at or below zero, which is plausible
+   because climate channels are nearly constant across space within the window and
+   may add timing information only.
+3. **Sub-annual composites (secondary, not confirmatory):** monthly May to September
+   Sentinel-2 Cloud Score+ composites, 2019 onward, as an input variant for the
+   climate-informed models; reported as a pre-registered secondary comparison, since
+   the pre-2019 record cannot support it and gap density is high.
+4. Primary H1 and H2 analyses are unchanged.
