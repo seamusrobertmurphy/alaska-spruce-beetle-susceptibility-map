@@ -1,4 +1,4 @@
-# Performance of deep learning methods and open satellite time series in detecting low-severity spruce beetle mortality in Southcentral Alaska
+# Multi-year temporal deep learning and open satellite data lower the detectability floor for low-severity spruce beetle mortality in Southcentral Alaska
 
 ## Abstract
 
