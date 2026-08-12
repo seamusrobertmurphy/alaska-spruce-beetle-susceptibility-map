@@ -13,6 +13,9 @@ No outcome analysis has been run on any of these files (pre-registration gate op
 | `zwieback-cnn/` | Trained DeepLabV3/ResNet50 PyTorch model (`model.p`) | Zenodo 10.5281/zenodo.10569975 (record 10569976) | CC-BY 4.0 | Candidate pre-labeler for our own crown digitization on Geoportal mosaics. |
 | `ids-region10/` | USFS FHP Insect and Disease Survey damage polygons, Alaska Region 10, all years (file gdb, 72 files) | https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip (last modified 2026-04-22) | US Government work, public domain | Sketch-map polygons; positional accuracy coarse; intensity is faded-trees-per-treed-area, not commensurable with pixel-fraction severity (Zwieback 2024, p. 415). Includes flown-area footprints; use them to separate absence from non-survey. |
 
+| `climate/` | Daymet v4 derived channel rasters, 1 km, 2012-2023: warmth index (degree-hours > 17 C, Jun-Sep), winter minimum (Nov-Mar), summer mean | GEE NASA/ORNL/DAYMET_V4, computed by manuscript chunk | Daymet: freely available (Thornton et al. 2021) | Regional series in `derived/climate_series.csv`. |
+| pilot imagery | USDA NRCS `alaska_vivid_2023_30cm` ImageServer (public REST, export/download enabled, no licence text on item; 4-band 30 cm) | apps.geo.fpac.usda.gov | Public service | Chip-export route for label imagery; state Geoportal EULA route not needed for 2023 epoch. 2020 50 cm equivalent to be verified. |
+
 ## Streaming or on-demand (not downloaded)
 
 - **State of Alaska Geoportal Maxar mosaics**: statewide 2020 50 cm and 2023 30 cm,

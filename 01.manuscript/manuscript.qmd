@@ -510,6 +510,45 @@ if (!file.exists(clim_f)) {
 clim <- read.csv(clim_f)
 ```
 
+Per-cell channel rasters are exported at Daymet's native 1 km resolution for each year and resampled to the stand grid when subsequences are assembled.
+
+```{r}
+#| label: climate-rasters
+#| output: false
+clim_dir <- file.path(inputs, "climate")
+dir.create(clim_dir, showWarnings = FALSE)
+todo_c <- (2012:2023)[!file.exists(file.path(clim_dir,
+                                             sprintf("clim_%d.tif", 2012:2023)))]
+if (length(todo_c)) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
+  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
+                                           crs = crs(tpl_c)), "EPSG:4326")))
+  roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
+  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
+  for (y in todo_c) {
+    smr <- dm$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))
+    tmean <- smr$map(function(img)
+      img$select("tmax")$add(img$select("tmin"))$divide(2)$rename("tmean"))
+    img <- tmean$map(function(im) im$subtract(17)$max(0)$multiply(24))$sum()$
+      rename("warmth")$
+      addBands(tmean$mean()$rename("summer_mean"))$
+      addBands(dm$filterDate(sprintf("%d-11-01", y - 1),
+                             sprintf("%d-04-01", y))$
+                 select("tmin")$min()$rename("winter_min"))
+    url <- img$toFloat()$getDownloadURL(list(region = roi_c,
+                                             scale = 1000,
+                                             crs = "EPSG:32605",
+                                             format = "GEO_TIFF"))
+    f <- file.path(clim_dir, sprintf("clim_%d.tif", y))
+    old_to <- options(timeout = 600)
+    try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE)
+    options(old_to)
+  }
+}
+```
+
 ```{r}
 #| label: fig-climate
 #| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index: cumulative degree-hours above 17 °C, June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
