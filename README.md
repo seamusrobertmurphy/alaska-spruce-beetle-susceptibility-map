@@ -10,7 +10,7 @@ Framed, surveyed, designed and pre-registered (frozen 2026-08-11, commit `7c73de
 
 ## Figures
 
-Figure 1. Study area in Southcentral Alaska: aerial detection survey records of spruce beetle damage 2016 to 2025, the independent severity reference footprint, rivers and highways (Natural Earth), and settlements (Census TIGER places). Drawn in UTM zone 5N with a WGS 84 graticule.
+Figure 1. Analysis extents in Southcentral Alaska: the Matanuska-Susitna Borough application extent, the confirmatory study window holding all training blocks and folds, and the independent severity reference footprint, over aerial survey spruce beetle damage 2016 to 2025, with rivers, highways and settlements. Drawn in UTM zone 5N with a matching projected graticule.
 
 ![Study area and outbreak extent](03.outputs/figures/fig-studyarea.png)
 

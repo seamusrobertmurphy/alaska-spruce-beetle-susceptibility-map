@@ -89,7 +89,7 @@ The size of that gap in Alaska is now quantified. @Zwieback_2024 mapped dead spr
 
 Deep learning applied to the temporal dimension offers a route below the index-based floor. One-dimensional convolutional networks [@Pelletier_2019] and self-attention models [@Ru_wurm_2020] classify satellite image time series without handcrafted temporal features, learning which parts of a trajectory discriminate. Applied to annual Landsat subsequences over the boreal forest of eastern Canada, TempCNN and Transformer models detected and dated partial and progressive disturbances that LandTrendr-based classification missed, producing the first satellite-derived epidemic maps for the eastern spruce budworm [@Perbet_2024]. Whether that result transfers from a defoliator in Quebec to a bark beetle in Alaska is unknown, and the transfer is not trivial: agent, host, landscape and label regime all differ, and reviews caution against porting detection results across pest-host systems [@Kautz_2024]. The biology, however, favours Alaska. Unlike *Ips typographus*, where trees fade within months and detection races beetle emergence [@Kautz_2024], *Dendroctonus*-attacked spruce fade over years, in Alaska from green through red to gray [@Hicke_2024], so the spectral signal accumulates over time scales that annual composites resolve. What has been missing is a reference severity dataset commensurable with the satellite grid, and that now exists: the tree-scale severity product of @Zwieback_2024, released openly at 30 to 250 m stand scales, together with sub-metre statewide image mosaics on which additional reference labels can be digitised.
 
-This study evaluates deep learning methods and open satellite time series against that reference. We assemble annual Sentinel-2 and Landsat composites over Southcentral Alaska, train subsequence models [after @Perbet_2024] against stand-scale severity reference data, and benchmark them against the pre- to post-outbreak SWIR reflectance change baseline that defines the current detection floor [@Zwieback_2024]. Our objectives are to (1) quantify the skill with which open satellite time series estimate stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; and (4) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the study area, evaluating the reconstruction against the aerial survey archive.
+This study evaluates deep learning methods and open satellite time series against that reference. We assemble annual Sentinel-2 and Landsat composites over Southcentral Alaska, train subsequence models [after @Perbet_2024] against stand-scale severity reference data, and benchmark them against the pre- to post-outbreak SWIR reflectance change baseline that defines the current detection floor [@Zwieback_2024]. Our objectives are to (1) quantify the skill with which open satellite time series estimate stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; and (4) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the Matanuska-Susitna Borough application extent, evaluating the reconstruction against the aerial survey archive.
 
 We test two hypotheses, both over the complete outbreak trajectory from 2016 through the present rather than the single dates or two-epoch differences of prior work. Under the null (H0), temporal deep learning models do not exceed the skill of the SWIR change baseline below areal severity of 0.1, and the detection floor of @Zwieback_2024 stands. Under the alternative (H1), subsequence models achieve significantly higher detection skill than the baseline within the 0.01 to 0.10 severity stratum, lowering the floor at which freely available imagery can monitor spruce beetle mortality. The second hypothesis concerns temporal supervision, which single-date mapping cannot provide: under H2, models trained with mortality-onset intervals triangulated between the 2020 and 2023 label epochs date onset more accurately than the same models trained on single-epoch labels. Secondarily, we expect estimated onset years to lag true onset by one to two years, as observed for gradual disturbances elsewhere in the boreal [@Perbet_2024]. The severity strata, skill metrics and decision thresholds are fixed by pre-registration before any outcome data are analysed.
 
@@ -115,20 +115,22 @@ All inputs are open-source; retrieval is scripted in `05.scripts/00_download_inp
 
 ## Study area
 
-The study area is the Southcentral Alaska outbreak region, centred on the Susitna lowlands and Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range, in the NAD83 Alaska Albers projection. Forests are boreal mosaics of white spruce (*Picea glauca*), black spruce (*P. mariana*), paper birch (*Betula neoalaskana*) and trembling aspen (*Populus tremuloides*), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate [@Zwieback_2024]. The ongoing outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The temporal window of the study spans the full history of this outbreak, from its onset around 2016 through the most recent survey year, observed by annual Sentinel-2 and Landsat composites; earlier Landsat years enter only as the undisturbed pre-outbreak baseline against which the outbreak trajectory is measured. Model training and cross-validation blocks span the wider outbreak region; the Talkeetna to Byers Lake footprint of the independent severity reference serves as the held-out evaluation area for the severity product.
+The study area is the Southcentral Alaska outbreak region, centred on the Susitna lowlands and Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range, in the NAD83 Alaska Albers projection. Forests are boreal mosaics of white spruce (*Picea glauca*), black spruce (*P. mariana*), paper birch (*Betula neoalaskana*) and trembling aspen (*Populus tremuloides*), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate [@Zwieback_2024]. The ongoing outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The temporal window of the study spans the full history of this outbreak, from its onset around 2016 through the most recent survey year, observed by annual Sentinel-2 and Landsat composites; earlier Landsat years enter only as the undisturbed pre-outbreak baseline against which the outbreak trajectory is measured. Model training and cross-validation blocks span the confirmatory study window, a 39,050 km2 frame around the reference footprint; the Talkeetna to Byers Lake footprint of the independent severity reference serves as the held-out evaluation area for the severity product. A larger application extent, the Matanuska-Susitna Borough, receives the trained model's wall-to-wall severity and progression maps for management use; predictions outside the confirmatory window are application products whose transfer is not confirmed by the cross-validation, and are labelled accordingly. Severity summaries are additionally reported per stand of the state Mat-Su Borough forest inventory for use by forest managers.
 
 All spatial figures share one cartographic standard: the working grid is WGS 84 UTM zone 5N, matching the severity reference grid, graticules are drawn in the same projected grid, and every map declares its coordinate reference system and representative fraction. @fig-studyarea locates the study area and the recorded outbreak footprint.
 
 ```{r}
 #| label: fig-studyarea
-#| fig-cap: "Study area in Southcentral Alaska. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025; the red rectangle is the footprint of the independent severity reference. Blue lines are rivers, dark grey lines are highways, and labelled points are settlements (United States Census Bureau TIGER places; rivers and highways from Natural Earth 10 m). Representative fraction and coordinate reference system as titled; graticule in UTM zone 5N eastings and northings."
-#| fig-width: 6.6
-#| fig-height: 8.2
+#| fig-cap: "Analysis extents in Southcentral Alaska. The black outline is the application extent, the Matanuska-Susitna Borough (United States Census Bureau boundary); the dashed orange rectangle is the confirmatory study window holding all training blocks and cross-validation folds; the red rectangle is the footprint of the independent severity reference. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025. Blue lines are rivers, dark grey lines are highways, and labelled points are settlements (United States Census Bureau TIGER places; rivers and highways from Natural Earth 10 m). Representative fraction and coordinate reference system as titled; graticule in UTM zone 5N eastings and northings."
+#| fig-width: 6.8
+#| fig-height: 7.9
 #| fig-dpi: 400
 library(ggplot2); library(ggspatial)
 tpl_map <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
 foot <- st_as_sf(as.polygons(ext(tpl_map), crs = crs(tpl_map)))
-bb3338 <- ext(project(tpl_map, "EPSG:3338")) + 60000
+ctx <- file.path(inputs, "context", "naturalearth.gpkg")
+matsu38 <- st_transform(st_read(ctx, "matsu_borough", quiet = TRUE), 3338)
+bb3338 <- ext(vect(matsu38)) + 20000
 tmp <- tempfile(fileext = ".gpkg")
 gdal_utils("vectortranslate",
            file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb"), tmp,
@@ -137,7 +139,8 @@ gdal_utils("vectortranslate",
                        "-spat", bb3338[1], bb3338[3], bb3338[2], bb3338[4],
                        "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10"))
 ids_map <- st_transform(st_read(tmp, quiet = TRUE), st_crs(foot))
-ctx <- file.path(inputs, "context", "naturalearth.gpkg")
+matsu <- st_transform(st_read(ctx, "matsu_borough", quiet = TRUE), 32605)
+win_rect <- st_as_sfc(st_bbox(st_buffer(foot, 50000)))
 if (!file.exists(ctx)) {
   dir.create(dirname(ctx), showWarnings = FALSE)
   grab <- function(type, cat) {
@@ -158,7 +161,7 @@ if (!"places_census" %in% st_layers(ctx)$name) {
   st_write(st_centroid(pl["name"]), ctx, "places_census", quiet = TRUE,
            append = TRUE)
 }
-ev <- st_bbox(st_buffer(foot, 50000))
+ev <- st_bbox(st_buffer(matsu, 15000))
 clipctx <- function(layer) {
   x <- st_read(ctx, layer, quiet = TRUE)
   x <- x[st_transform(st_as_sfc(ev), st_crs(x)), ]
@@ -167,8 +170,8 @@ clipctx <- function(layer) {
 riv <- clipctx("rivers"); rds <- clipctx("roads")
 plc <- clipctx("places_census")
 plc <- plc[plc$name %in% c("Cantwell", "Talkeetna", "Trapper Creek",
-                           "Petersville", "Skwentna", "Willow",
-                           "Wasilla", "Palmer"), ]
+                           "Petersville", "Skwentna", "Willow", "Houston",
+                           "Big Lake", "Sutton-Alpine", "Wasilla", "Palmer"), ]
 plc <- st_sf(st_drop_geometry(plc), geometry = st_geometry(plc))
 gw <- ev["xmax"] - ev["xmin"]; gh <- ev["ymax"] - ev["ymin"]
 sub_utm <- sprintf("1:%s  ·  UTM zone 5N (EPSG:32605)",
@@ -200,6 +203,10 @@ fig_study <- ggplot() +
           colour = NA) +
   geom_sf(data = riv, aes(colour = "River"), linewidth = .4) +
   geom_sf(data = rds, aes(colour = "Highway"), linewidth = .45) +
+  geom_sf(data = matsu, aes(colour = "Application extent, Mat-Su Borough"),
+          fill = NA, linewidth = .5) +
+  geom_sf(data = win_rect, aes(colour = "Confirmatory study window"),
+          fill = NA, linewidth = .5, linetype = "22") +
   geom_sf(data = foot, aes(colour = "Severity reference footprint"),
           fill = NA, linewidth = .6) +
   geom_sf(data = plc, aes(shape = "Settlement"), colour = "grey15",
@@ -212,19 +219,22 @@ fig_study <- ggplot() +
   scale_fill_manual(NULL, values = c("Aerial survey spruce beetle damage" =
                                        "grey82")) +
   scale_colour_manual(NULL, values = c(
+    "Application extent, Mat-Su Borough" = "grey10",
+    "Confirmatory study window" = "#E67E22",
     "Severity reference footprint" = "#C0392B",
     "River" = "steelblue3", "Highway" = "grey35")) +
   scale_shape_manual(NULL, values = c("Settlement" = 16)) +
-  guides(colour = guide_legend(order = 2), fill = guide_legend(order = 1),
-         shape = guide_legend(order = 3)) +
+  guides(colour = guide_legend(order = 2, nrow = 3),
+         fill = guide_legend(order = 1, nrow = 3),
+         shape = guide_legend(order = 3, nrow = 3)) +
   coord_sf(crs = 32605, datum = st_crs(32605), expand = FALSE,
            xlim = ev[c("xmin", "xmax")], ylim = ev[c("ymin", "ymax")]) +
   plate + north + map_theme +
-  labs(title = "Study area and outbreak extent", subtitle = sub_utm)
+  labs(title = "Analysis extents", subtitle = sub_utm)
 fig_study
 dir.create(file.path(root, "03.outputs", "figures"), showWarnings = FALSE)
 ggsave(file.path(root, "03.outputs", "figures", "fig-studyarea.png"),
-       fig_study, width = 160, height = 200, units = "mm", dpi = 500,
+       fig_study, width = 170, height = 195, units = "mm", dpi = 500,
        bg = "white")
 ```
 
