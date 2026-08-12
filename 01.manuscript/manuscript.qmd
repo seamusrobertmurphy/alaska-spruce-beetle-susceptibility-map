@@ -59,6 +59,24 @@ library(sf)
 library(terra)
 root <- normalizePath("..")
 inputs <- file.path(root, "02.inputs")
+
+# House table format: 9 pt, centred headers, numeric right / text left,
+# single line spacing.
+fmt_tbl <- function(df, right = NULL) {
+  right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
+  left_cols <- setdiff(names(df), right_cols)
+  ft <- flextable::flextable(df)
+  ft <- flextable::fontsize(ft, size = 9, part = "all")
+  ft <- flextable::align(ft, align = "center", part = "header")
+  if (length(right_cols))
+    ft <- flextable::align(ft, j = right_cols, align = "right", part = "body")
+  if (length(left_cols))
+    ft <- flextable::align(ft, j = left_cols, align = "left", part = "body")
+  ft <- flextable::line_spacing(ft, space = 1, part = "all")
+  ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1,
+                           part = "all")
+  flextable::autofit(ft)
+}
 ```
 
 # Introduction
@@ -103,7 +121,7 @@ All spatial figures share one cartographic standard: the working grid is WGS 84 
 
 ```{r}
 #| label: fig-studyarea
-#| fig-cap: "Study area in Southcentral Alaska. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025; the red rectangle is the footprint of the independent severity reference. Representative fraction and coordinate reference system as titled; graticule in WGS 84 geographic coordinates."
+#| fig-cap: "Study area in Southcentral Alaska. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025; the red rectangle is the footprint of the independent severity reference. Blue lines are rivers, dark grey lines are highways, and labelled points are settlements, all from Natural Earth 10 m layers. Representative fraction and coordinate reference system as titled; graticule in WGS 84 geographic coordinates."
 #| fig-width: 8.5
 #| fig-height: 6.8
 library(ggplot2); library(ggspatial)
@@ -118,7 +136,29 @@ gdal_utils("vectortranslate",
                        "-spat", bb3338[1], bb3338[3], bb3338[2], bb3338[4],
                        "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10"))
 ids_map <- st_transform(st_read(tmp, quiet = TRUE), st_crs(foot))
+ctx <- file.path(inputs, "context", "naturalearth.gpkg")
+if (!file.exists(ctx)) {
+  dir.create(dirname(ctx), showWarnings = FALSE)
+  grab <- function(type, cat) {
+    x <- rnaturalearth::ne_download(10, type, cat, returnclass = "sf")
+    x$name <- x[[intersect(c("name", "NAME"), names(x))[1]]]
+    x["name"]
+  }
+  st_write(grab("rivers_lake_centerlines", "physical"), ctx, "rivers",
+           quiet = TRUE, delete_dsn = TRUE)
+  st_write(grab("roads", "cultural"), ctx, "roads", quiet = TRUE,
+           append = TRUE)
+  st_write(grab("populated_places", "cultural"), ctx, "places",
+           quiet = TRUE, append = TRUE)
+}
 ev <- st_bbox(st_buffer(foot, 50000))
+clipctx <- function(layer) {
+  x <- st_read(ctx, layer, quiet = TRUE)
+  x <- x[st_as_sfc(st_bbox(st_transform(st_as_sfc(ev), 4326))), ]
+  suppressWarnings(st_crop(st_transform(x, 32605), ev))
+}
+riv <- clipctx("rivers"); rds <- clipctx("roads"); plc <- clipctx("places")
+plc <- st_sf(st_drop_geometry(plc), geometry = st_geometry(plc))
 gw <- ev["xmax"] - ev["xmin"]; gh <- ev["ymax"] - ev["ymin"]
 sub_utm <- sprintf("1:%s  ·  UTM zone 5N (EPSG:32605)",
                    format(round(as.numeric(gw) / 0.170, -5), big.mark = " "))
@@ -147,8 +187,17 @@ plate <- annotate("rect", xmin = ev["xmin"] + .885 * gw, xmax = ev["xmax"],
 fig_study <- ggplot() +
   geom_sf(data = ids_map, aes(fill = "Aerial survey spruce beetle damage"),
           colour = NA) +
+  geom_sf(data = riv, colour = "steelblue3", linewidth = .4) +
+  geom_sf(data = rds, colour = "grey35", linewidth = .45,
+          linetype = "solid") +
   geom_sf(data = foot, aes(colour = "Severity reference footprint"),
           fill = NA, linewidth = .6) +
+  geom_sf(data = plc, colour = "grey15", size = .9) +
+  ggrepel::geom_text_repel(
+    data = plc, aes(label = name, geometry = geometry),
+    stat = "sf_coordinates", size = 2.3, colour = "grey15",
+    fontface = "italic", seed = 7, box.padding = .25,
+    bg.color = "white", bg.r = .12) +
   scale_fill_manual(NULL, values = c("Aerial survey spruce beetle damage" =
                                        "grey82")) +
   scale_colour_manual(NULL, values = c("Severity reference footprint" =
@@ -173,7 +222,7 @@ The study draws on nine input datasets in four roles (@tbl-inputs). Reference da
 ```{r}
 #| label: tbl-inputs
 #| tbl-cap: "Input datasets, their roles, and access terms."
-knitr::kable(data.frame(
+inp <- data.frame(
   Dataset = c(
     "Severity rasters (Zwieback)", "Crown labels (Zwieback)",
     "Trained CNN (Zwieback)", "Maxar mosaics (AK Geoportal)",
@@ -197,8 +246,9 @@ knitr::kable(data.frame(
   Licence = c(
     "None declared; clarification pending", "CC-BY 4.0", "CC-BY 4.0",
     "Non-commercial streaming, no redistribution", "Public domain",
-    "Open (Copernicus)", "Public domain", "Public domain", "Open")),
-  col.names = c("Dataset", "Role", "Resolution", "Epoch", "Source", "Licence"))
+    "Open (Copernicus)", "Public domain", "Public domain", "Open"))
+names(inp) <- c("Dataset", "Role", "Resolution", "Epoch", "Source", "Licence")
+fmt_tbl(inp)
 ```
 
 ## Training data
@@ -351,13 +401,13 @@ if (length(todo)) {
 #| label: tbl-composites
 #| tbl-cap: "Assembled annual Sentinel-2 composites on the 90 m reference grid."
 built <- list.files(comp_dir, pattern = "^s2_\\d{4}\\.tif$", full.names = TRUE)
-knitr::kable(do.call(rbind, lapply(built, function(f) {
+fmt_tbl(do.call(rbind, lapply(built, function(f) {
   r <- rast(f)
   data.frame(year = gsub("\\D", "", basename(f)),
              layers = nlyr(r),
              median_clear_obs = round(global(r$n_clear, "mean",
                                              na.rm = TRUE)[1, 1], 1))
-})))
+})), right = "year")
 ```
 
 ## Subsequence sampling
@@ -403,7 +453,7 @@ models <- c("TempCNN", "Transformer", "SWIR baseline")
 sev_shell <- expand.grid(Stratum = strata_lab, Model = models,
                          KEEP.OUT.ATTRS = FALSE)
 sev_shell[c("RMSE", "rRMSE", "MAE", "U_Theil", "U_bias", "U_var", "U_cov")] <- "."
-knitr::kable(sev_shell, align = "llrrrrrrr")
+fmt_tbl(sev_shell, right = c("RMSE","rRMSE","MAE","U_Theil","U_bias","U_var","U_cov"))
 ```
 
 ## Detection skill
@@ -416,7 +466,7 @@ knitr::kable(sev_shell, align = "llrrrrrrr")
 det_shell <- expand.grid(Stratum = strata_lab, Model = models,
                          KEEP.OUT.ATTRS = FALSE)
 det_shell[c("UA", "PA", "R90", "R90_sd")] <- "."
-knitr::kable(det_shell, align = "llrrrr")
+fmt_tbl(det_shell, right = c("UA","PA","R90","R90_sd"))
 ```
 
 ```{r}
@@ -425,7 +475,7 @@ knitr::kable(det_shell, align = "llrrrr")
 h1_shell <- data.frame(Model = c("TempCNN", "Transformer"),
                        Delta_R90 = ".", CI95 = ".", Wilcoxon_p = ".",
                        McNemar_chisq = ".", Floor = ".")
-knitr::kable(h1_shell, align = "lrrrrr")
+fmt_tbl(h1_shell, right = c("Delta_R90","CI95","Wilcoxon_p","McNemar_chisq","Floor"))
 ```
 
 ## Onset dating
@@ -439,7 +489,7 @@ onset_shell <- expand.grid(Model = c("TempCNN", "Transformer"),
                            Supervision = c("Triangulated", "Single-epoch"),
                            KEEP.OUT.ATTRS = FALSE)
 onset_shell[c("MAE_yr", "RMSE_yr", "In_bracket", "Delta_MAE", "Wilcoxon_p")] <- "."
-knitr::kable(onset_shell, align = "llrrrrr")
+fmt_tbl(onset_shell, right = c("MAE_yr","RMSE_yr","In_bracket","Delta_MAE","Wilcoxon_p"))
 ```
 
 ## Independent evaluation
@@ -452,7 +502,7 @@ knitr::kable(onset_shell, align = "llrrrrr")
 ind_shell <- expand.grid(Support = c("90 m", "30 m"), Stratum = strata_lab,
                          KEEP.OUT.ATTRS = FALSE)
 ind_shell[c("RMSE", "rRMSE", "MAE", "U_Theil")] <- "."
-knitr::kable(ind_shell, align = "llrrrr")
+fmt_tbl(ind_shell, right = c("RMSE","rRMSE","MAE","U_Theil"))
 ```
 
 ## Outbreak progression
@@ -464,7 +514,7 @@ knitr::kable(ind_shell, align = "llrrrr")
 #| tbl-cap: "Reconstructed annual outbreak area against aerial survey extent, 2016 to 2025, descriptive. Values pending execution of the pre-registered analysis."
 prog_shell <- data.frame(Year = 2016:2025)
 prog_shell[c("Mapped_kha", "Surveyed_kha", "Ratio", "IoU")] <- "."
-knitr::kable(prog_shell, align = "lrrrr")
+fmt_tbl(prog_shell, right = c("Mapped_kha","Surveyed_kha","Ratio","IoU"))
 ```
 
 # Discussion
