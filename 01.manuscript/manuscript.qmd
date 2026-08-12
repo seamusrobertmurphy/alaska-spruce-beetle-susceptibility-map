@@ -410,10 +410,54 @@ if (length(todo)) {
 }
 ```
 
+The Landsat baseline composites cover 2014 to 2018, the pre-outbreak reference state and the early outbreak years that precede dense Sentinel-2 coverage. Landsat 8 Collection 2 Level-2 surface reflectance is masked to clear observations with the QA pixel band, scaled, and reduced to July to August medians on the same grid.
+
+```{r}
+#| label: landsat-build
+#| output: false
+for (y in 2014:2018) {
+  f <- file.path(comp_dir, sprintf("ls_%d.tif", y))
+  if (file.exists(f)) next
+  if (!exists("roi")) {
+    ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+    bb <- as.vector(ext(project(tpl, "EPSG:4326")))
+    roi <- ee$Geometry$Rectangle(c(bb[1], bb[3], bb[2], bb[4]))
+  }
+  ls <- ee$ImageCollection("LANDSAT/LC08/C02/T1_L2")$
+    filterDate(sprintf("%d-07-01", y), sprintf("%d-09-01", y))$
+    filterBounds(roi)$
+    map(function(img) {
+      qa <- img$select("QA_PIXEL")
+      clear <- qa$bitwiseAnd(31L)$eq(0L)
+      img$select(c("SR_B4", "SR_B5", "SR_B6", "SR_B7"))$
+        multiply(0.0000275)$add(-0.2)$updateMask(clear)
+    })
+  comp <- ls$median()
+  n_clear <- ls$select("SR_B4")$count()$rename("n_clear")
+  url <- comp$addBands(n_clear)$toFloat()$getDownloadURL(list(
+    region = roi, crs = "EPSG:32605",
+    crs_transform = c(90, 0, xmin(tpl), 0, -90, ymax(tpl)),
+    format = "GEO_TIFF"))
+  tmp <- tempfile(fileext = ".tif")
+  old_to <- options(timeout = 600)
+  for (try_i in 1:3) {
+    ok <- !inherits(try(download.file(url, tmp, mode = "wb", quiet = TRUE),
+                        silent = TRUE), "try-error")
+    if (ok) break
+  }
+  options(old_to)
+  if (!ok) next
+  out <- rast(tmp)
+  names(out) <- c("red", "nir", "swir16", "swir22", "n_clear")
+  writeRaster(out, f, overwrite = TRUE, gdal = "COMPRESS=DEFLATE")
+  unlink(tmp)
+}
+```
+
 ```{r}
 #| label: tbl-composites
 #| tbl-cap: "Assembled annual Sentinel-2 composites on the 90 m reference grid."
-built <- list.files(comp_dir, pattern = "^s2_\\d{4}\\.tif$", full.names = TRUE)
+built <- list.files(comp_dir, pattern = "^(s2|ls)_\\d{4}\\.tif$", full.names = TRUE)
 fmt_tbl(do.call(rbind, lapply(built, function(f) {
   r <- rast(f)
   data.frame(year = gsub("\\D", "", basename(f)),
