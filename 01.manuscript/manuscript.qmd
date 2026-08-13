@@ -369,7 +369,38 @@ Annual composites are built on the 90 m reference grid in Google Earth Engine. F
 library(rgee)
 comp_dir <- file.path(inputs, "composites")
 dir.create(comp_dir, showWarnings = FALSE)
-tpl <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
+tpl <- extend(rast(file.path(inputs, "zwieback-severity",
+                             "merged_ref_h_c90c.tif")), 50000 / 90)
+fetch_grid <- function(img, f, grid, nbands = 5) {
+  bytes <- as.double(ncol(grid)) * nrow(grid) * nbands * 4
+  k <- max(2, ceiling(bytes / 35e6))
+  cuts <- unique(round(seq(0, nrow(grid), length.out = k + 1)))
+  tmps <- character(length(cuts) - 1)
+  for (h in seq_len(length(cuts) - 1)) {
+    y_top <- ymax(grid) - cuts[h] * 90
+    y_bot <- ymax(grid) - cuts[h + 1] * 90
+    reg <- ee$Geometry$Rectangle(c(xmin(grid), y_bot, xmax(grid), y_top),
+                                 "EPSG:32605", FALSE)
+    url <- img$getDownloadURL(list(region = reg, crs = "EPSG:32605",
+      crs_transform = c(90, 0, xmin(grid), 0, -90, y_top),
+      format = "GEO_TIFF"))
+    tmps[h] <- tempfile(fileext = ".tif")
+    old_to <- options(timeout = 600)
+    for (try_i in 1:3) {
+      ok <- !inherits(try(download.file(url, tmps[h], mode = "wb",
+                                        quiet = TRUE), silent = TRUE),
+                      "try-error")
+      if (ok) break
+    }
+    options(old_to)
+    if (!ok) return(FALSE)
+  }
+  out <- do.call(merge, lapply(tmps, rast))
+  names(out) <- c("red", "nir", "swir16", "swir22", "n_clear")
+  writeRaster(out, f, overwrite = TRUE, gdal = "COMPRESS=DEFLATE")
+  unlink(tmps)
+  TRUE
+}
 years <- 2016:2025
 todo <- years[!file.exists(file.path(comp_dir, sprintf("s2_%d.tif", years)))]
 
@@ -390,24 +421,8 @@ if (length(todo)) {
     comp <- masked$qualityMosaic("cs")$
       select(c("B4", "B8", "B11", "B12"))$divide(10000)
     n_clear <- masked$select("B4")$count()$rename("n_clear")
-    url <- comp$addBands(n_clear)$getDownloadURL(list(
-      region = roi, crs = "EPSG:32605",
-      crs_transform = c(90, 0, xmin(tpl), 0, -90, ymax(tpl)),
-      format = "GEO_TIFF"))
-    tmp <- tempfile(fileext = ".tif")
-    old_to <- options(timeout = 600)
-    for (try_i in 1:3) {
-      ok <- !inherits(try(download.file(url, tmp, mode = "wb", quiet = TRUE),
-                         silent = TRUE), "try-error")
-      if (ok) break
-    }
-    options(old_to)
-    if (!ok) next
-    out <- rast(tmp)
-    names(out) <- c("red", "nir", "swir16", "swir22", "n_clear")
-    writeRaster(out, file.path(comp_dir, sprintf("s2_%d.tif", y)),
-                overwrite = TRUE, gdal = "COMPRESS=DEFLATE")
-    unlink(tmp)
+    fetch_grid(comp$addBands(n_clear)$toFloat(),
+               file.path(comp_dir, sprintf("s2_%d.tif", y)), tpl)
   }
 }
 ```
@@ -436,39 +451,62 @@ for (y in 2014:2018) {
     })
   comp <- ls$median()
   n_clear <- ls$select("SR_B4")$count()$rename("n_clear")
-  url <- comp$addBands(n_clear)$toFloat()$getDownloadURL(list(
-    region = roi, crs = "EPSG:32605",
-    crs_transform = c(90, 0, xmin(tpl), 0, -90, ymax(tpl)),
-    format = "GEO_TIFF"))
-  tmp <- tempfile(fileext = ".tif")
-  old_to <- options(timeout = 600)
-  for (try_i in 1:3) {
-    ok <- !inherits(try(download.file(url, tmp, mode = "wb", quiet = TRUE),
-                        silent = TRUE), "try-error")
-    if (ok) break
-  }
-  options(old_to)
-  if (!ok) next
-  out <- rast(tmp)
-  names(out) <- c("red", "nir", "swir16", "swir22", "n_clear")
-  writeRaster(out, f, overwrite = TRUE, gdal = "COMPRESS=DEFLATE")
-  unlink(tmp)
+  fetch_grid(comp$addBands(n_clear)$toFloat(), f, tpl)
 }
 ```
 
 ```{r}
 #| label: tbl-composites
-#| tbl-cap: "Assembled annual composites on the 90 m reference grid: Landsat 8 for the 2014 to 2018 baseline and early outbreak, Sentinel-2 from 2019."
+#| tbl-cap: "Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed: their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019."
 built <- list.files(comp_dir, pattern = "^(s2|ls)_\\d{4}\\.tif$", full.names = TRUE)
 fmt_tbl(do.call(rbind, lapply(built, function(f) {
   r <- rast(f)
   data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
                              "Sentinel-2", "Landsat 8"),
-             year = gsub("\\D", "", basename(f)),
+             year = sub("^\\w+_(\\d{4})\\.tif$", "\\1", basename(f)),
              layers = nlyr(r),
              mean_clear_obs = round(global(r$n_clear, "mean",
                                            na.rm = TRUE)[1, 1], 1))
 })), right = "year")
+```
+
+## Analysis cube
+
+The annual composites are reorganised into a local data cube for the sits package for satellite image time series analysis [@Simoes_2021], which supplies the TempCNN implementation and the tuning, validation and uncertainty tooling used in the modelling sections. A sits cube is a directory of single-band files named by satellite, sensor, tile, band and date. Each composite is split into its four spectral bands under the labels B04, B08, B11 and B12, one nominal date of 1 August per year, Landsat for the 2014 to 2018 baseline and Sentinel-2 from 2019 as pre-registered. The Landsat years carry the same collection labels as the Sentinel-2 years because a cube admits a single collection; bands are harmonized across sensors as described above, and the sensor of origin remains recoverable from the year. Files are rebuilt whenever their source composite changes, and the cube is validated by loading it and checking its timeline and band set.
+
+```{r}
+#| label: sits-cube-build
+#| output: false
+cube_dir <- file.path(inputs, "derived", "sits_cube")
+dir.create(cube_dir, showWarnings = FALSE, recursive = TRUE)
+srcs <- file.path(comp_dir, c(sprintf("ls_%d.tif", 2014:2018),
+                              sprintf("s2_%d.tif", 2019:2025)))
+if (all(file.exists(srcs))) {
+  band_map <- c(red = "B04", nir = "B08", swir16 = "B11", swir22 = "B12")
+  wanted <- character(0)
+  for (s in srcs) {
+    yr <- sub("^\\w+_(\\d{4})\\.tif$", "\\1", basename(s))
+    for (b in names(band_map)) {
+      f <- file.path(cube_dir,
+                     sprintf("SENTINEL-2_MSI_TBL01_%s_%s-08-01.tif",
+                             band_map[[b]], yr))
+      wanted <- c(wanted, f)
+      if (file.exists(f) && file.mtime(f) > file.mtime(s)) next
+      writeRaster(rast(s)[[b]], f, overwrite = TRUE,
+                  gdal = "COMPRESS=DEFLATE")
+    }
+  }
+  # The chunk owns this directory: anything it did not just write is stale,
+  # from an earlier grid or an earlier naming, and would corrupt the timeline.
+  unlink(setdiff(list.files(cube_dir, full.names = TRUE), wanted),
+         recursive = TRUE)
+  library(sits)
+  cube <- sits_cube(source = "MPC", collection = "SENTINEL-2-L2A",
+                    data_dir = cube_dir,
+                    parse_info = c("X1", "X2", "tile", "band", "date"))
+  stopifnot(length(sits_timeline(cube)) == length(srcs),
+            setequal(sits_bands(cube), band_map))
+}
 ```
 
 ## Climate variables
@@ -591,7 +629,7 @@ The null model reproduces the stand-scale change analysis that defines the curre
 
 ## Model training
 
-TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Ablation variants for the second and third hypotheses retrain the identical architecture with, respectively, point onset labels in place of intervals, and climate channels removed. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
+TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Both networks are implemented through the sits package [@Simoes_2021] on its torch backend, which also supplies the tuning, validation and uncertainty tools applied below. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Ablation variants for the second and third hypotheses retrain the identical architecture with, respectively, point onset labels in place of intervals, and climate channels removed. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
 
 ## Model evaluation
 
