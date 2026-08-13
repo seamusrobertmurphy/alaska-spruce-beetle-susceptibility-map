@@ -285,7 +285,7 @@ data.frame(
 
 ## Crown labels
 
-Reference labels are produced by machine-assisted digitisation of dead spruce crowns on the statewide sub-metre mosaics, acquired in 2020 at 0.5 m and in 2023 at 0.3 m resolution, over sample blocks stratified by conifer fraction and survey-recorded damage history. Imagery is obtained as four-band chips from the public USDA NRCS image services, whose export endpoint carries the same mosaics; this route replaces the State of Alaska Geoportal streaming path and removes its non-commercial licence constraint from the pipeline. Label preparation runs in four stages.
+Reference labels are produced by machine-assisted digitisation of dead spruce crowns on the statewide sub-metre mosaics, acquired in 2020 at 0.5 m and in 2023 at 0.3 m resolution, over sample blocks stratified by conifer fraction and survey-recorded damage history. Imagery is obtained as four-band chips from the USDA NRCS image services, whose export endpoint carries the same mosaics. The route is public but the pixels are not: the service records the Alaska Vivid imagery as a dataset licensed from Maxar to USDA-FPAC in 2020, with copyright retained by the vendor. Imagery is therefore processed locally and never redistributed, and what this study publishes from it are the derived crown delineations and stand-level severity fractions, not the pixels, on the same footing as the published delineations of @Zwieback_2024, which were drawn on proprietary imagery that their release could not include. Label preparation runs in four stages.
 
 1. **Pre-labelling.** The released dead-spruce network of @Zwieback_2024 is the only domain-tuned component available, but it cannot be applied to these mosaics as released. It was trained on seven pansharpened WorldView-2 bands, blue, green, yellow, red, red edge and two near-infrared bands, and its encoder's first layer was widened from three channels to seven to match; the four-band mosaics used here supply no yellow, red-edge or second near-infrared channel. The network is therefore adapted rather than applied: the first-layer weights for the four channels the two sensors share are retained, the remaining three discarded, and the network fine-tuned on the published crown labels of the same study, which are rasterised against mosaic imagery over their own delineation areas. Those areas, not the sample blocks, supply the tuning imagery, because the delineations intersect only four blocks and all four fall in the held-out reference fold.
 2. **Crown segmentation.** Candidate detections are refined into crown polygons with general-purpose segmentation models: DeepForest crown detection [@Weinstein_2019] supplying box prompts to the Segment Anything Model (SAM2) through the segment-geospatial toolchain [@Wu_2023], an established zero-shot pipeline for tree delineation. Segmentation runs on the project's cloud GPU; outputs are vector crown candidates scored by the dead-spruce probability.
@@ -752,6 +752,89 @@ The null model reproduces the stand-scale change analysis that defines the curre
 
 TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Both networks are implemented through the sits package [@Simoes_2021] on its torch backend, which also supplies the tuning, validation and uncertainty tools applied below. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Ablation variants for the second and third hypotheses retrain the identical architecture with, respectively, point onset labels in place of intervals, and climate channels removed. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
 
+## Endmember calibration
+
+The synthetic test below stands or falls on one quantity: how much a stand's reflectance moves per unit of dead-crown area. Assuming that quantity would make the test circular, because a small assumed contrast guarantees that low severities are unrecoverable. It is therefore measured, from the published crown delineations rather than from any severity product. Within each delineation area the crowns are rasterised to the 90 m stand grid as the fraction of each cell they cover, giving an observed areal severity that depends on no model. Composite reflectance for the same cells is then regressed on that fraction, band by band, at the 2021 growing season the crowns were delineated in. Under linear areal mixing the intercept estimates the live stand spectrum and the slope estimates the difference between a fully dead and a fully live stand, which is exactly the endmember the simulation needs.
+
+Two limits are stated rather than buried. The delineation areas fall inside the reference footprint held out as fold 8, so this uses fold-8 imagery to fix a simulation parameter; it is treated as a pilot calculation, declared as such, and no fold-8 cell enters model training. And the areas were selected for crown density, so they sample the severity range unrepresentatively, which biases the range covered but not the per-unit contrast being estimated.
+
+```{r}
+#| label: endmember-calibration
+#| output: false
+em_csv <- file.path(dirname(inputs), "03.outputs", "endmember.csv")
+if (!file.exists(em_csv)) {
+  library(sf)
+  BANDS4 <- c("red", "nir", "swir16", "swir22")
+  post <- rast(file.path(comp_dir, "s2_2021.tif"))[[BANDS4]]
+  # The simulation offsets each cell from its OWN live spectrum, so the quantity
+  # to estimate is the change per unit severity, not the between-cell contrast
+  # at one date. Regressing levels estimates a different and far noisier thing:
+  # it asks whether cells that hold more dead crowns look different from cells
+  # that do not, which stand type, slope and shadow dominate. Differencing
+  # against a pre-outbreak baseline removes every stable per-cell difference.
+  # The baseline is Landsat and the post state Sentinel-2, so a cross-sensor
+  # offset enters; it is common to all cells and lands in the intercept, leaving
+  # the slope on severity identifiable.
+  pre <- mean(rast(file.path(comp_dir, "ls_2014.tif"))[[BANDS4]],
+              rast(file.path(comp_dir, "ls_2015.tif"))[[BANDS4]])
+  grid <- c(post, post - pre)     # levels first, then the post minus pre change
+  names(grid) <- c(BANDS4, paste0("d_", BANDS4))
+  cells <- list()
+  for (f in lab_f) {
+    l <- suppressWarnings(st_read(f, quiet = TRUE))
+    if (nrow(l) == 0) next
+    if (!identical(st_crs(l)$epsg, 32605L)) {
+      if (suppressWarnings(st_bbox(l))[["xmin"]] > 1000) l <- st_set_crs(l, 32605)
+    }
+    g <- crop(grid, ext(vect(l)) + 180, snap = "out")
+    if (ncell(g) < 4) next
+    # cover = TRUE gives the fraction of each 90 m cell inside a crown polygon,
+    # which is areal severity measured directly, with no model in between.
+    fr <- rasterize(vect(l), g[[1]], cover = TRUE, background = 0)
+    d <- data.frame(sev = values(fr)[, 1], values(g))
+    cells[[basename(f)]] <- d[is.finite(d$sev) & complete.cases(d), ]
+  }
+  cd <- do.call(rbind, cells)
+  cd <- cd[cd$red > 0 & cd$nir > 0, ]
+  fit1 <- function(y, b, est) {
+    m <- lm(y ~ cd$sev)
+    ci <- confint(m)[2, ]
+    data.frame(estimator = est, band = b,
+               intercept = round(coef(m)[[1]], 4),
+               endmember = round(coef(m)[[2]], 4),
+               ci_low = round(ci[[1]], 4), ci_high = round(ci[[2]], 4),
+               r2 = round(summary(m)$r.squared, 4))
+  }
+  em <- rbind(
+    do.call(rbind, lapply(BANDS4, function(b) fit1(cd[[b]], b, "level"))),
+    do.call(rbind, lapply(BANDS4, function(b)
+      fit1(cd[[paste0("d_", b)]], b, "change"))))
+  em$n_cells <- nrow(cd)
+  em$max_sev <- round(max(cd$sev), 3)
+  write.csv(em, em_csv, row.names = FALSE)
+}
+endmember_tbl <- read.csv(em_csv)
+```
+
+```{r}
+#| label: tbl-endmember
+#| tbl-cap: "Dead-crown endmember estimated from the published crown delineations under two estimators. The level estimator regresses 2021 reflectance on dead-crown fraction across cells; the change estimator regresses the 2021 minus pre-outbreak difference on the same fraction. The endmember column is the fitted change per unit of dead-crown area, so a stand at severity 0.05 moves by one twentieth of the tabulated value. Confidence intervals are 95 percent."
+fmt_tbl(endmember_tbl, right = c("intercept", "endmember", "ci_low",
+                                 "ci_high", "r2", "n_cells", "max_sev"))
+```
+
+```{r}
+#| label: em-numbers
+#| echo: true
+#| output: false
+emv <- function(est, b, col = "endmember")
+  endmember_tbl[[col]][endmember_tbl$estimator == est & endmember_tbl$band == b]
+```
+
+The estimate covers `r endmember_tbl$n_cells[1]` stand cells reaching a maximum observed dead-crown fraction of `r endmember_tbl$max_sev[1]`. The two estimators answer different questions and only the second answers the one that matters. Regressing levels asks whether cells holding more dead crowns look different from cells holding none, a comparison that stand composition, slope and canopy shadow dominate; it returns an R² of `r sprintf("%.3f", emv("level", "swir16", "r2"))` in the shortwave infrared and a slope of the wrong sign, which is a statement about between-cell confounding rather than about mortality. Differencing each cell against its own pre-outbreak state removes those stable differences and estimates the quantity the mixing model actually defines. The change estimator puts the shortwave-infrared endmember at `r sprintf("%+.3f", emv("change", "swir16"))` with a 95 percent interval of `r sprintf("%+.3f to %+.3f", emv("change", "swir16", "ci_low"), emv("change", "swir16", "ci_high"))`, against the `r sprintf("%+.3f", 0.055)` assumed before measurement. The synthetic test below is run at both values so the consequence of the assumption is visible rather than asserted.
+
+Three properties of this estimate constrain how far it can be pushed. The measured shortwave-infrared contrast is roughly two and a half times the assumed one, so the assumption was conservative and the detectability question is correspondingly more open than the first synthetic run implied. Severity nonetheless explains very little of the variance, with R² between `r sprintf("%.3f", min(endmember_tbl$r2[endmember_tbl$estimator == "change"]))` and `r sprintf("%.3f", max(endmember_tbl$r2[endmember_tbl$estimator == "change"]))`, so these are weak slopes estimated over many cells rather than a tight relationship; all four intervals nonetheless exclude zero. And the near-infrared slope is positive, at `r sprintf("%+.3f", emv("change", "nir"))`, where dead foliage at crown scale lowers near-infrared reflectance [@Zwieback_2024]. Two readings are available and this design cannot separate them: canopy loss over a five-year window admits understory response that raises stand near-infrared even as individual crowns darken, or the Landsat baseline and Sentinel-2 post state differ in near-infrared band pass in a way that a common intercept does not absorb. The synthetic test uses the measured vector as estimated, sign included, because substituting the expected sign would reintroduce exactly the assumption this section exists to remove.
+
 ## Pipeline validation
 
 Before any labelled data reach the models, the pipeline is tested against a signal whose truth is known because this manuscript injects it. Real trajectories are drawn from the analysis cube, so phenology, atmosphere and sensor noise are those of the study area; only the disturbance is synthetic. Mortality is added as linear areal mixing, the observed spectrum becoming the severity-weighted mix of that cell's own live spectrum and a dead-crown endmember, applied from a known onset year and ramped over two years after @Hicke_2024, whose Alaskan *Dendroctonus* fade runs from green through red to gray rather than completing within a season. Two single-band-head models stand in for the pre-registered two-head design until the interval-censored head exists: one classifies the severity stratum, the other the onset year.
@@ -772,9 +855,15 @@ if (!all(file.exists(syn_f))) {
   N_SAMP <- 4000; N_CAND <- 40000
   STRATA <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)   # pre-registered breaks
   ONSETS <- 2017:2023
-  # Reflectance offset of a pure dead crown from that cell's live spectrum.
-  # An assumption, and the dominant control on every number reported here.
-  ENDMEMBER <- c(B04 = 0.040, B08 = -0.060, B11 = 0.055, B12 = 0.045)
+  # Reflectance offset of a pure dead stand from the live stand spectrum. The
+  # first is the value assumed before anything was measured; the second is the
+  # regression slope from the crown delineations. Running both is the point:
+  # the assumed value alone would make the low-severity result circular.
+  emc <- endmember_tbl[endmember_tbl$estimator == "change", ]
+  em_m <- setNames(emc$endmember, emc$band)
+  ENDMEMBERS <- list(
+    assumed = c(red = 0.040, nir = -0.060, swir16 = 0.055, swir22 = 0.045),
+    measured = em_m[c("red", "nir", "swir16", "swir22")])
 
   cf <- function(b, y) file.path(cube_dir,
          sprintf("SENTINEL-2_MSI_TBL01_%s_%d-08-01.tif", b, y))
@@ -796,16 +885,18 @@ if (!all(file.exists(syn_f))) {
     sev[i] <- exp(runif(1, log(lo), log(hi)))
     onset[i] <- sample(ONSETS, 1)
   }
-  obs <- base
-  for (i in seq_len(n_dist)) {
-    yi <- match(onset[i], YEARS)
-    for (k in seq(yi, length(YEARS))) {
-      w <- min(1, (k - yi + 1) / 2)          # two-year fade to full contrast
-      for (bi in seq_along(BANDS))
-        obs[i, k, bi] <- base[i, k, bi] + w * sev[i] * ENDMEMBER[[bi]]
+  inject <- function(em) {
+    o <- base
+    for (i in seq_len(n_dist)) {
+      yi <- match(onset[i], YEARS)
+      for (k in seq(yi, length(YEARS))) {
+        w <- min(1, (k - yi + 1) / 2)        # two-year fade to full contrast
+        for (bi in seq_along(BANDS))
+          o[i, k, bi] <- base[i, k, bi] + w * sev[i] * em[[bi]]
+      }
     }
+    pmin(pmax(o, 0), 1)
   }
-  obs <- pmin(pmax(obs, 0), 1)
   sev_class <- as.character(cut(sev, STRATA, include.lowest = TRUE))
   sev_class[sev == 0] <- "none"
   onset_class <- ifelse(is.na(onset), "none", as.character(onset))
@@ -823,7 +914,7 @@ if (!all(file.exists(syn_f))) {
   }
   tr_i <- sample(N_SAMP, floor(0.75 * N_SAMP))
   te_i <- setdiff(seq_len(N_SAMP), tr_i)
-  run <- function(labels) {
+  run <- function(obs, labels) {
     m <- sits_train(to_sits(obs[tr_i, , , drop = FALSE], labels[tr_i]),
                     sits_tempcnn(epochs = 60, batch_size = 64,
                                  validation_split = 0.2, verbose = FALSE))
@@ -832,32 +923,55 @@ if (!all(file.exists(syn_f))) {
     data.frame(truth = labels[te_i],
                pred = vapply(p$predicted, function(x) x$class[[1]], character(1)))
   }
-  rs <- run(sev_class); ro <- run(onset_class)
 
-  by_str <- do.call(rbind, lapply(sort(unique(rs$truth)), function(s) {
-    i <- rs$truth == s
-    data.frame(stratum = s, n = sum(i), recall = round(mean(rs$pred[i] == s), 3))
-  }))
-  by_str$overall_accuracy <- round(mean(rs$pred == rs$truth), 3)
-  d <- ro$truth != "none" & ro$pred != "none"
-  err <- abs(as.integer(ro$truth[d]) - as.integer(ro$pred[d]))
-  write.csv(by_str, syn_f[1], row.names = FALSE)
-  write.csv(data.frame(n_disturbed_test = sum(ro$truth != "none"),
-                       classified_disturbed = sum(d),
-                       onset_mae_years = round(mean(err), 3),
-                       within_1yr = round(mean(err <= 1), 3)),
-            syn_f[2], row.names = FALSE)
+  recall_rows <- list(); onset_rows <- list()
+  for (tag in names(ENDMEMBERS)) {
+    obs <- inject(ENDMEMBERS[[tag]])
+    rs <- run(obs, sev_class); ro <- run(obs, onset_class)
+    bs <- do.call(rbind, lapply(sort(unique(rs$truth)), function(s) {
+      i <- rs$truth == s
+      data.frame(endmember = tag, stratum = s, n = sum(i),
+                 recall = round(mean(rs$pred[i] == s), 3))
+    }))
+    bs$overall_accuracy <- round(mean(rs$pred == rs$truth), 3)
+    recall_rows[[tag]] <- bs
+    d <- ro$truth != "none" & ro$pred != "none"
+    err <- abs(as.integer(ro$truth[d]) - as.integer(ro$pred[d]))
+    onset_rows[[tag]] <- data.frame(endmember = tag,
+      n_disturbed_test = sum(ro$truth != "none"),
+      classified_disturbed = sum(d),
+      onset_mae_years = ifelse(sum(d) > 0, round(mean(err), 3), NA),
+      within_1yr = ifelse(sum(d) > 0, round(mean(err <= 1), 3), NA))
+  }
+  write.csv(do.call(rbind, recall_rows), syn_f[1], row.names = FALSE)
+  write.csv(do.call(rbind, onset_rows), syn_f[2], row.names = FALSE)
 }
 syn_recall <- read.csv(syn_f[1]); syn_onset <- read.csv(syn_f[2])
 ```
 
 ```{r}
 #| label: tbl-synthetic
-#| tbl-cap: "Recovery of an injected signal by severity stratum, on held-out synthetic samples. Severity is injected by linear areal mixing against an assumed dead-crown endmember and is not a measured quantity; recall here states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable."
+#| tbl-cap: "Recovery of an injected signal by severity stratum, on held-out synthetic samples, under two dead-crown endmembers: the value assumed before measurement and the value regressed from the crown delineations. Recall states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable."
 fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"))
 ```
 
-Recovery is confined to the largest stratum. Recall reaches `r sprintf("%.2f", max(syn_recall$recall))` in the `r syn_recall$stratum[which.max(syn_recall$recall)]` stratum and is at or near zero in every stratum below 0.2, while undisturbed cells are returned correctly `r sprintf("%.0f%%", 100 * syn_recall$recall[syn_recall$stratum == "none"])` of the time; overall accuracy of `r syn_recall$overall_accuracy[1]` is carried almost entirely by that undisturbed majority. Onset dating cannot be read as a skill estimate: only `r syn_onset$classified_disturbed` of `r syn_onset$n_disturbed_test` disturbed test samples were classified as disturbed at all, so the mean absolute error of `r syn_onset$onset_mae_years` years is computed on the small, self-selected subset the severity signal was strongest in. What this establishes is narrow and worth stating plainly: the cube, the sample assembly, the sits training path and the classification path run end to end and recover a large injected decline and its date, and at the assumed endmember contrast an annual four-band composite carries no recoverable signature of severities below roughly 0.2. Whether real mortality presents a larger contrast than the value assumed here is the open question, and it is what the endmember sweep, not yet run, is for.
+```{r}
+#| label: syn-numbers
+#| echo: true
+#| output: false
+sy <- function(tag) syn_recall[syn_recall$endmember == tag, ]
+lo_str <- c("[0,0.01]", "(0.01,0.03]", "(0.03,0.05]", "(0.05,0.1]")
+best <- function(tag) { d <- sy(tag); d$stratum[which.max(d$recall)] }
+peak <- function(tag) max(sy(tag)$recall)
+lowmax <- function(tag) { d <- sy(tag); max(d$recall[d$stratum %in% lo_str]) }
+on <- function(tag) syn_onset[syn_onset$endmember == tag, ]
+```
+
+Under the endmember assumed before measurement, recovery is confined to the largest stratum: recall peaks at `r sprintf("%.2f", peak("assumed"))` in the `r best("assumed")` stratum and reaches at most `r sprintf("%.2f", lowmax("assumed"))` anywhere below 0.10, while undisturbed cells are returned correctly `r sprintf("%.0f%%", 100 * sy("assumed")$recall[sy("assumed")$stratum == "none"])` of the time. Under the measured endmember, recall peaks at `r sprintf("%.2f", peak("measured"))` in the `r best("measured")` stratum and reaches `r sprintf("%.2f", lowmax("measured"))` at best below 0.10. Overall accuracy in both cases is carried almost entirely by the undisturbed majority and should not be read on its own. Onset dating is not a skill estimate under either condition: `r on("assumed")$classified_disturbed` and `r on("measured")$classified_disturbed` of `r on("assumed")$n_disturbed_test` disturbed test samples were classified as disturbed at all, so the associated mean absolute errors describe whichever cases carried the strongest severity signal rather than the population.
+
+What this establishes is narrow and worth stating plainly. The cube, the sample assembly, the sits training path and the classification path run end to end and recover a large injected decline together with its date. The comparison between the two endmembers is the informative part: it separates what follows from an arbitrary choice from what follows from the contrast the delineated crowns actually exhibit. Measuring the contrast rather than assuming it roughly trebles the number of disturbed stands the onset model recognises at all and lifts recall in the 0.1 to 0.2 stratum by more than an order of magnitude, yet leaves the strata below 0.1, which are the strata this study exists to address, essentially unrecovered.
+
+That result should not be read as a forecast of H1, for a reason of construction rather than caution. The test scores a seven-way assignment of severity class, whereas H1 is scored as detection at a fixed operating point of 0.90 precision within a single stratum, a materially easier task that a multiclass error rate does not estimate. The simulation also carries no climate channels, so it cannot speak to H3, and it supervises onset as a bare class rather than through the interval-censored likelihood H2 is defined by. It further assumes one endmember for every stand, where real stands vary, and variation blurs rather than sharpens. What can be said is bounded and still useful before any label exists: on this cube, at the contrast these crowns exhibit, a four-band annual composite carries a weak but non-zero severity signal that a temporal convolutional network converts into skill only above roughly 0.1, and the design's central claim therefore rests on whether the pre-registered detection framing, the climate channels and the interval supervision together recover what multiclass assignment on spectra alone does not.
 
 ## Model evaluation
 
