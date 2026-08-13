@@ -285,14 +285,106 @@ data.frame(
 
 ## Crown labels
 
-Reference labels are produced by machine-assisted digitisation of dead spruce crowns on the State of Alaska Geoportal Maxar mosaics, acquired in 2020 at 0.5 m and in 2023 at 0.3 m resolution, streamed under the state's non-commercial licence and processed locally, over sample blocks stratified by conifer fraction and survey-recorded damage history. Label preparation runs in four stages.
+Reference labels are produced by machine-assisted digitisation of dead spruce crowns on the statewide sub-metre mosaics, acquired in 2020 at 0.5 m and in 2023 at 0.3 m resolution, over sample blocks stratified by conifer fraction and survey-recorded damage history. Imagery is obtained as four-band chips from the public USDA NRCS image services, whose export endpoint carries the same mosaics; this route replaces the State of Alaska Geoportal streaming path and removes its non-commercial licence constraint from the pipeline. Label preparation runs in four stages.
 
-1. **Pre-labelling.** The released dead-spruce network of @Zwieback_2024, the only domain-tuned component available, generates a dead-spruce probability surface for each block; the published crown labels of the same study provide the tuning reference.
+1. **Pre-labelling.** The released dead-spruce network of @Zwieback_2024 is the only domain-tuned component available, but it cannot be applied to these mosaics as released. It was trained on seven pansharpened WorldView-2 bands, blue, green, yellow, red, red edge and two near-infrared bands, and its encoder's first layer was widened from three channels to seven to match; the four-band mosaics used here supply no yellow, red-edge or second near-infrared channel. The network is therefore adapted rather than applied: the first-layer weights for the four channels the two sensors share are retained, the remaining three discarded, and the network fine-tuned on the published crown labels of the same study, which are rasterised against mosaic imagery over their own delineation areas. Those areas, not the sample blocks, supply the tuning imagery, because the delineations intersect only four blocks and all four fall in the held-out reference fold.
 2. **Crown segmentation.** Candidate detections are refined into crown polygons with general-purpose segmentation models: DeepForest crown detection [@Weinstein_2019] supplying box prompts to the Segment Anything Model (SAM2) through the segment-geospatial toolchain [@Wu_2023], an established zero-shot pipeline for tree delineation. Segmentation runs on the project's cloud GPU; outputs are vector crown candidates scored by the dead-spruce probability.
 3. **Cleaning and triage.** Candidates below a minimum crown area or outside plausible crown geometry are dropped; overlapping detections are merged. Two annotators then accept, edit or reject each candidate independently in QGIS, with a third adjudicating disagreements [after @Khatri_Chhetri_2024]. Fully occluded dead spruce under closed deciduous canopy remain undetectable in RGB imagery and are an acknowledged limitation carried forward from @Zwieback_2024.
 4. **Aggregation, triangulation and classification.** Accepted crowns are rasterised to stand-cell areal severity fractions at 30 and 90 m, and each labelled stand is classified as low, medium or high disturbance at the pre-registered severity breaks. Cross-epoch triangulation then assigns every crown a temporal state: dead by 2020, died between 2020 and 2023, or alive through 2023, yielding interval-censored onset labels for the dating head, verified pre-mortality trajectories for exploratory green-stage analysis, and confirmed-alive negatives. The same comparison cleans the labels: a crown dead in 2020 must remain dead in 2023, and violations are returned to triage, a consistency check unavailable to single-epoch designs.
 
 The published crown labels of @Zwieback_2024, distributed under an attribution licence, additionally enter the training pool within their delineation areas, contributing temporal cuts at their image dates of 2018 and 2021. Combined with the 2020 and 2023 mosaic epochs, four temporal cuts are available in the Talkeetna to Byers Lake area, narrowing onset brackets there to one to two years. The severity rasters of @Zwieback_2024, by contrast, take no part in label preparation; they remain the untouched independent evaluation dataset described under Model evaluation.
+
+Tuning pairs are assembled below: for each delineation area holding crowns, a four-band chip at the 2020 mosaic resolution and the matching crown mask rasterised from the published polygons. The crowns were delineated on imagery of August 2021, one year after the 2020 mosaic, so a crown that died during that year is marked dead over imagery in which it was still living. This is label noise of known sign, and it is one-directional: it can only teach the network that living crowns are dead, never the reverse. Its size is bounded by the fraction of crowns dying in that single year and is reported with the pairs.
+
+```{r}
+#| label: label-training-pairs
+#| output: false
+lab_dir <- file.path(inputs, "zwieback-labels", "gpkg")
+pair_dir <- file.path(inputs, "label-pairs")
+dir.create(pair_dir, showWarnings = FALSE)
+lab_f <- list.files(lab_dir, pattern = "_labels[.]gpkg$", full.names = TRUE)
+pairs_csv <- file.path(dirname(inputs), "03.outputs", "label_pairs.csv")
+
+if (!file.exists(pairs_csv)) {
+  library(sf)
+  GSD <- 0.5                       # 2020 mosaic ground sample distance, metres
+  rows <- list()
+  options(timeout = 300)
+  for (f in lab_f) {
+    l <- suppressWarnings(st_read(f, quiet = TRUE))
+    if (nrow(l) == 0) next
+    id <- sub("_labels[.]gpkg$", "", basename(f))
+    # One delivered file (area 0033, 73 crowns) declares EPSG:4326 while its
+    # coordinates are UTM zone 5N metres, which makes st_area report a crown as
+    # billions of square metres. Relabel without transforming; the coordinates
+    # were always UTM.
+    if (!identical(st_crs(l)$epsg, 32605L)) {
+      bb0 <- suppressWarnings(st_bbox(l))
+      if (bb0[["xmin"]] > 1000) l <- st_set_crs(l, 32605)
+    }
+    bb <- st_bbox(l)
+    px <- round(c(bb["xmax"] - bb["xmin"], bb["ymax"] - bb["ymin"]) / GSD)
+    img_f <- file.path(pair_dir, sprintf("%s_img.tif", id))
+    msk_f <- file.path(pair_dir, sprintf("%s_mask.tif", id))
+    if (!file.exists(img_f)) {
+      u <- sprintf(paste0(
+        "https://apps.geo.fpac.usda.gov/nrcs-imagery/rest/services/",
+        "ortho_imagery/alaska_vivid_2020_50cm/ImageServer/exportImage?",
+        "bbox=%f,%f,%f,%f&bboxSR=32605&imageSR=32605&size=%d,%d",
+        "&format=tiff&f=image"),
+        bb["xmin"], bb["ymin"], bb["xmax"], bb["ymax"], px[1], px[2])
+      ok <- FALSE
+      for (attempt in 1:3) {          # the public service drops requests
+        ok <- !inherits(try(download.file(u, img_f, mode = "wb", quiet = TRUE),
+                            silent = TRUE), "try-error")
+        if (ok && inherits(try(rast(img_f), silent = TRUE), "try-error")) {
+          unlink(img_f); ok <- FALSE  # HTML error body, not imagery
+        }
+        if (ok) break
+        Sys.sleep(2)
+      }
+      # A silent `next` here would drop the area from the table and make a
+      # failed fetch look like an area that never had crowns.
+      if (!ok) {
+        rows[[id]] <- data.frame(area = id, crowns = nrow(l),
+          chip_px = "FETCH FAILED", bands = NA_integer_,
+          crown_area_m2 = round(sum(as.numeric(st_area(l)))),
+          pct_crown = NA_real_)
+        next
+      }
+      Sys.sleep(0.5)
+    }
+    img <- rast(img_f)
+    if (!file.exists(msk_f)) {
+      m <- rasterize(vect(l), rast(img[[1]]), field = 1, background = 0)
+      writeRaster(m, msk_f, overwrite = TRUE, datatype = "INT1U")
+    }
+    m <- rast(msk_f)
+    rows[[id]] <- data.frame(
+      area = id, crowns = nrow(l),
+      chip_px = sprintf("%d x %d", ncol(img), nrow(img)),
+      bands = nlyr(img),
+      crown_area_m2 = round(sum(as.numeric(st_area(l)))),
+      pct_crown = round(100 * global(m, "mean", na.rm = TRUE)[1, 1], 2))
+  }
+  write.csv(do.call(rbind, rows), pairs_csv, row.names = FALSE)
+}
+pairs <- read.csv(pairs_csv)
+```
+
+```{r}
+#| label: tbl-label-pairs
+#| tbl-cap: "Tuning pairs assembled from the published crown delineations: four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with."
+fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
+              data.frame(area = sprintf("all %d areas", nrow(pairs)),
+                         crowns = sum(pairs$crowns), chip_px = "",
+                         bands = NA,
+                         crown_area_m2 = sum(pairs$crown_area_m2),
+                         pct_crown = round(mean(pairs$pct_crown), 2))),
+        right = c("crowns", "bands", "crown_area_m2", "pct_crown"))
+```
+
+Of `r nrow(pairs)` delineation areas holding crowns, `r sum(!is.na(pairs$bands))` yielded imagery, carrying `r format(sum(pairs$crowns[!is.na(pairs$bands)]), big.mark = ",")` of the `r format(sum(pairs$crowns), big.mark = ",")` published crowns over `r format(sum(pairs$crown_area_m2[!is.na(pairs$bands)]), big.mark = ",")` m² of delineated dead canopy; dead crowns occupy `r sprintf("%.1f%%", mean(pairs$pct_crown, na.rm = TRUE))` of chip pixels on average. That imbalance is the reason the parent study weighted the dead class twenty times the background class, and the same weighting carries over here. Two properties of the delivered labels are worth recording, since neither is documented with them: one area declares a geographic coordinate reference system while holding projected coordinates, which inflates its computed crown areas by nine orders of magnitude if taken at face value, and the delineation areas vary in size by more than two orders of magnitude, so the smallest carry too few pixels to serve as training chips and are dropped at the tiling stage rather than here.
 
 ## Spectral separability
 
@@ -500,13 +592,42 @@ if (all(file.exists(srcs))) {
   # from an earlier grid or an earlier naming, and would corrupt the timeline.
   unlink(setdiff(list.files(cube_dir, full.names = TRUE), wanted),
          recursive = TRUE)
-  library(sits)
-  cube <- sits_cube(source = "MPC", collection = "SENTINEL-2-L2A",
-                    data_dir = cube_dir,
-                    parse_info = c("X1", "X2", "tile", "band", "date"))
-  stopifnot(length(sits_timeline(cube)) == length(srcs),
-            setequal(sits_bands(cube), band_map))
 }
+```
+
+The cube is then loaded and checked. The checks are reported rather than suppressed: a guard whose failure is invisible is not a guard, and an earlier build of this cube passed a silent assertion while holding files from two different grids under malformed dates.
+
+```{r}
+#| label: tbl-cube
+#| tbl-cap: "Analysis cube as loaded by sits, with the checks each property must pass. The timeline must be gapless and annual, every date must carry all four bands with no stray files, and the cube geometry must equal that of the composite it was split from."
+library(sits)
+cube <- sits_cube(source = "MPC", collection = "SENTINEL-2-L2A",
+                  data_dir = cube_dir,
+                  parse_info = c("X1", "X2", "tile", "band", "date"),
+                  progress = FALSE)
+tl <- sits_timeline(cube)
+yrs <- as.integer(format(tl, "%Y"))
+cube_r <- rast(file.path(cube_dir, "SENTINEL-2_MSI_TBL01_B04_2014-08-01.tif"))
+src_r <- rast(file.path(comp_dir, "ls_2014.tif"))
+checks <- data.frame(
+  property = c("files", "dates", "span", "bands", "tiles", "cells",
+               "extent equals source"),
+  value = c(length(list.files(cube_dir)),
+            length(tl),
+            paste(format(min(tl)), "to", format(max(tl))),
+            paste(sort(sits_bands(cube)), collapse = " "),
+            nrow(cube),
+            paste(dim(cube_r)[1:2], collapse = " x "),
+            isTRUE(all.equal(as.vector(ext(cube_r)), as.vector(ext(src_r))))),
+  passes = c(length(list.files(cube_dir)) == 4 * length(tl),
+             length(tl) == length(srcs),
+             all(diff(yrs) == 1) && !any(yrs < 1900 | yrs > 2100),
+             identical(sort(sits_bands(cube)), c("B04", "B08", "B11", "B12")),
+             nrow(cube) == 1,
+             identical(dim(cube_r)[1:2], dim(src_r)[1:2]),
+             isTRUE(all.equal(as.vector(ext(cube_r)), as.vector(ext(src_r))))))
+stopifnot(all(checks$passes))
+fmt_tbl(checks)
 ```
 
 ## Climate variables
@@ -630,6 +751,113 @@ The null model reproduces the stand-scale change analysis that defines the curre
 ## Model training
 
 TempCNN and the Transformer encoder are trained on identical inputs with two heads: a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset-year output. Both networks are implemented through the sits package [@Simoes_2021] on its torch backend, which also supplies the tuning, validation and uncertainty tools applied below. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The SWIR change baseline is fitted on the same training cells. Ablation variants for the second and third hypotheses retrain the identical architecture with, respectively, point onset labels in place of intervals, and climate channels removed. Exact architecture depths, loss weights and schedules are fixed at pre-registration; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
+
+## Pipeline validation
+
+Before any labelled data reach the models, the pipeline is tested against a signal whose truth is known because this manuscript injects it. Real trajectories are drawn from the analysis cube, so phenology, atmosphere and sensor noise are those of the study area; only the disturbance is synthetic. Mortality is added as linear areal mixing, the observed spectrum becoming the severity-weighted mix of that cell's own live spectrum and a dead-crown endmember, applied from a known onset year and ramped over two years after @Hicke_2024, whose Alaskan *Dendroctonus* fade runs from green through red to gray rather than completing within a season. Two single-band-head models stand in for the pre-registered two-head design until the interval-censored head exists: one classifies the severity stratum, the other the onset year.
+
+Everything the test reports is conditional on the dead-crown endmember, which is an assumption, not a measurement, and is the quantity that decides whether low severities are recoverable at all. At the value used here a severity of 0.05 shifts shortwave-infrared reflectance by under 0.003, which is smaller than the between-year scatter of the composites themselves. The test therefore measures whether the pipeline can recover a signal of a stated size; it is not evidence about spruce beetle detectability, and no result below bears on H1.
+
+```{r}
+#| label: synthetic-validation
+#| output: false
+out_dir <- file.path(dirname(inputs), "03.outputs")
+dir.create(out_dir, showWarnings = FALSE)
+syn_f <- file.path(out_dir, c("synthetic_severity_recall.csv",
+                              "synthetic_onset_summary.csv"))
+if (!all(file.exists(syn_f))) {
+  set.seed(20260812)
+  YEARS <- 2014:2025
+  BANDS <- c(B04 = "red", B08 = "nir", B11 = "swir16", B12 = "swir22")
+  N_SAMP <- 4000; N_CAND <- 40000
+  STRATA <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)   # pre-registered breaks
+  ONSETS <- 2017:2023
+  # Reflectance offset of a pure dead crown from that cell's live spectrum.
+  # An assumption, and the dominant control on every number reported here.
+  ENDMEMBER <- c(B04 = 0.040, B08 = -0.060, B11 = 0.055, B12 = 0.045)
+
+  cf <- function(b, y) file.path(cube_dir,
+         sprintf("SENTINEL-2_MSI_TBL01_%s_%d-08-01.tif", b, y))
+  cand <- sample(ncell(rast(cf("B04", 2014))), N_CAND)
+  arr <- array(NA_real_, c(N_CAND, length(YEARS), length(BANDS)))
+  for (bi in seq_along(BANDS)) for (yi in seq_along(YEARS)) {
+    arr[, yi, bi] <- rast(cf(names(BANDS)[bi], YEARS[yi]))[cand][, 1]
+  }
+  ok <- apply(arr, 1, function(m) all(is.finite(m)) && all(m > 0 & m < 1))
+  ndvi <- (arr[, 1, 2] - arr[, 1, 1]) / (arr[, 1, 2] + arr[, 1, 1])
+  sel <- sample(which(ok & !is.na(ndvi) & ndvi > 0.4), N_SAMP)
+  base <- arr[sel, , , drop = FALSE]
+
+  n_dist <- N_SAMP / 2
+  grp <- rep(seq_len(length(STRATA) - 1), length.out = n_dist)
+  sev <- numeric(N_SAMP); onset <- rep(NA_integer_, N_SAMP)
+  for (i in seq_len(n_dist)) {
+    lo <- max(STRATA[grp[i]], 1e-3); hi <- STRATA[grp[i] + 1]
+    sev[i] <- exp(runif(1, log(lo), log(hi)))
+    onset[i] <- sample(ONSETS, 1)
+  }
+  obs <- base
+  for (i in seq_len(n_dist)) {
+    yi <- match(onset[i], YEARS)
+    for (k in seq(yi, length(YEARS))) {
+      w <- min(1, (k - yi + 1) / 2)          # two-year fade to full contrast
+      for (bi in seq_along(BANDS))
+        obs[i, k, bi] <- base[i, k, bi] + w * sev[i] * ENDMEMBER[[bi]]
+    }
+  }
+  obs <- pmin(pmax(obs, 0), 1)
+  sev_class <- as.character(cut(sev, STRATA, include.lowest = TRUE))
+  sev_class[sev == 0] <- "none"
+  onset_class <- ifelse(is.na(onset), "none", as.character(onset))
+
+  to_sits <- function(x, label) {
+    ts <- lapply(seq_len(dim(x)[1]), function(i) {
+      d <- data.frame(Index = as.Date(sprintf("%d-08-01", YEARS)))
+      for (bi in seq_along(BANDS)) d[[names(BANDS)[bi]]] <- x[i, , bi]
+      tibble::as_tibble(d)
+    })
+    tb <- tibble::tibble(longitude = 0, latitude = 0,
+      start_date = as.Date("2014-08-01"), end_date = as.Date("2025-08-01"),
+      label = label, cube = "SYNTHETIC", time_series = ts)
+    class(tb) <- c("sits", class(tb)); tb
+  }
+  tr_i <- sample(N_SAMP, floor(0.75 * N_SAMP))
+  te_i <- setdiff(seq_len(N_SAMP), tr_i)
+  run <- function(labels) {
+    m <- sits_train(to_sits(obs[tr_i, , , drop = FALSE], labels[tr_i]),
+                    sits_tempcnn(epochs = 60, batch_size = 64,
+                                 validation_split = 0.2, verbose = FALSE))
+    p <- sits_classify(to_sits(obs[te_i, , , drop = FALSE], labels[te_i]),
+                       m, progress = FALSE, multicores = 2)
+    data.frame(truth = labels[te_i],
+               pred = vapply(p$predicted, function(x) x$class[[1]], character(1)))
+  }
+  rs <- run(sev_class); ro <- run(onset_class)
+
+  by_str <- do.call(rbind, lapply(sort(unique(rs$truth)), function(s) {
+    i <- rs$truth == s
+    data.frame(stratum = s, n = sum(i), recall = round(mean(rs$pred[i] == s), 3))
+  }))
+  by_str$overall_accuracy <- round(mean(rs$pred == rs$truth), 3)
+  d <- ro$truth != "none" & ro$pred != "none"
+  err <- abs(as.integer(ro$truth[d]) - as.integer(ro$pred[d]))
+  write.csv(by_str, syn_f[1], row.names = FALSE)
+  write.csv(data.frame(n_disturbed_test = sum(ro$truth != "none"),
+                       classified_disturbed = sum(d),
+                       onset_mae_years = round(mean(err), 3),
+                       within_1yr = round(mean(err <= 1), 3)),
+            syn_f[2], row.names = FALSE)
+}
+syn_recall <- read.csv(syn_f[1]); syn_onset <- read.csv(syn_f[2])
+```
+
+```{r}
+#| label: tbl-synthetic
+#| tbl-cap: "Recovery of an injected signal by severity stratum, on held-out synthetic samples. Severity is injected by linear areal mixing against an assumed dead-crown endmember and is not a measured quantity; recall here states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable."
+fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"))
+```
+
+Recovery is confined to the largest stratum. Recall reaches `r sprintf("%.2f", max(syn_recall$recall))` in the `r syn_recall$stratum[which.max(syn_recall$recall)]` stratum and is at or near zero in every stratum below 0.2, while undisturbed cells are returned correctly `r sprintf("%.0f%%", 100 * syn_recall$recall[syn_recall$stratum == "none"])` of the time; overall accuracy of `r syn_recall$overall_accuracy[1]` is carried almost entirely by that undisturbed majority. Onset dating cannot be read as a skill estimate: only `r syn_onset$classified_disturbed` of `r syn_onset$n_disturbed_test` disturbed test samples were classified as disturbed at all, so the mean absolute error of `r syn_onset$onset_mae_years` years is computed on the small, self-selected subset the severity signal was strongest in. What this establishes is narrow and worth stating plainly: the cube, the sample assembly, the sits training path and the classification path run end to end and recover a large injected decline and its date, and at the assumed endmember contrast an annual four-band composite carries no recoverable signature of severities below roughly 0.2. Whether real mortality presents a larger contrast than the value assumed here is the open question, and it is what the endmember sweep, not yet run, is for.
 
 ## Model evaluation
 
