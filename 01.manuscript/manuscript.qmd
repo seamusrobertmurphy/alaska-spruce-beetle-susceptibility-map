@@ -386,6 +386,125 @@ fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
 
 Of `r nrow(pairs)` delineation areas holding crowns, `r sum(!is.na(pairs$bands))` yielded imagery, carrying `r format(sum(pairs$crowns[!is.na(pairs$bands)]), big.mark = ",")` of the `r format(sum(pairs$crowns), big.mark = ",")` published crowns over `r format(sum(pairs$crown_area_m2[!is.na(pairs$bands)]), big.mark = ",")` m² of delineated dead canopy; dead crowns occupy `r sprintf("%.1f%%", mean(pairs$pct_crown, na.rm = TRUE))` of chip pixels on average. That imbalance is the reason the parent study weighted the dead class twenty times the background class, and the same weighting carries over here. Two properties of the delivered labels are worth recording, since neither is documented with them: one area declares a geographic coordinate reference system while holding projected coordinates, which inflates its computed crown areas by nine orders of magnitude if taken at face value, and the delineation areas vary in size by more than two orders of magnitude, so the smallest carry too few pixels to serve as training chips and are dropped at the tiling stage rather than here.
 
+## Crown network
+
+The released network is adapted to the four bands these mosaics carry and fine-tuned on the tuning pairs above. Its first convolution was widened by @Zwieback_2024 from three channels to seven to match pansharpened WorldView-2, in the band order blue, green, yellow, red, red edge, near infrared-1 and near infrared-2. The mosaics here are blue, green, red and near infrared, an ordering confirmed from the imagery rather than assumed: the fourth band reaches a 95th percentile far above the visible bands with a floor near zero over water and shadow, which is near-infrared behaviour, and among the visible bands the third is least correlated with it, which is red under chlorophyll absorption. The four matching input filters are therefore copied from the released weights and the three with no counterpart discarded, so tuning starts from learned dead-spruce features rather than from noise. Dead crowns occupy a small minority of pixels, so the loss weights that class twenty to one following the parent study. Areas are split by area, never by tile, so no crop of a validation area is ever seen in training.
+
+The chunk below runs as its own process rather than through reticulate. The manuscript has already loaded sits, which loads the R binding to libtorch, and initialising Python's torch in the same process loads a second copy of that library and segfaults the session. Running the interpreter as a subprocess keeps the two apart, and the interpreter is named explicitly because the environment's default resolves to a build that carries no torch.
+
+```{python}
+#| label: crown-finetune
+#| output: false
+#| python.reticulate: false
+#| engine.path: /opt/local/bin/python3
+import os, glob, csv, numpy as np, rasterio, torch, torch.nn as nn
+
+root = os.path.abspath(os.path.join("..", ""))
+pair_dir = os.path.join(root, "02.inputs", "label-pairs")
+ckpt = os.path.join(root, "02.inputs", "crown_net_4band.pt")
+metrics_csv = os.path.join(root, "03.outputs", "crown_net_metrics.csv")
+
+TILE, STRIDE, EPOCHS, DEAD_W = 512, 384, 4, 20.0
+# Our band order (blue, green, red, NIR) mapped onto the released model's
+# seven WorldView-2 channels (blue, green, yellow, red, red edge, NIR1, NIR2).
+KEEP = [0, 1, 3, 5]
+
+# Tiles are indexed, not materialised. Holding all crops in memory costs about
+# 580 MB on top of an R session that already holds the composites, which on this
+# 8 GB machine drives the process into swap and stalls it; a windowed read per
+# crop keeps the footprint to the batch in hand.
+def index_of(area):
+    with rasterio.open(os.path.join(pair_dir, area + "_img.tif")) as s:
+        h, w = s.height, s.width
+    if h < TILE or w < TILE:
+        return []                     # too small to crop; dropped, counted below
+    return [(area, y, x)
+            for y in range(0, h - TILE + 1, STRIDE)
+            for x in range(0, w - TILE + 1, STRIDE)]
+
+def load(item):
+    area, y, x = item
+    win = rasterio.windows.Window(x, y, TILE, TILE)
+    with rasterio.open(os.path.join(pair_dir, area + "_img.tif")) as s:
+        img = s.read(window=win).astype(np.float32) / 255.0
+    with rasterio.open(os.path.join(pair_dir, area + "_mask.tif")) as s:
+        msk = s.read(1, window=win).astype(np.int64)
+    return img, msk
+
+if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
+    torch.manual_seed(20260812)
+    areas = sorted(os.path.basename(f)[:-8]
+                   for f in glob.glob(os.path.join(pair_dir, "*_img.tif")))
+    val_areas = set(areas[::5])                    # every fifth area held out
+    trn_areas = [a for a in areas if a not in val_areas]
+
+    net = torch.load(os.path.join(root, "02.inputs", "zwieback-cnn", "model.p"),
+                     map_location="cpu", weights_only=False)
+    old = net.backbone.conv1
+    new = nn.Conv2d(4, old.out_channels, old.kernel_size, old.stride,
+                    old.padding, bias=False)
+    with torch.no_grad():
+        new.weight.copy_(old.weight[:, KEEP, :, :])
+    net.backbone.conv1 = new
+    net.aux_classifier = None                      # COCO head, unused here
+    dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    net = net.to(dev).train()
+
+    trn = [t for a in trn_areas for t in index_of(a)]
+    val = [t for a in sorted(val_areas) for t in index_of(a)]
+    loss_fn = nn.CrossEntropyLoss(
+        weight=torch.tensor([1.0, DEAD_W], device=dev))
+    opt = torch.optim.Adam(net.parameters(), lr=1e-4)
+
+    rows = []
+    for ep in range(EPOCHS):
+        net.train()
+        order = torch.randperm(len(trn)).tolist()
+        tot = 0.0
+        for i in range(0, len(order), 2):
+            b = [load(trn[j]) for j in order[i:i+2]]
+            x = torch.tensor(np.stack([t[0] for t in b])).to(dev)
+            y = torch.tensor(np.stack([t[1] for t in b])).to(dev)
+            opt.zero_grad()
+            l = loss_fn(net(x)["out"], y)
+            l.backward(); opt.step()
+            tot += float(l.detach()) * len(b)
+        net.eval()
+        tp = fp = fn = 0
+        with torch.no_grad():
+            for item in val:
+                img, msk = load(item)
+                x = torch.tensor(img[None]).to(dev)
+                p = net(x)["out"].argmax(1)[0].cpu().numpy()
+                tp += int(((p == 1) & (msk == 1)).sum())
+                fp += int(((p == 1) & (msk == 0)).sum())
+                fn += int(((p == 0) & (msk == 1)).sum())
+        prec = tp / (tp + fp) if tp + fp else 0.0
+        rec = tp / (tp + fn) if tp + fn else 0.0
+        rows.append(dict(epoch=ep + 1, train_loss=round(tot / len(trn), 4),
+                         val_precision=round(prec, 3), val_recall=round(rec, 3),
+                         val_iou=round(tp / (tp + fp + fn), 3) if tp + fp + fn else 0.0,
+                         n_train_tiles=len(trn), n_val_tiles=len(val),
+                         n_train_areas=len(trn_areas), n_val_areas=len(val_areas)))
+    torch.save(net.state_dict(), ckpt)
+    with open(metrics_csv, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader(); w.writerows(rows)
+```
+
+```{r}
+#| label: tbl-crownnet
+#| tbl-cap: "Fine-tuning of the four-band crown network, evaluated per epoch on held-out delineation areas. Precision, recall and intersection over union are pixel-wise against the published delineations, which are themselves imperfect targets over 2020 imagery: a crown that died between the mosaic and the 2021 delineation is marked dead over imagery in which it was still living, so measured precision is a lower bound."
+crown_m <- read.csv(file.path(dirname(inputs), "03.outputs",
+                              "crown_net_metrics.csv"))
+fmt_tbl(crown_m[, c("epoch", "train_loss", "val_precision", "val_recall",
+                    "val_iou")],
+        right = c("epoch", "train_loss", "val_precision", "val_recall",
+                  "val_iou"))
+```
+
+Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]` areas against `r crown_m$n_val_tiles[1]` crops from `r crown_m$n_val_areas[1]` held-out areas. The network reaches a validation recall of `r sprintf("%.2f", crown_m$val_recall[nrow(crown_m)])` at a precision of `r sprintf("%.2f", crown_m$val_precision[nrow(crown_m)])`. For a pre-labeller feeding human triage this is the useful operating direction: annotators reject a false candidate in one action, whereas a crown the network never proposes is never reviewed, so recall is bought at the cost of precision deliberately, and the class weighting is what buys it.
+
 ## Spectral separability
 
 Before any label enters training, the spectral basis of the visual classes is tested on the mosaic imagery itself. From the accepted delineations, samples of dead spruce crowns, live conifer crowns and non-forest background are drawn per epoch, and class separability in the available mosaic bands is quantified by pairwise Jeffries-Matusita distance and transformed divergence, with values above 1.9 on the Jeffries-Matusita scale of 0 to 2 taken as strong separability. A principal component analysis of the same samples summarises the band space: component loadings identify which bands carry the dead-crown contrast, and class scores on the first two components are inspected for overlap. Classes that fail separability in an epoch are flagged, and their labels weighted or excluded at the pre-registered decision rule. The assessment runs when label digitisation begins; the code below is inert until then.
