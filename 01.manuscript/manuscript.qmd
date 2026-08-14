@@ -404,7 +404,7 @@ pair_dir = os.path.join(root, "02.inputs", "label-pairs")
 ckpt = os.path.join(root, "02.inputs", "crown_net_4band.pt")
 metrics_csv = os.path.join(root, "03.outputs", "crown_net_metrics.csv")
 
-TILE, STRIDE, EPOCHS, DEAD_W = 512, 384, 4, 20.0
+TILE, STRIDE, EPOCHS, DEAD_W = 512, 384, 8, 20.0
 # Our band order (blue, green, red, NIR) mapped onto the released model's
 # seven WorldView-2 channels (blue, green, yellow, red, red edge, NIR1, NIR2).
 KEEP = [0, 1, 3, 5]
@@ -416,20 +416,42 @@ KEEP = [0, 1, 3, 5]
 def index_of(area):
     with rasterio.open(os.path.join(pair_dir, area + "_img.tif")) as s:
         h, w = s.height, s.width
+    # Areas smaller than a tile are padded rather than discarded. Dropping them
+    # cost 8 of 37 areas and about a fifth of the delineated crowns, which at
+    # this sample size matters more than the edge artefact padding introduces.
     if h < TILE or w < TILE:
-        return []                     # too small to crop; dropped, counted below
+        return [(area, 0, 0)]
     return [(area, y, x)
             for y in range(0, h - TILE + 1, STRIDE)
             for x in range(0, w - TILE + 1, STRIDE)]
 
-def load(item):
+def load(item, augment=False):
     area, y, x = item
     win = rasterio.windows.Window(x, y, TILE, TILE)
     with rasterio.open(os.path.join(pair_dir, area + "_img.tif")) as s:
         img = s.read(window=win).astype(np.float32) / 255.0
     with rasterio.open(os.path.join(pair_dir, area + "_mask.tif")) as s:
         msk = s.read(1, window=win).astype(np.int64)
-    return img, msk
+    if img.shape[1] < TILE or img.shape[2] < TILE:
+        py, px = TILE - img.shape[1], TILE - img.shape[2]
+        # symmetric, not reflect: reflect cannot pad beyond the array's own size
+        # and several of these areas are far smaller than a tile.
+        img = np.pad(img, ((0, 0), (0, py), (0, px)), mode="symmetric")
+        msk = np.pad(msk, ((0, py), (0, px)), mode="symmetric")
+    if augment:
+        # Flips and photometric jitter, following the parent study. At 72 crops
+        # this is the largest lever available on a network that overfits by the
+        # third epoch.
+        if np.random.rand() < 0.5:
+            img, msk = img[:, :, ::-1], msk[:, ::-1]
+        if np.random.rand() < 0.5:
+            img, msk = img[:, ::-1, :], msk[::-1, :]
+        if np.random.rand() < 0.5:
+            k = int(np.random.randint(1, 4))
+            img, msk = np.rot90(img, k, (1, 2)), np.rot90(msk, k, (0, 1))
+        img = np.clip(img * np.random.uniform(0.9, 1.1)
+                      + np.random.uniform(-0.05, 0.05), 0, 1)
+    return np.ascontiguousarray(img), np.ascontiguousarray(msk)
 
 if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
     torch.manual_seed(20260812)
@@ -462,7 +484,16 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
         order = torch.randperm(len(trn)).tolist()
         tot = 0.0
         for i in range(0, len(order), 2):
-            b = [load(trn[j]) for j in order[i:i+2]]
+            b = [load(trn[j], augment=True) for j in order[i:i+2]]
+            # An odd tile count leaves one batch of one per epoch, and the ASPP
+            # pooling branch reduces it to 1x1, which BatchNorm cannot normalise
+            # in training mode. Drop that batch, as a DataLoader's drop_last
+            # would. The order is reshuffled every epoch, so no tile is
+            # systematically excluded. Without this the chunk runs or crashes
+            # according to the parity of the label-pair tile count, which is how
+            # it passed at 72 tiles and failed at 79.
+            if len(b) < 2:
+                continue
             x = torch.tensor(np.stack([t[0] for t in b])).to(dev)
             y = torch.tensor(np.stack([t[1] for t in b])).to(dev)
             opt.zero_grad()
@@ -501,6 +532,44 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
         with open(metrics_csv, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))
             w.writeheader(); w.writerows(rows)
+
+    # Operating point. Pixel precision is not what an annotator experiences:
+    # they accept or reject candidate polygons, so the threshold is chosen on
+    # polygon counts after the minimum-area filter, on held-out areas only.
+    import rasterio.features
+    from shapely.geometry import shape
+    net.load_state_dict(torch.load(ckpt, map_location=dev))
+    net.eval()
+    GSD, MIN_CROWN_M2 = 0.5, 1.0
+    sweep = []
+    with torch.no_grad():
+        probs = []
+        for item in val:
+            img, msk = load(item)
+            p = torch.softmax(net(torch.tensor(img[None]).to(dev))["out"], 1)
+            probs.append((p[0, 1].cpu().numpy(), msk))
+    for thr in [0.3, 0.5, 0.7, 0.9]:
+        n_cand = n_hit = n_true = 0
+        for pr, msk in probs:
+            binmask = (pr >= thr).astype(np.uint8)
+            polys = [(shape(g), v) for g, v in
+                     rasterio.features.shapes(binmask, mask=binmask == 1)]
+            keep = [g for g, _ in polys if g.area * GSD * GSD >= MIN_CROWN_M2]
+            truth = [shape(g) for g, v in
+                     rasterio.features.shapes(msk.astype(np.uint8),
+                                              mask=msk.astype(np.uint8) == 1)]
+            n_cand += len(keep); n_true += len(truth)
+            n_hit += sum(1 for g in keep if any(g.intersects(t) for t in truth))
+        sweep.append(dict(threshold=thr, candidates=n_cand,
+                          candidates_hitting_a_crown=n_hit,
+                          reference_crowns=n_true,
+                          polygon_precision=round(n_hit / n_cand, 3) if n_cand else 0.0,
+                          candidates_per_km2=round(
+                              n_cand / (len(val) * (TILE * GSD) ** 2 / 1e6), 1)))
+    with open(os.path.join(root, "03.outputs", "crown_operating_point.csv"),
+              "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(sweep[0]))
+        w.writeheader(); w.writerows(sweep)
 ```
 
 ```{r}
@@ -522,6 +591,124 @@ best <- crown_m[which.max(crown_m$val_iou), ]
 ```
 
 Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]` areas against `r crown_m$n_val_tiles[1]` crops from `r crown_m$n_val_areas[1]` held-out areas. The retained network is the one that validates best rather than the one trained longest: epoch `r best$epoch`, at a recall of `r sprintf("%.2f", best$val_recall)` and a precision of `r sprintf("%.2f", best$val_precision)`. Training loss keeps falling after that point while validation intersection over union does not, so the schedule is already past its useful length and the remaining epochs buy recall at a precision the triage queue would pay for. For a pre-labeller feeding human triage the operating direction is nonetheless deliberate: an annotator rejects a false candidate in one action, whereas a crown the network never proposes is never reviewed, and the twenty-to-one class weighting is what buys that recall. These are pixel-wise figures, so the precision an annotator experiences depends on candidate polygons after cleaning rather than on this number directly.
+
+```{r}
+#| label: tbl-operating-point
+#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown, which is what an annotator experiences, and candidates per square kilometre is what the queue length follows from. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
+op <- read.csv(file.path(dirname(inputs), "03.outputs",
+                         "crown_operating_point.csv"))
+fmt_tbl(op, right = names(op))
+```
+
+The queue is generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly: the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review.
+
+## Triage queue
+
+Candidates are written per block and per epoch as GeoPackage layers that open directly in QGIS, each polygon carrying its mean dead-spruce probability and its area, so triage can be ordered by confidence rather than by position. The 2023 mosaic is resampled to the 2020 ground sample distance before inference, because the network was tuned at 0.5 m and its filters encode that scale. Inference is resumable: a block already written is skipped, so an interrupted run continues rather than restarting.
+
+```{python}
+#| label: triage-queue
+#| output: false
+#| python.reticulate: false
+#| engine.path: /opt/local/bin/python3
+import os, csv, glob, numpy as np, rasterio, rasterio.features, torch
+import torch.nn as nn, geopandas as gpd
+from shapely.geometry import shape
+
+root = os.path.abspath(os.path.join("..", ""))
+ckpt = os.path.join(root, "02.inputs", "crown_net_4band.pt")
+out_dir = os.path.join(root, "02.inputs", "prelabels")
+counts_csv = os.path.join(root, "03.outputs", "triage_queue.csv")
+TILE, GSD, THR, MIN_CROWN_M2, KEEP = 512, 0.5, 0.5, 1.0, [0, 1, 3, 5]
+
+if os.path.exists(ckpt) and not os.path.exists(counts_csv):
+    net = torch.load(os.path.join(root, "02.inputs", "zwieback-cnn", "model.p"),
+                     map_location="cpu", weights_only=False)
+    old = net.backbone.conv1
+    new = nn.Conv2d(4, old.out_channels, old.kernel_size, old.stride,
+                    old.padding, bias=False)
+    with torch.no_grad():
+        new.weight.copy_(old.weight[:, KEEP, :, :])
+    net.backbone.conv1 = new
+    net.aux_classifier = None
+    dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    net.load_state_dict(torch.load(ckpt, map_location=dev))
+    net = net.to(dev).eval()
+
+    rows = []
+    for epoch in ("2020", "2023"):
+        ed = os.path.join(out_dir, epoch)
+        os.makedirs(ed, exist_ok=True)
+        for f in sorted(glob.glob(os.path.join(root, "02.inputs", "chips",
+                                               epoch, "block_*.tif"))):
+            bid = os.path.basename(f)[6:9]
+            gpkg = os.path.join(ed, "block_%s.gpkg" % bid)
+            if os.path.exists(gpkg):
+                continue
+            with rasterio.open(f) as s:
+                img = s.read().astype(np.float32) / 255.0
+                tr, crs = s.transform, s.crs
+                scale = abs(tr.a) / GSD
+            if abs(scale - 1) > 0.01:      # 2023 is 0.3 m; match the tuning GSD
+                import rasterio.warp
+                nh, nw = int(img.shape[1] / scale), int(img.shape[2] / scale)
+                idx = (np.linspace(0, img.shape[1] - 1, nh).astype(int),
+                       np.linspace(0, img.shape[2] - 1, nw).astype(int))
+                img = img[:, idx[0][:, None], idx[1][None, :]]
+                tr = rasterio.Affine(GSD, tr.b, tr.c, tr.d, -GSD, tr.f)
+            _, h, w = img.shape
+            prob = np.zeros((h, w), np.float32)
+            with torch.no_grad():
+                for y in range(0, max(h - TILE, 0) + 1, TILE):
+                    for x in range(0, max(w - TILE, 0) + 1, TILE):
+                        t = img[:, y:y+TILE, x:x+TILE]
+                        py, px = TILE - t.shape[1], TILE - t.shape[2]
+                        if py or px:
+                            t = np.pad(t, ((0, 0), (0, py), (0, px)), "symmetric")
+                        p = torch.softmax(
+                            net(torch.tensor(t[None]).to(dev))["out"], 1)
+                        pm = p[0, 1].cpu().numpy()
+                        prob[y:y+TILE, x:x+TILE] = pm[:TILE-py or TILE,
+                                                      :TILE-px or TILE]
+            binmask = (prob >= THR).astype(np.uint8)
+            geoms, probs, areas = [], [], []
+            for g, v in rasterio.features.shapes(binmask, mask=binmask == 1,
+                                                 transform=tr):
+                poly = shape(g)
+                if poly.area < MIN_CROWN_M2:
+                    continue
+                geoms.append(poly); areas.append(poly.area)
+                mask = rasterio.features.geometry_mask(
+                    [g], (h, w), tr, invert=True)
+                probs.append(float(prob[mask].mean()))
+            gdf = gpd.GeoDataFrame(
+                dict(p_dead=probs, area_m2=areas, source_epoch=epoch),
+                geometry=geoms, crs=crs)
+            gdf.to_file(gpkg, driver="GPKG")
+            rows.append(dict(epoch=epoch, block=bid, candidates=len(geoms),
+                             median_p=round(float(np.median(probs)), 3) if probs else 0.0,
+                             median_area_m2=round(float(np.median(areas)), 1) if areas else 0.0))
+    if rows:
+        with open(counts_csv, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+            w.writeheader(); w.writerows(rows)
+```
+
+```{r}
+#| label: tbl-triage
+#| tbl-cap: "Triage queue as generated, summarised by mosaic epoch: blocks written, candidate crowns to review, and the median candidate probability and area. Each block is a GeoPackage layer opening directly in QGIS."
+tq <- read.csv(file.path(dirname(inputs), "03.outputs", "triage_queue.csv"))
+fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
+  data.frame(epoch = d$epoch[1], blocks = nrow(d),
+             candidates = sum(d$candidates),
+             per_block_median = median(d$candidates),
+             median_p = round(median(d$median_p), 3),
+             median_area_m2 = round(median(d$median_area_m2), 1)))),
+  right = c("blocks", "candidates", "per_block_median", "median_p",
+            "median_area_m2"))
+```
+
+The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on.
 
 ## Spectral separability
 
@@ -1120,6 +1307,177 @@ Evaluation uses block spatial cross-validation, with the study area tessellated 
 # Activated after pre-registration. Severity strata for skill-by-severity reporting.
 strata <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)
 ```
+
+### Evaluation harness
+
+Every metric and test named above is implemented below, before any label exists, so that when labels arrive the confirmatory analysis runs rather than being written. Nothing here reads outcome data; the functions take vectors and return numbers, and the chunk that follows exercises each one on inputs whose answers are known by construction.
+
+```{r}
+#| label: eval-harness
+#| output: false
+# Recall at a fixed precision. The operating point is chosen on the calibration
+# data and applied unchanged elsewhere, per the pre-registration: choosing it on
+# the test fold would report the best threshold in hindsight.
+threshold_at_precision <- function(score, positive, target = 0.90) {
+  ord <- order(score, decreasing = TRUE)
+  tp <- cumsum(positive[ord])
+  prec <- tp / seq_along(tp)
+  ok <- which(prec >= target & tp > 0)
+  if (!length(ok)) return(Inf)          # target precision unreachable
+  score[ord][max(ok)]
+}
+recall_at_threshold <- function(score, positive, thr) {
+  if (!sum(positive)) return(NA_real_)
+  if (!is.finite(thr)) return(0)
+  sum(score >= thr & positive) / sum(positive)
+}
+
+# Confusion matrix with user's accuracy (correct / predicted as that class) and
+# producer's accuracy (correct / reference of that class).
+confusion <- function(truth, pred, lev = sort(unique(c(truth, pred)))) {
+  m <- table(pred = factor(pred, lev), truth = factor(truth, lev))
+  d <- diag(m)
+  data.frame(class = lev,
+             n_reference = as.integer(colSums(m)),
+             n_predicted = as.integer(rowSums(m)),
+             users = ifelse(rowSums(m) > 0, d / rowSums(m), NA_real_),
+             producers = ifelse(colSums(m) > 0, d / colSums(m), NA_real_),
+             row.names = NULL)
+}
+
+rmse <- function(obs, pred) sqrt(mean((pred - obs)^2))
+mae <- function(obs, pred) mean(abs(pred - obs))
+rrmse <- function(obs, pred) rmse(obs, pred) / mean(obs)
+
+# Theil's U inequality coefficient with the bias, variance and covariance
+# proportions of mean squared error, which sum to one by construction. The
+# decomposition separates systematic offset from unexplained scatter.
+theil <- function(obs, pred) {
+  mse <- mean((pred - obs)^2)
+  if (mse == 0) return(c(U = 0, bias = 0, variance = 0, covariance = 0))
+  n <- length(obs)
+  sd_p <- sqrt(mean((pred - mean(pred))^2))     # population sd, so the
+  sd_o <- sqrt(mean((obs - mean(obs))^2))       # proportions sum to one
+  r <- if (sd_p == 0 || sd_o == 0) 0 else cor(obs, pred)
+  c(U = sqrt(mse) / (sqrt(mean(obs^2)) + sqrt(mean(pred^2))),
+    bias = (mean(pred) - mean(obs))^2 / mse,
+    variance = (sd_p - sd_o)^2 / mse,
+    covariance = 2 * (1 - r) * sd_p * sd_o / mse)
+}
+
+# Paired fold-wise test: one-sided Wilcoxon signed rank on the per-fold
+# difference, with a block bootstrap over folds for the interval. Resampling
+# folds rather than cells is what keeps spatial dependence inside a resampling
+# unit.
+paired_fold_test <- function(diff, alternative = "greater", B = 10000,
+                             seed = 20260812) {
+  p <- suppressWarnings(wilcox.test(diff, alternative = alternative)$p.value)
+  set.seed(seed)
+  bs <- replicate(B, mean(sample(diff, length(diff), replace = TRUE)))
+  c(mean_diff = mean(diff), p_value = p,
+    ci_low = unname(quantile(bs, 0.025)),
+    ci_high = unname(quantile(bs, 0.975)))
+}
+
+# McNemar on paired cell-level detections: only the discordant pairs carry
+# information about which method is better.
+mcnemar_paired <- function(correct_a, correct_b) {
+  b <- sum(correct_a & !correct_b); c_ <- sum(!correct_a & correct_b)
+  if (b + c_ == 0) return(c(b = 0, c = 0, p_value = 1))
+  c(b = b, c = c_,
+    p_value = suppressWarnings(
+      mcnemar.test(matrix(c(sum(correct_a & correct_b), b, c_,
+                            sum(!correct_a & !correct_b)), 2))$p.value))
+}
+
+# The detectability floor: the lowest severity stratum whose skill clears the
+# pre-registered threshold. Strata must be supplied in ascending order.
+detectability_floor <- function(stratum, skill, threshold = 0.50) {
+  ok <- which(!is.na(skill) & skill >= threshold)
+  if (!length(ok)) return(NA_character_)
+  as.character(stratum[min(ok)])
+}
+
+# The three confirmatory tests form one family; Holm controls it.
+holm_family <- function(p, labels) {
+  data.frame(test = labels, p_raw = p,
+             p_holm = p.adjust(p, method = "holm"), row.names = NULL)
+}
+```
+
+The harness is exercised on constructed inputs whose correct answers follow from their construction rather than from running the code. A check that cannot fail proves nothing, so each case below has a determinate expected value and the chunk stops if any disagrees.
+
+```{r}
+#| label: tbl-eval-checks
+#| tbl-cap: "Verification of the evaluation harness against inputs with known answers. Each row states what the case is built to produce and what the implementation returned; the chunk halts if any check fails, so a rendered document is itself evidence that all of them passed."
+chk <- function(what, expected, got, tol = 1e-8)
+  data.frame(check = what, expected = round(expected, 4),
+             got = round(got, 4), passes = abs(expected - got) < tol)
+
+# Perfectly separable scores: the 0.90-precision threshold recovers every
+# positive, so recall is exactly 1.
+s1 <- 10:1; p1 <- c(rep(TRUE, 5), rep(FALSE, 5))
+r1 <- recall_at_threshold(s1, p1, threshold_at_precision(s1, p1, 0.90))
+
+# Inverted scores: precision peaks at 0.5, never reaches 0.90, so the operating
+# point does not exist and recall must be 0 rather than an accidental number.
+p2 <- c(rep(FALSE, 5), rep(TRUE, 5))
+r2 <- recall_at_threshold(s1, p2, threshold_at_precision(s1, p2, 0.90))
+
+# A constant offset of 1: RMSE and MAE are 1, and relative RMSE is 1 / mean(obs).
+o3 <- c(1, 2, 3); p3 <- o3 + 1
+
+# Theil proportions sum to one for any non-degenerate pair, and U is 0 when
+# prediction is exact.
+t4 <- theil(c(0.1, 0.4, 0.2, 0.8), c(0.2, 0.3, 0.25, 0.9))
+t5 <- theil(o3, o3)
+
+# Pure bias: prediction is observation plus a constant, so all of the mean
+# squared error is the bias term and none of it is variance or covariance.
+t6 <- theil(o3, p3)
+
+# Eight positive fold differences: the one-sided signed-rank p is 2^-8.
+d7 <- seq(0.1, 0.8, by = 0.1)
+w7 <- paired_fold_test(d7)
+
+# Holm is never anti-conservative.
+h8 <- holm_family(c(0.01, 0.02, 0.03), c("H1", "H2", "H3"))
+
+# Skill clears 0.50 first in the third stratum.
+f9 <- detectability_floor(c("0.01", "0.03", "0.05", "0.10"),
+                          c(0.10, 0.20, 0.55, 0.70))
+
+# A confusion matrix with one known error: class a is predicted for one true b,
+# so user's accuracy for a is 2/3 and producer's accuracy for b is 1/2.
+c10 <- confusion(c("a", "a", "b", "b"), c("a", "a", "a", "b"))
+
+checks <- rbind(
+  chk("recall at 0.90 precision, separable", 1, r1),
+  chk("recall when 0.90 precision unreachable", 0, r2),
+  chk("RMSE of a unit offset", 1, rmse(o3, p3)),
+  chk("MAE of a unit offset", 1, mae(o3, p3)),
+  chk("relative RMSE, mean 2", 0.5, rrmse(o3, p3)),
+  chk("Theil proportions sum to one", 1, sum(t4[c("bias", "variance",
+                                                  "covariance")])),
+  chk("Theil U of an exact prediction", 0, t5[["U"]]),
+  chk("pure offset is all bias", 1, t6[["bias"]]),
+  chk("pure offset has no variance term", 0, t6[["variance"]]),
+  chk("one-sided Wilcoxon on 8 positives", 2^-8, w7[["p_value"]], 1e-6),
+  chk("bootstrap interval brackets the mean", 1,
+      as.numeric(w7[["ci_low"]] <= mean(d7) && w7[["ci_high"]] >= mean(d7))),
+  chk("Holm is not anti-conservative", 1,
+      as.numeric(all(h8$p_holm >= h8$p_raw))),
+  chk("detectability floor is the lowest clearing stratum", 0.05,
+      as.numeric(f9)),
+  chk("user's accuracy for class a", 2 / 3, c10$users[c10$class == "a"]),
+  chk("producer's accuracy for class b", 0.5,
+      c10$producers[c10$class == "b"]))
+
+stopifnot(all(checks$passes))
+fmt_tbl(checks, right = c("expected", "got"))
+```
+
+All `r nrow(checks)` checks pass, which is the only reason the document renders past this point. Two of them are worth naming because they encode decisions rather than arithmetic. The second case builds scores in which no threshold reaches the required precision, and requires the harness to return zero recall rather than silently reporting the recall of whatever threshold came closest, which is how a fixed-precision metric is most easily misreported. The bootstrap case resamples folds rather than cells, so spatial dependence stays inside the resampling unit; resampling cells would treat neighbouring stands as independent and return an interval far too narrow.
 
 ```{r}
 #| label: planned-baseline
