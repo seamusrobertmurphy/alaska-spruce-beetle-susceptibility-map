@@ -566,8 +566,13 @@ if os.path.exists(ckpt) and not os.path.exists(op_csv):
             img, msk = load(item)
             p = torch.softmax(net(torch.tensor(img[None]).to(dev))["out"], 1)
             probs.append((p[0, 1].cpu().numpy(), msk))
-    for thr in [0.3, 0.5, 0.7, 0.9]:
+    # The sweep runs down to 0.1 because crown recall was still rising at the
+    # lowest threshold first measured, so 0.3 was the edge of the sweep rather
+    # than a best point. One set of probability maps serves every threshold, so
+    # the extra rows cost polygonisation alone.
+    for thr in [0.1, 0.2, 0.3, 0.5, 0.7, 0.9]:
         n_cand = n_hit = n_true = n_reached = 0
+        cand_area = scored_area = 0.0
         for pr, msk in probs:
             binmask = (pr >= thr).astype(np.uint8)
             polys = [(shape(g), v) for g, v in
@@ -580,12 +585,23 @@ if os.path.exists(ckpt) and not os.path.exists(op_csv):
             n_hit += sum(1 for g in keep if any(g.intersects(t) for t in truth))
             n_reached += sum(1 for t in truth if any(g.intersects(t)
                                                      for g in keep))
+            # Candidate area, not candidate count, is what an annotator works
+            # through once the mask merges. At a low threshold the polygon
+            # count falls while coverage rises, because separate crowns join
+            # into one blob, and a blob covering forty crowns is not one
+            # decision.
+            cand_area += sum(g.area for g in keep) * GSD * GSD
+            scored_area += msk.size * GSD * GSD
         sweep.append(dict(threshold=thr, candidates=n_cand,
                           candidates_hitting_a_crown=n_hit,
                           reference_crowns=n_true,
                           crowns_reached=n_reached,
                           polygon_precision=round(n_hit / n_cand, 3) if n_cand else 0.0,
                           crown_recall=round(n_reached / n_true, 3) if n_true else 0.0,
+                          crowns_per_candidate=round(n_reached / n_cand, 1)
+                          if n_cand else 0.0,
+                          area_flagged=round(cand_area / scored_area, 3)
+                          if scored_area else 0.0,
                           candidates_per_km2=round(
                               n_cand / (len(val) * (TILE * GSD) ** 2 / 1e6), 1)))
     with open(op_csv, "w", newline="") as f:
@@ -615,13 +631,13 @@ Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]`
 
 ```{r}
 #| label: tbl-operating-point
-#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown, which is what an annotator experiences; crown recall is the share of delineated crowns reached by at least one candidate; and candidates per square kilometre is what the queue length follows from. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
+#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown; crown recall is the share of delineated crowns reached by at least one candidate; crowns per candidate and the share of scored area flagged say whether a candidate is still one crown, which is what an annotator can accept or reject in one action. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
 op <- read.csv(file.path(dirname(inputs), "03.outputs",
                          "crown_operating_point.csv"))
 fmt_tbl(op, right = names(op))
 ```
 
-The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns, and the two columns together make 0.3 the operating point for a pre-labeller, at `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.3] - op$candidates_per_km2[op$threshold == 0.5])` more candidates per square kilometre than the 0.5 the queue was generated at.
+The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
 
 ## Triage queue
 

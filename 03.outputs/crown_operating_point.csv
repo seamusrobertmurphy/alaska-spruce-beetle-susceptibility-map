@@ -1,5 +1,7 @@
-threshold,candidates,candidates_hitting_a_crown,reference_crowns,crowns_reached,polygon_precision,crown_recall,candidates_per_km2
-0.3,344,86,1487,893,0.25,0.601,250.0
-0.5,287,63,1487,538,0.22,0.362,208.5
-0.7,271,124,1487,156,0.458,0.105,196.9
-0.9,0,0,1487,0,0.0,0.0,0.0
+threshold,candidates,candidates_hitting_a_crown,reference_crowns,crowns_reached,polygon_precision,crown_recall,crowns_per_candidate,area_flagged,candidates_per_km2
+0.1,121,33,1487,1384,0.273,0.931,11.4,0.76,87.9
+0.2,229,53,1487,1174,0.231,0.79,5.1,0.502,166.4
+0.3,344,86,1487,893,0.25,0.601,2.6,0.239,250.0
+0.5,287,63,1487,538,0.22,0.362,1.9,0.07,208.5
+0.7,271,124,1487,156,0.458,0.105,0.6,0.005,196.9
+0.9,0,0,1487,0,0.0,0.0,0.0,0.0,0.0
