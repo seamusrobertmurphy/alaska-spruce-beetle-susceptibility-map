@@ -50,6 +50,8 @@ PREREG = os.path.join(ROOT, "docs", "science-superpowers", "preregistrations",
                       "2026-08-11-detectability-floor.md")
 AMENDMENT = os.path.join(ROOT, "docs", "science-superpowers", "preregistrations",
                          "2026-08-14-amendment-2-h1-comparator.md")
+SPEC = os.path.join(ROOT, "05.tasks", "2026-09-08-manuscript-design-spec.md")
+STANDARDS = os.path.join(ROOT, "04.references", "standards")
 SAMPLE_CSV = os.path.join(ROOT, "02.inputs", "derived", "sample_blocks.csv")
 SAMPLE_GPKG = os.path.join(ROOT, "02.inputs", "derived", "sample_blocks.gpkg")
 
@@ -380,10 +382,12 @@ def check_checksums(base):
 
 
 def check_chunk_labels_unique(base):
-    """Chunk labels are unique and every table label is cross-referenced once.
+    """Chunk labels are unique and only a chunk emitting a table is named one.
 
     Quarto resolves a duplicated label silently to the first match, so a
     duplicate makes the document cite a table the reader is not looking at.
+    Whether each label is cross-referenced is a separate check, because that
+    count is a backlog being worked down and this one is not.
     """
     art = os.path.relpath(QMD, ROOT)
     if not os.path.exists(QMD):
@@ -392,23 +396,301 @@ def check_chunk_labels_unique(base):
     labels = [lab for lab, _ in chunks(text)]
     dupes = sorted({l for l in labels if labels.count(l) > 1})
     tbls = [l for l in labels if l.startswith("tbl-")]
-    uncited = [t for t in tbls if f"@{t}" not in text]
-    # The house rule is one cross-reference per table, in declaration order.
-    # A table cited twice is reported but does not fail the step, because it
-    # is a drafting matter rather than a broken document.
-    multi = [t for t in tbls if text.count(f"@{t}") > 1]
-    problems = []
     if dupes:
-        problems.append(f"{len(dupes)} duplicate labels")
-    if uncited:
-        problems.append(f"{len(uncited)} of {len(tbls)} tables uncited: " +
-                        ", ".join(uncited[:4]))
-    if multi:
-        problems.append(f"{len(multi)} cited more than once")
-    hard = bool(dupes or uncited)
+        return "fail", f"{len(dupes)} duplicate labels: " + ", ".join(dupes[:4]), \
+            "no duplicates", art
+    return "pass", f"{len(labels)} labels, {len(tbls)} tables", \
+        "no duplicates", art
+
+
+
+# The manuscript design spec of 2026-09-08 sets the main text at five tables
+# and eight figures, measured from the three exemplars. The nine development
+# tables below record that the pipeline works, which is a reproducibility
+# claim rather than a result, and belong in the supplement. They are named
+# here so a check can tell a table that moved from a table that was deleted.
+MAIN_TABLES, MAIN_FIGURES = 5, 8
+DISPLACED_TABLES = [
+    "tbl-label-pairs", "tbl-crownnet", "tbl-operating-point", "tbl-triage",
+    "tbl-composites", "tbl-cube", "tbl-endmember", "tbl-synthetic",
+    "tbl-eval-checks",
+]
+DISPLAY_LABEL = re.compile(r"^#\|\s*label:\s*((?:tbl|fig)-[\w-]+)", re.M)
+CHUNK_BLOCK = re.compile(r"^```\{.*?^```", re.S | re.M)
+YAML_BLOCK = re.compile(r"\A---\n.*?\n---\n", re.S)
+SUPPLEMENT_HEAD = re.compile(r"^#+\s+Supplement\b", re.M)
+
+
+def prose_of(text):
+    """The document with its YAML header, chunks and inline code removed."""
+    text = YAML_BLOCK.sub("", text)
+    text = CHUNK_BLOCK.sub("", text)
+    return re.sub(r"`r [^`]*`", "", text)
+
+
+def display_items(text):
+    """Return (main, supplement) lists of display labels, split at Supplement.
+
+    A label is main text or supplement according to where its chunk sits, so
+    moving a chunk past the heading is what moves the table, and nothing has
+    to be listed twice.
+    """
+    m = SUPPLEMENT_HEAD.search(text)
+    cut = m.start() if m else len(text)
+    main = [x.group(1) for x in DISPLAY_LABEL.finditer(text) if x.start() < cut]
+    supp = [x.group(1) for x in DISPLAY_LABEL.finditer(text) if x.start() >= cut]
+    return main, supp
+
+
+def display_breaches(text):
+    """Display labels whose prose cross-references do not number exactly one."""
+    prose = prose_of(text)
+    labels = [x.group(1) for x in DISPLAY_LABEL.finditer(text)]
+    return {lab: len(re.findall(r"@" + re.escape(lab) + r"\b", prose))
+            for lab in labels
+            if len(re.findall(r"@" + re.escape(lab) + r"\b", prose)) != 1}
+
+
+def check_display_budget(base):
+    """The main text holds no more display items than the design spec allows.
+
+    The count may sit above the target while the cut is under way, so the
+    check fails on an increase rather than on the backlog. A ratchet is what
+    lets an unattended loop run against a target it has not reached yet: it
+    cannot pass by standing still, and it cannot pass by going backwards.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    main, supp = display_items(text)
+    tbl = [x for x in main if x.startswith("tbl-")]
+    fig = [x for x in main if x.startswith("fig-")]
+    prev = base.get("main_table_count")
+    measured = (f"{len(tbl)} tables and {len(fig)} figures in the main text, "
+                f"{len(supp)} in the supplement")
+    if prev is not None and len(tbl) > prev:
+        return "fail", measured + f", up from {prev} tables", \
+            f"no more than {prev} tables", art
+    if len(tbl) > MAIN_TABLES or len(fig) > MAIN_FIGURES:
+        return "pass", measured + f", target {MAIN_TABLES} and {MAIN_FIGURES}", \
+            f"{MAIN_TABLES} tables, {MAIN_FIGURES} figures", art
+    return "pass", measured, f"{MAIN_TABLES} tables, {MAIN_FIGURES} figures", art
+
+
+def check_displaced_tables_kept(base):
+    """Every table the spec displaces is still in the document.
+
+    The cheapest way to reach a five-table main text is to delete the other
+    twelve, and the supplement is where they belong, so this check is what
+    separates the move from the deletion.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    main, supp = display_items(text)
+    present = set(main) | set(supp)
+    lost = [x for x in DISPLACED_TABLES if x not in present]
+    moved = [x for x in DISPLACED_TABLES if x in supp]
+    if lost:
+        return "fail", f"{len(lost)} deleted rather than moved: " + \
+            ", ".join(lost[:4]), "all nine present", art
+    return "pass", f"{len(moved)} of {len(DISPLACED_TABLES)} in the supplement", \
+        "all nine present", art
+
+
+def check_cross_references(base):
+    """Every display item carries exactly one cross-reference in the prose.
+
+    Counted against the baseline for the same reason as the display budget:
+    the breach list is a backlog being worked down, and a step that adds to
+    it is the regression worth catching.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    bad = display_breaches(text)
+    uncited = sorted(k for k, v in bad.items() if v == 0)
+    multi = sorted(k for k, v in bad.items() if v > 1)
+    prev = base.get("xref_breaches")
+    measured = f"{len(uncited)} uncited, {len(multi)} cited more than once"
+    if prev is not None and len(bad) > prev:
+        return "fail", measured + f", up from {prev} breaches", \
+            f"no more than {prev} breaches", art
+    return "pass", measured, "every item cited once", art
+
+
+def check_no_assistant_traces(base):
+    """The prose carries no placeholder left by whoever drafted it."""
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    prose = prose_of(open(QMD).read())
+    marks = re.findall(r"\[Pending[^\]]*\]|\bTODO\b|\bFIXME\b", prose)
+    prev = base.get("pending_markers")
+    measured = f"{len(marks)} placeholders"
+    if prev is not None and len(marks) > prev:
+        return "fail", measured + f", up from {prev}", f"no more than {prev}", art
+    return "pass", measured, "none", art
+
+
+def check_house_punctuation(base):
+    """Headings run to three words and the prose carries no dash for a pause.
+
+    Both stand at zero, so this one fails on any breach rather than on an
+    increase. The colon is counted and ratcheted instead, because five stand
+    in the prose and a colon inside a citation or a ratio is not a breach.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    prose = prose_of(open(QMD).read())
+    heads = re.findall(r"^#{1,6}\s+(.+)$", prose, re.M)
+    long_heads = [h for h in heads if len(h.split()) > 3]
+    dashes = prose.count("\u2014") + prose.count("\u2013")
+    colons = sum(1 for ln in prose.split("\n")
+                 if ":" in ln and not ln.strip().startswith("#"))
+    prev = base.get("prose_colons")
+    problems = []
+    if long_heads:
+        problems.append(f"{len(long_heads)} headings over three words: " +
+                        long_heads[0])
+    if dashes:
+        problems.append(f"{dashes} dashes")
+    hard = bool(long_heads or dashes)
+    if not hard and prev is not None and colons > prev:
+        problems.append(f"{colons} prose colons, up from {prev}")
+        hard = True
     return ("fail" if hard else "pass",
-            "; ".join(problems) or f"{len(labels)} labels, {len(tbls)} tables",
-            "no duplicates, every table cited once", art)
+            "; ".join(problems) or
+            f"{len(heads)} headings, no dash, {colons} prose colons",
+            "no long heading, no dash, no new colon", art)
+
+
+
+# The statistical apparatus the pre-registration fixes. A test dropped from the
+# document is a change to the confirmatory design, so each is named here and
+# looked for by name.
+APPARATUS = ["Wilcoxon", "Holm", "McNemar", "bootstrap", "Theil"]
+CHUNK_HEADER = re.compile(r"^```\{[^}]*\}\n((?:#\|.*\n)*)", re.M)
+
+
+def chunk_blocks(text):
+    """Every fenced chunk of the document, header and body together."""
+    return [m.group(0) for m in CHUNK_BLOCK.finditer(text)]
+
+
+def check_code_is_shown(base):
+    """Every chunk shows its code, and each says so explicitly.
+
+    The house rule is an explicit echo on every chunk, because a default is
+    changed in one line of the header and a reader cannot tell from the page
+    whether code was hidden deliberately. Hiding a chunk fails outright; a
+    chunk that merely relies on the default is counted and ratcheted, since
+    that is a backlog across forty chunks rather than a regression.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    blocks = chunk_blocks(open(QMD).read())
+    hidden = [b for b in blocks
+              if re.search(r"^#\|\s*(echo|include):\s*false", b, re.M)]
+    implicit = [b for b in blocks
+                if not re.search(r"^#\|\s*echo:\s*true", b, re.M)]
+    prev = base.get("chunks_without_explicit_echo")
+    if hidden:
+        return "fail", f"{len(hidden)} chunks hide their code", \
+            "no chunk hidden", art
+    measured = (f"{len(blocks)} chunks, none hidden, "
+                f"{len(implicit)} relying on the default")
+    if prev is not None and len(implicit) > prev:
+        return "fail", measured + f", up from {prev}", \
+            f"no more than {prev}", art
+    return "pass", measured, "every chunk echoes explicitly", art
+
+
+def check_results_computed(base):
+    """No results table is still a shell of pending values.
+
+    The results tables were drafted as shells so the document would render
+    before the confirmatory analysis ran. A shell renders exactly like a
+    result, so nothing but this count says whether the analysis has happened.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    shells = []
+    for lab, body in chunks(text):
+        if not lab.startswith("tbl-"):
+            continue
+        if '"pending"' in body or "_shell" in body or re.search(
+                r'=\s*"\."', body):
+            shells.append(lab)
+    prev = base.get("results_shells")
+    measured = f"{len(shells)} tables still shells" + \
+        (": " + ", ".join(sorted(shells)[:4]) if shells else "")
+    if prev is not None and len(shells) > prev:
+        return "fail", measured + f", up from {prev}", f"no more than {prev}", art
+    return "pass", measured, "no shell left", art
+
+
+def check_apparatus_present(base):
+    """Every test the pre-registration fixes is still named in the document."""
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read().lower()
+    missing = [w for w in APPARATUS if w.lower() not in text]
+    if missing:
+        return "fail", "absent: " + ", ".join(missing), \
+            "all five named", art
+    return "pass", f"all {len(APPARATUS)} named", "all five named", art
+
+
+def check_no_first_person(base):
+    """The prose carries no first person, in any genre.
+
+    Counted rather than forbidden outright, because six stand in the draft and
+    the loop works them out one section at a time.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    prose = prose_of(open(QMD).read())
+    hits = re.findall(r"\b(we|our|ours|us)\b", prose, re.I)
+    prev = base.get("first_person")
+    measured = f"{len(hits)} first-person words"
+    if prev is not None and len(hits) > prev:
+        return "fail", measured + f", up from {prev}", f"no more than {prev}", art
+    return "pass", measured, "none", art
+
+
+def check_venue_requirements_on_file(base):
+    """The venue's own guide for authors has been read and recorded.
+
+    Nothing about a journal may be written into the manuscript until it is
+    read from that journal's live guide, with the date and provenance
+    recorded. This check blocks rather than fails while no such record exists,
+    because the absence is a step not yet taken rather than a defect, and it
+    is what stops a word limit being recalled instead of read.
+    """
+    art = os.path.relpath(STANDARDS, ROOT)
+    if not os.path.isdir(STANDARDS):
+        return "blocked", "no standards directory", "a dated record", art
+    recs = [f for f in os.listdir(STANDARDS)
+            if not f.startswith("._") and "pest-science" in f.lower()]
+    if not recs:
+        return "blocked", "no record of the Journal of Pest Science guide", \
+            "a dated record", art
+    dated = [f for f in recs if re.search(r"\d{4}-\d{2}-\d{2}", f)]
+    if not dated:
+        return "fail", f"{len(recs)} records, none carrying a date", \
+            "a dated record", art
+    return "pass", f"{len(dated)} dated record: {sorted(dated)[-1]}", \
+        "a dated record", art
 
 
 def check_restore_point(base):
@@ -430,7 +712,18 @@ CHECKS = [
     ("chunk guards agree", check_chunk_guards_agree, True),
     ("no new chunk reads severity", check_severity_readers, True),
     ("recorded checksums match", check_checksums, True),
-    ("chunk labels unique and cited", check_chunk_labels_unique, True),
+    ("chunk labels unique", check_chunk_labels_unique, True),
+    ("main text within its display budget", check_display_budget, True),
+    ("displaced tables kept, not deleted", check_displaced_tables_kept, True),
+    ("display items cross-referenced once", check_cross_references, True),
+    ("no placeholder left in the prose", check_no_assistant_traces, True),
+    ("headings and dashes follow the house rule", check_house_punctuation, True),
+    ("every chunk shows its code", check_code_is_shown, True),
+    ("results tables carry computed values", check_results_computed, True),
+    ("pre-registered apparatus still named", check_apparatus_present, True),
+    ("prose carries no first person", check_no_first_person, True),
+    ("venue requirements read and recorded", check_venue_requirements_on_file,
+     True),
     ("session restore point exists", check_restore_point, False),
 ]
 
@@ -474,6 +767,30 @@ def record_baseline(rows):
         base["bib_entry_count"] = len(
             re.findall(r"^\s*@\w+\{", open(BIB).read(), re.M))
     if os.path.exists(QMD):
+        text = open(QMD).read()
+        main, _ = display_items(text)
+        base["main_table_count"] = len([x for x in main
+                                        if x.startswith("tbl-")])
+        base["main_figure_count"] = len([x for x in main
+                                         if x.startswith("fig-")])
+        base["xref_breaches"] = len(display_breaches(text))
+        prose = prose_of(text)
+        base["pending_markers"] = len(re.findall(
+            r"\[Pending[^\]]*\]|\bTODO\b|\bFIXME\b", prose))
+        base["prose_colons"] = sum(1 for ln in prose.split("\n")
+                                   if ":" in ln
+                                   and not ln.strip().startswith("#"))
+        blocks = chunk_blocks(text)
+        base["chunks_without_explicit_echo"] = len(
+            [b for b in blocks
+             if not re.search(r"^#\|\s*echo:\s*true", b, re.M)])
+        base["results_shells"] = len(
+            [lab for lab, body in chunks(text)
+             if lab.startswith("tbl-")
+             and ('"pending"' in body or "_shell" in body
+                  or re.search(r'=\s*"\."', body))])
+        base["first_person"] = len(re.findall(r"\b(we|our|ours|us)\b",
+                                              prose, re.I))
         base["severity_readers"] = sorted(
             lab for lab, body in chunks(open(QMD).read())
             if SEVERITY_DIR in body)
@@ -492,12 +809,33 @@ def record_baseline(rows):
     return BASELINE
 
 
+def render():
+    """Render the manuscript and report whether the build survived.
+
+    Kept out of the check list and off the loop's gate deliberately. A render
+    reruns every chunk whose guard is open, so it costs minutes rather than
+    seconds, and an editing pass that touches no chunk cannot break a build
+    that the chunk fingerprints already say is unchanged. Run it at the end of
+    a run of work, not after each step.
+    """
+    out = subprocess.run(
+        ("quarto", "render", "manuscript.qmd", "--to", "html"),
+        cwd=os.path.join(ROOT, "01.manuscript"),
+        capture_output=True, text=True)
+    tail = (out.stderr or out.stdout).strip().split("\n")[-12:]
+    print("\n".join(tail))
+    print("\nrender exit", out.returncode)
+    return 0 if out.returncode == 0 else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline", action="store_true",
                     help="record the fingerprints the drift checks compare to")
     ap.add_argument("--attack", action="store_true",
                     help="prove each check can fail before trusting it")
+    ap.add_argument("--render", action="store_true",
+                    help="render the manuscript and fail on a broken build")
     args = ap.parse_args()
 
     if args.baseline:
@@ -508,6 +846,9 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from attack import main as attack_main       # noqa: PLC0415
         return attack_main()
+
+    if args.render:
+        return render()
 
     base = load_baseline()
     rows = run(base)

@@ -215,6 +215,138 @@ def attack_chunk_labels_unique(base):
             f"{m.group(1)} duplicated onto the first chunk"
 
 
+
+def attack_display_budget(base):
+    """Add a table to the main text and confirm the ratchet notices.
+
+    The budget check compares against the recorded count rather than against
+    the target, so the attack has to add an item, not fail to remove one.
+    """
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^```\{r\}\n#\|\s*label: tbl-\S+", text, re.M)
+        if not m:
+            return None, "no table chunk found to duplicate"
+        block = "```{r}\n#| label: tbl-attack-extra\n1\n```\n\n"
+        p.write((text[:m.start()] + block + text[m.start():]).encode())
+        return ev.check_display_budget(base)[0], "one table added to the main text"
+
+
+def attack_displaced_tables_kept(base):
+    """Delete a displaced table outright rather than moving it."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        lab = ev.DISPLACED_TABLES[0]
+        m = re.search(r"^```\{[^}]*\}\n#\|\s*label: " + re.escape(lab) +
+                      r"\b.*?^```\n", text, re.S | re.M)
+        if not m:
+            return None, f"{lab} chunk not found to delete"
+        p.write((text[:m.start()] + text[m.end():]).encode())
+        return ev.check_displaced_tables_kept(base)[0], f"{lab} deleted"
+
+
+def attack_cross_references(base):
+    """Add a second reference to a table already cited once."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        cited = [lab for lab, n in
+                 ((l, len(re.findall(r"@" + re.escape(l) + r"\b",
+                                     ev.prose_of(text))))
+                  for l in {m.group(1) for m in
+                            ev.DISPLAY_LABEL.finditer(text)}) if n == 1]
+        if not cited:
+            return None, "no singly cited display item to duplicate"
+        lab = sorted(cited)[0]
+        m = re.search(r"@" + re.escape(lab) + r"\b", text)
+        p.write((text[:m.end()] + f" and again in @{lab}" +
+                 text[m.end():]).encode())
+        return ev.check_cross_references(base)[0], \
+            f"{lab} referenced a second time"
+
+
+def attack_no_assistant_traces(base):
+    """Add a placeholder to the prose and confirm the count is watched."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^# Introduction\n", text, re.M)
+        if not m:
+            return None, "Introduction heading not found"
+        p.write((text[:m.end()] + "\n[Pending: an attack placeholder.]\n" +
+                 text[m.end():]).encode())
+        return ev.check_no_assistant_traces(base)[0], "one placeholder added"
+
+
+def attack_house_punctuation(base):
+    """Lengthen a heading past three words."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^## Study area$", text, re.M)
+        if not m:
+            return None, "the study area heading was not found"
+        p.write((text[:m.start()] + "## Study area and its wider setting" +
+                 text[m.end():]).encode())
+        return ev.check_house_punctuation(base)[0], "a heading run to six words"
+
+
+
+def attack_code_is_shown(base):
+    """Hide one chunk's code and confirm the house rule notices."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^#\|\s*label: tbl-\S+$", text, re.M)
+        if not m:
+            return None, "no table chunk found to hide"
+        p.write((text[:m.end()] + "\n#| echo: false" +
+                 text[m.end():]).encode())
+        return ev.check_code_is_shown(base)[0], "one chunk hidden"
+
+
+def attack_results_computed(base):
+    """Turn a computed table back into a shell of pending values."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^#\|\s*label: tbl-inputs$", text, re.M)
+        if not m:
+            return None, "tbl-inputs not found to shell"
+        p.write((text[:m.end()] + '\nx <- "pending"' +
+                 text[m.end():]).encode())
+        return ev.check_results_computed(base)[0], "one table turned to a shell"
+
+
+def attack_apparatus_present(base):
+    """Drop a pre-registered test from the document."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        broken = re.sub("Holm", "the correction", text, flags=re.I)
+        if broken == text:
+            return None, "Holm was not named to remove"
+        p.write(broken.encode())
+        return ev.check_apparatus_present(base)[0], "Holm correction removed"
+
+
+def attack_no_first_person(base):
+    """Add a first-person sentence to the prose."""
+    with Perturb(ev.QMD) as p:
+        text = p.before.decode()
+        m = re.search(r"^# Introduction\n", text, re.M)
+        if not m:
+            return None, "Introduction heading not found"
+        p.write((text[:m.end()] + "\nWe report our findings here.\n" +
+                 text[m.end():]).encode())
+        return ev.check_no_first_person(base)[0], "a first-person sentence added"
+
+
+def attack_venue_requirements(base):
+    """Point the check at a directory holding no record of the guide."""
+    real = ev.STANDARDS
+    ev.STANDARDS = real + "-does-not-exist"
+    try:
+        return ev.check_venue_requirements_on_file(base)[0], \
+            "standards directory redirected"
+    finally:
+        ev.STANDARDS = real
+
+
 def attack_restore_point(base):
     """Point the check at a directory that does not exist."""
     real = os.path.expanduser
@@ -235,7 +367,17 @@ ATTACKS = [
     ("chunk guards agree", attack_chunk_guards_agree),
     ("no new chunk reads severity", attack_severity_readers),
     ("recorded checksums match", attack_checksums),
-    ("chunk labels unique and cited", attack_chunk_labels_unique),
+    ("chunk labels unique", attack_chunk_labels_unique),
+    ("main text within its display budget", attack_display_budget),
+    ("displaced tables kept, not deleted", attack_displaced_tables_kept),
+    ("display items cross-referenced once", attack_cross_references),
+    ("no placeholder left in the prose", attack_no_assistant_traces),
+    ("headings and dashes follow the house rule", attack_house_punctuation),
+    ("every chunk shows its code", attack_code_is_shown),
+    ("results tables carry computed values", attack_results_computed),
+    ("pre-registered apparatus still named", attack_apparatus_present),
+    ("prose carries no first person", attack_no_first_person),
+    ("venue requirements read and recorded", attack_venue_requirements),
     ("session restore point exists", attack_restore_point),
 ]
 
