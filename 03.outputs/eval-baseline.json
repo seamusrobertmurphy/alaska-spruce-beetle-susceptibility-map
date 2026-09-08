@@ -18,7 +18,7 @@
   "main_figure_count": 2,
   "main_table_count": 5,
   "pending_markers": 9,
-  "prose_colons": 9,
+  "prose_colons": 4,
   "raster_index": {
     "02.inputs/chips/2020/block_001.tif": [
       4196423,
@@ -1915,7 +1915,7 @@
   },
   "raster_unreadable_at_baseline": [],
   "recorded": "2026-09-08T21:36:21Z",
-  "recorded_manuscript": "2026-09-08T23:45:57Z",
+  "recorded_manuscript": "2026-09-08T23:47:11Z",
   "results_shells": 4,
   "severity_readers": [
     "climate-build",

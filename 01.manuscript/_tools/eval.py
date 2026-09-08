@@ -569,8 +569,12 @@ def check_house_punctuation(base):
     heads = re.findall(r"^#{1,6}\s+(.+)$", prose, re.M)
     long_heads = [h for h in heads if len(h.split()) > 3]
     dashes = prose.count("\u2014") + prose.count("\u2013")
+    # A colon followed by a space is punctuation; one followed by a character
+    # is notation, doi:10.5281, EPSG:3153, a time or a ratio, which the house
+    # rule exempts. Counting the second sort put the floor at one line that
+    # was never a breach.
     colons = sum(1 for ln in prose.split("\n")
-                 if ":" in ln and not ln.strip().startswith("#"))
+                 if re.search(r":(\s|$)", ln) and not ln.strip().startswith("#"))
     prev = base.get("prose_colons")
     problems = []
     if long_heads:
@@ -801,7 +805,7 @@ def record_baseline(rows, manuscript_only=False):
             r"\[[^\]]*pending[^\]]*\]|\bTODO\b|\bFIXME\b",
             prose + (head.group(0) if head else ""), re.I))
         base["prose_colons"] = sum(1 for ln in prose.split("\n")
-                                   if ":" in ln
+                                   if re.search(r":(\s|$)", ln)
                                    and not ln.strip().startswith("#"))
         blocks = chunk_blocks(text)
         base["chunks_without_explicit_echo"] = len(
