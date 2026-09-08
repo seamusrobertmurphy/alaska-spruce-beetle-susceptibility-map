@@ -25,8 +25,14 @@ for (ep in names(svc)) {
       svc[ep], bb[1], bb[2], bb[3], bb[4], px[ep], px[ep])
     ok <- !inherits(try(download.file(u, f, mode = "wb", quiet = TRUE),
                         silent = TRUE), "try-error")
-    if (ok && inherits(try(rast(f), silent = TRUE), "try-error")) {
-      unlink(f); ok <- FALSE   # HTML error body masquerading as tiff
+    # Validity is checked by reading pixels, not by opening the file. rast()
+    # reads only the header, so a truncated download whose header survived
+    # passes it: 02.inputs/chips/2023/block_006.tif did exactly that on
+    # 2026-08-12 and was found corrupt on 2026-09-08 only when the triage
+    # queue tried to score it. Forcing a read costs about 90 MB per chip and
+    # catches both a truncation and an HTML error body served as a tiff.
+    if (ok && inherits(try(values(rast(f)), silent = TRUE), "try-error")) {
+      unlink(f); ok <- FALSE
     }
     if (!ok) message("failed: epoch ", ep, " block ", blocks$block_id[i])
     Sys.sleep(0.5)             # be polite to the public service
