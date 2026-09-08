@@ -68,3 +68,6 @@ INDEX.md
 ~$*.docx
 **/~$*
 01.manuscript/manuscript/
+
+# Local state for the prose guard; regenerated with --record.
+01.manuscript/_tools/.prose_guard.json
