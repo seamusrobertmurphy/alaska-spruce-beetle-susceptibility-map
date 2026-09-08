@@ -1521,7 +1521,7 @@ fmt_tbl(sev_shell, right = c("RMSE","rRMSE","MAE","U_Theil","U_bias","U_var","U_
 
 ## Detection skill
 
-@tbl-detection reports the confusion-matrix summary per stratum, user's and producer's accuracy and the primary metric, recall at 0.90 precision, with fold-wise dispersion. @tbl-h1 carries the H1 test, the fold-wise paired difference in the primary metric between each deep model and the baseline within the 0.01 to 0.10 stratum, its block-bootstrap confidence interval, the one-sided Wilcoxon signed-rank statistic, and the McNemar cell-level check. The detectability floor of each model is the lowest stratum whose primary metric exceeds the pre-registered threshold.
+@tbl-detection reports the confusion-matrix summary per stratum, user's and producer's accuracy and the primary metric, recall at 0.90 precision, with fold-wise dispersion. Table S10 carries the H1 test, the fold-wise paired difference in the primary metric between each deep model and the baseline within the 0.01 to 0.10 stratum, its block-bootstrap confidence interval, the one-sided Wilcoxon signed-rank statistic, and the McNemar cell-level check. The detectability floor of each model is the lowest stratum whose primary metric exceeds the pre-registered threshold.
 
 ```{r}
 #| label: tbl-detection
@@ -1532,14 +1532,6 @@ det_shell[c("UA", "PA", "R90", "R90_sd")] <- "pending"
 fmt_tbl(det_shell, right = c("UA","PA","R90","R90_sd"))
 ```
 
-```{r}
-#| label: tbl-h1
-#| tbl-cap: "Test of H1 in the 0.01 to 0.10 severity stratum: fold-wise paired difference in recall at 0.90 precision against the SWIR baseline, block-bootstrap 95% confidence interval, one-sided Wilcoxon signed-rank p-value, and McNemar chi-squared on paired cell-level detections. Values pending execution of the pre-registered analysis."
-h1_shell <- data.frame(Model = c("TempCNN", "Transformer"),
-                       Delta_R90 = ".", CI95 = ".", Wilcoxon_p = ".",
-                       McNemar_chisq = ".", Floor = ".")
-fmt_tbl(h1_shell, right = c("Delta_R90","CI95","Wilcoxon_p","McNemar_chisq","Floor"))
-```
 
 ## Onset dating
 
@@ -1570,34 +1562,19 @@ fmt_tbl(h3_shell, right = c("Delta_R90", "Delta_MAE_yr", "CI95", "Wilcoxon_p"))
 
 ## Independent evaluation
 
-@tbl-independent reports agreement with the untouched severity reference of @Zwieback_2024 in the Talkeetna to Byers Lake footprint, using only fold models whose training excluded the footprint, and carries the same error slate as @tbl-severity at 90 m and 30 m support, alongside the published within-study errors of the reference itself for context, which are not directly comparable and are marked as such.
+Table S11 reports agreement with the untouched severity reference of @Zwieback_2024 in the Talkeetna to Byers Lake footprint, using only fold models whose training excluded the footprint, and carries the same error slate as @tbl-severity at 90 m and 30 m support, alongside the published within-study errors of the reference itself for context, which are not directly comparable and are marked as such.
 
-```{r}
-#| label: tbl-independent
-#| tbl-cap: "Agreement with the independent severity reference at 90 m and 30 m support, per severity stratum. Reference-published errors shown for context only; support and reference data differ. Values pending execution of the pre-registered analysis."
-ind_shell <- expand.grid(Support = c("90 m", "30 m"), Stratum = strata_lab,
-                         KEEP.OUT.ATTRS = FALSE)
-ind_shell[c("RMSE", "rRMSE", "MAE", "U_Theil")] <- "pending"
-fmt_tbl(ind_shell, right = c("RMSE","rRMSE","MAE","U_Theil"))
-```
 
 ## Outbreak progression
 
-@tbl-progression compares reconstructed annual outbreak area against the aerial survey record, reported as descriptive correspondence, giving mapped area, surveyed area, their ratio, and the intersection-over-union of the footprints per year.
+Table S12 compares reconstructed annual outbreak area against the aerial survey record, reported as descriptive correspondence, giving mapped area, surveyed area, their ratio, and the intersection-over-union of the footprints per year.
 
-```{r}
-#| label: tbl-progression
-#| tbl-cap: "Reconstructed annual outbreak area against aerial survey extent, 2016 to 2025, descriptive. Values pending execution of the pre-registered analysis."
-prog_shell <- data.frame(Year = 2016:2025)
-prog_shell[c("Mapped_kha", "Surveyed_kha", "Ratio", "IoU")] <- "pending"
-fmt_tbl(prog_shell, right = c("Mapped_kha","Surveyed_kha","Ratio","IoU"))
-```
 
 # Discussion
 
 ## Detection floor
 
-[Pending: interpretation of @tbl-severity, @tbl-detection and @tbl-h1.] The decisive comparison is confined to the 0.01 to 0.10 stratum, where @Zwieback_2024 found stand-scale SWIR change uninformative and where roughly ninety percent of the region's beetle-killed spruce resides. If the paired difference in @tbl-h1 excludes zero, the detectability floor of freely available imagery drops below the published 0.1 threshold and the fraction of the outbreak visible to open-data monitoring rises accordingly; if it does not, the result consolidates the case that sub-metre imagery is a hard requirement for low-severity beetle mapping in mixed boreal forest, itself a finding with operational cost implications. Either outcome resolves the transfer question left open between the defoliator system of @Perbet_2024, where temporal deep learning recovered partial disturbance from Landsat, and the bark beetle system here, whose multi-year fade [@Hicke_2024; @Kautz_2024] presents a slower but weaker annual signal.
+[Pending: interpretation of @tbl-severity, @tbl-detection and Table S10.] The decisive comparison is confined to the 0.01 to 0.10 stratum, where @Zwieback_2024 found stand-scale SWIR change uninformative and where roughly ninety percent of the region's beetle-killed spruce resides. If the paired difference in Table S10 excludes zero, the detectability floor of freely available imagery drops below the published 0.1 threshold and the fraction of the outbreak visible to open-data monitoring rises accordingly; if it does not, the result consolidates the case that sub-metre imagery is a hard requirement for low-severity beetle mapping in mixed boreal forest, itself a finding with operational cost implications. Either outcome resolves the transfer question left open between the defoliator system of @Perbet_2024, where temporal deep learning recovered partial disturbance from Landsat, and the bark beetle system here, whose multi-year fade [@Hicke_2024; @Kautz_2024] presents a slower but weaker annual signal.
 
 ## Temporal supervision
 
@@ -1609,7 +1586,7 @@ Five limitations are known by design. First, crown labels derive from visual int
 
 ## Operational implications
 
-[Pending: contingent on @tbl-h1 and @tbl-progression.] The aerial detection survey remains the only annual statewide observation system, and nothing here replaces it; the question is what a free satellite complement adds. A model whose floor sits below 0.1 severity would flag dispersed mortality the surveys under-record, at annual cadence, over unflown terrain, for the cost of compute alone, with the reconstructed progression in @tbl-progression indicating how faithfully such a system would have tracked this outbreak had it run from 2016. The label pipeline is the transferable asset, since statewide sub-metre mosaics now recur, and each new epoch extends the interval-censored label set without new fieldwork.
+[Pending: contingent on Tables S10 and S12.] The aerial detection survey remains the only annual statewide observation system, and nothing here replaces it; the question is what a free satellite complement adds. A model whose floor sits below 0.1 severity would flag dispersed mortality the surveys under-record, at annual cadence, over unflown terrain, for the cost of compute alone, with the reconstructed progression in Table S12 indicating how faithfully such a system would have tracked this outbreak had it run from 2016. The label pipeline is the transferable asset, since statewide sub-metre mosaics now recur, and each new epoch extends the interval-censored label set without new fieldwork.
 
 # Conclusion
 
@@ -1712,4 +1689,33 @@ fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"),
 #| echo: true
 fmt_tbl(checks, right = c("expected", "got"),
         caption = "Table S9. Verification of the evaluation harness against inputs with known answers. Each row states what the case is built to produce and what the implementation returned; the chunk halts if any check fails, so a rendered document is itself evidence that all of them passed.")
+```
+
+```{r}
+#| label: supp-h1
+#| echo: true
+h1_shell <- data.frame(Model = c("TempCNN", "Transformer"),
+                       Delta_R90 = ".", CI95 = ".", Wilcoxon_p = ".",
+                       McNemar_chisq = ".", Floor = ".")
+fmt_tbl(h1_shell, right = c("Delta_R90","CI95","Wilcoxon_p","McNemar_chisq","Floor"),
+        caption = "Table S10. Test of H1 in the 0.01 to 0.10 severity stratum: fold-wise paired difference in recall at 0.90 precision against the SWIR baseline, block-bootstrap 95% confidence interval, one-sided Wilcoxon signed-rank p-value, and McNemar chi-squared on paired cell-level detections. Values pending execution of the pre-registered analysis.")
+```
+
+```{r}
+#| label: supp-independent
+#| echo: true
+ind_shell <- expand.grid(Support = c("90 m", "30 m"), Stratum = strata_lab,
+                         KEEP.OUT.ATTRS = FALSE)
+ind_shell[c("RMSE", "rRMSE", "MAE", "U_Theil")] <- "pending"
+fmt_tbl(ind_shell, right = c("RMSE","rRMSE","MAE","U_Theil"),
+        caption = "Table S11. Agreement with the independent severity reference at 90 m and 30 m support, per severity stratum. Reference-published errors shown for context only; support and reference data differ. Values pending execution of the pre-registered analysis.")
+```
+
+```{r}
+#| label: supp-progression
+#| echo: true
+prog_shell <- data.frame(Year = 2016:2025)
+prog_shell[c("Mapped_kha", "Surveyed_kha", "Ratio", "IoU")] <- "pending"
+fmt_tbl(prog_shell, right = c("Mapped_kha","Surveyed_kha","Ratio","IoU"),
+        caption = "Table S12. Reconstructed annual outbreak area against aerial survey extent, 2016 to 2025, descriptive. Values pending execution of the pre-registered analysis.")
 ```

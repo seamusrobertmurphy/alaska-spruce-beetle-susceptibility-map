@@ -1,6 +1,6 @@
 {
   "bib_entry_count": 50,
-  "chunks_without_explicit_echo": 28,
+  "chunks_without_explicit_echo": 25,
   "first_person": 6,
   "hypothesis_fingerprint": "d1d4b6c131d62d5e",
   "hypothesis_lines": [
@@ -16,7 +16,7 @@
     "2. **H3 (directional, added to the Holm family, now three tests):** TempCNN with"
   ],
   "main_figure_count": 2,
-  "main_table_count": 8,
+  "main_table_count": 5,
   "pending_markers": 9,
   "prose_colons": 9,
   "raster_index": {
@@ -1915,8 +1915,8 @@
   },
   "raster_unreadable_at_baseline": [],
   "recorded": "2026-09-08T21:36:21Z",
-  "recorded_manuscript": "2026-09-08T21:51:58Z",
-  "results_shells": 7,
+  "recorded_manuscript": "2026-09-08T22:08:36Z",
+  "results_shells": 4,
   "severity_readers": [
     "climate-build",
     "climate-rasters",
@@ -1924,5 +1924,5 @@
     "fig-studyarea",
     "severity-metadata"
   ],
-  "xref_breaches": 5
+  "xref_breaches": 3
 }
