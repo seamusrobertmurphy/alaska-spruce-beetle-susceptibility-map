@@ -117,6 +117,7 @@ All spatial figures shared one cartographic standard. The working grid was WGS 8
 
 ```{r}
 #| label: fig-studyarea
+#| echo: true
 #| fig-cap: "Analysis extents in Southcentral Alaska. The black outline is the application extent, the Matanuska-Susitna Borough (United States Census Bureau boundary); the dashed orange rectangle is the confirmatory study window holding all training blocks and cross-validation folds; the red rectangle is the footprint of the independent severity reference. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025. Blue lines are rivers, dark grey lines are highways, and labelled points are settlements (United States Census Bureau TIGER places; rivers and highways from Natural Earth 10 m). Representative fraction and coordinate reference system as titled; graticule in UTM zone 5N eastings and northings."
 #| fig-width: 6.8
 #| fig-height: 7.9
@@ -240,6 +241,7 @@ The study draws on nine input datasets in four roles (@tbl-inputs). Reference da
 
 ```{r}
 #| label: tbl-inputs
+#| echo: true
 #| tbl-cap: "Input datasets, their roles, and access terms."
 inp <- data.frame(
   Dataset = c(
@@ -276,6 +278,7 @@ Stand-scale areal severity of beetle-associated dead spruce for the Talkeetna to
 
 ```{r}
 #| label: severity-metadata
+#| echo: true
 sev <- lapply(c("merged_ref_h_c30c.tif", "merged_ref_h_c90c.tif",
                 "merged_ref_h_c250c.tif"),
               function(f) rast(file.path(inputs, "zwieback-severity", f)))
@@ -302,6 +305,7 @@ Tuning pairs were assembled below. For each delineation area holding crowns, a f
 
 ```{r}
 #| label: label-training-pairs
+#| echo: true
 #| output: false
 lab_dir <- file.path(inputs, "zwieback-labels", "gpkg")
 pair_dir <- file.path(inputs, "label-pairs")
@@ -386,6 +390,7 @@ The chunk below runs as its own process rather than through reticulate. The manu
 
 ```{python}
 #| label: crown-finetune
+#| echo: true
 #| output: false
 #| python.reticulate: false
 #| engine.path: /opt/local/bin/python3
@@ -634,6 +639,7 @@ Candidates were written per block and per epoch as GeoPackage layers that open d
 
 ```{python}
 #| label: triage-queue
+#| echo: true
 #| output: false
 #| python.reticulate: false
 #| engine.path: /opt/local/bin/python3
@@ -748,6 +754,7 @@ Before any label enters training, the spectral basis of the visual classes was t
 
 ```{r}
 #| label: planned-separability
+#| echo: true
 #| eval: false
 # Activated with label digitisation. chips: data.frame of band values with
 # class in {dead, live, background} and epoch in {2020, 2023}.
@@ -767,6 +774,7 @@ pca <- prcomp(chips[bands_rgb], scale. = TRUE)
 
 ```{r}
 #| label: labels-inventory
+#| echo: true
 lab_dir <- file.path(inputs, "zwieback-labels", "gpkg")
 labs <- list.files(lab_dir, pattern = "_labels\\.gpkg$")
 exts <- list.files(lab_dir, pattern = "_extent\\.gpkg$")
@@ -779,6 +787,7 @@ Sketch-mapped damage polygons for Alaska, all survey years, US public domain. Th
 
 ```{r}
 #| label: ids-context
+#| echo: true
 gdb <- file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb")
 st_layers(gdb)
 # The OGR SQL dialect has no GROUP BY; aggregate through GDAL's SQLite dialect
@@ -813,6 +822,7 @@ Annual composites are built on the 90 m reference grid in Google Earth Engine. F
 
 ```{r}
 #| label: composite-build
+#| echo: true
 #| output: false
 library(rgee)
 comp_dir <- file.path(inputs, "composites")
@@ -879,6 +889,7 @@ The Landsat baseline composites cover 2014 to 2018, the pre-outbreak reference s
 
 ```{r}
 #| label: landsat-build
+#| echo: true
 #| output: false
 for (y in 2014:2018) {
   f <- file.path(comp_dir, sprintf("ls_%d.tif", y))
@@ -916,6 +927,7 @@ The annual composites were reorganised into a local data cube for the sits packa
 
 ```{r}
 #| label: sits-cube-build
+#| echo: true
 #| output: false
 cube_dir <- file.path(inputs, "derived", "sits_cube")
 dir.create(cube_dir, showWarnings = FALSE, recursive = TRUE)
@@ -984,6 +996,7 @@ Daily minimum and maximum air temperature from the Daymet version 4 gridded forc
 
 ```{r}
 #| label: climate-build
+#| echo: true
 #| output: false
 clim_f <- file.path(inputs, "derived", "climate_series.csv")
 if (!file.exists(clim_f)) {
@@ -1021,6 +1034,7 @@ Per-cell channel rasters were exported at Daymet's native 1 km resolution for ea
 
 ```{r}
 #| label: climate-rasters
+#| echo: true
 #| output: false
 clim_dir <- file.path(inputs, "climate")
 dir.create(clim_dir, showWarnings = FALSE)
@@ -1058,6 +1072,7 @@ if (length(todo_c)) {
 
 ```{r}
 #| label: fig-climate
+#| echo: true
 #| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index: cumulative degree-hours above 17 °C, June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
@@ -1108,6 +1123,7 @@ Two limits were stated rather than buried. The delineation areas fall inside the
 
 ```{r}
 #| label: endmember-calibration
+#| echo: true
 #| output: false
 em_csv <- file.path(dirname(inputs), "03.outputs", "endmember.csv")
 if (!file.exists(em_csv)) {
@@ -1185,6 +1201,7 @@ Everything the test reports is conditional on the dead-crown endmember, which is
 
 ```{r}
 #| label: synthetic-validation
+#| echo: true
 #| output: false
 out_dir <- file.path(dirname(inputs), "03.outputs")
 dir.create(out_dir, showWarnings = FALSE)
@@ -1316,6 +1333,7 @@ Evaluation uses block spatial cross-validation, with the study area tessellated 
 
 ```{r}
 #| label: planned-severity-strata
+#| echo: true
 #| eval: false
 # Activated after pre-registration. Severity strata for skill-by-severity reporting.
 strata <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)
@@ -1327,6 +1345,7 @@ Every metric and test named above was implemented below, before any label exists
 
 ```{r}
 #| label: eval-harness
+#| echo: true
 #| output: false
 # Recall at a fixed precision. The operating point is chosen on the calibration
 # data and applied unchanged elsewhere, per the pre-registration: choosing it on
@@ -1494,6 +1513,7 @@ All `r nrow(checks)` checks pass, which is the only reason the document renders 
 
 ```{r}
 #| label: planned-baseline
+#| echo: true
 #| eval: false
 # Activated after pre-registration. SWIR change baseline: pre (2014-2016) minus
 # post (2019-2021) summer means per stand cell, per Zwieback et al. (2024).
@@ -1509,6 +1529,7 @@ Values in this section populate when the pre-registered analysis executes; every
 
 ```{r}
 #| label: tbl-severity
+#| echo: true
 #| tbl-cap: "Severity estimation error per severity stratum and model, from block spatial cross-validation. Values pending execution of the pre-registered analysis."
 strata_lab <- c("0-0.01", "0.01-0.03", "0.03-0.05", "0.05-0.10",
                 "0.10-0.20", ">0.20")
@@ -1525,6 +1546,7 @@ fmt_tbl(sev_shell, right = c("RMSE","rRMSE","MAE","U_Theil","U_bias","U_var","U_
 
 ```{r}
 #| label: tbl-detection
+#| echo: true
 #| tbl-cap: "Detection skill per severity stratum and model: user's accuracy (UA), producer's accuracy (PA), and recall at 0.90 precision (R90, the pre-registered primary metric), with fold-wise standard deviation. Values pending execution of the pre-registered analysis."
 det_shell <- expand.grid(Stratum = strata_lab, Model = models,
                          KEEP.OUT.ATTRS = FALSE)
@@ -1539,6 +1561,7 @@ fmt_tbl(det_shell, right = c("UA","PA","R90","R90_sd"))
 
 ```{r}
 #| label: tbl-onset
+#| echo: true
 #| tbl-cap: "Onset-year estimation error by model and supervision regime (triangulated two-epoch intervals against single-epoch labels), with the H2 paired test. Values pending execution of the pre-registered analysis."
 onset_shell <- expand.grid(Model = c("TempCNN", "Transformer"),
                            Supervision = c("Triangulated", "Single-epoch"),
@@ -1553,6 +1576,7 @@ fmt_tbl(onset_shell, right = c("MAE_yr","RMSE_yr","In_bracket","Delta_MAE","Wilc
 
 ```{r}
 #| label: tbl-climate
+#| echo: true
 #| tbl-cap: "Test of H3: climate-augmented against spectral-only models, fold-wise paired differences with Holm-corrected one-sided Wilcoxon tests. Values pending execution of the pre-registered analysis."
 h3_shell <- data.frame(Model = c("TempCNN", "Transformer"),
                        Delta_R90 = "pending", Delta_MAE_yr = "pending",
@@ -1606,6 +1630,7 @@ on them without reproducing them.
 
 ```{r}
 #| label: supp-label-pairs
+#| echo: true
 fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
               data.frame(area = sprintf("all %d areas", nrow(pairs)),
                          crowns = sum(pairs$crowns), chip_px = "",
