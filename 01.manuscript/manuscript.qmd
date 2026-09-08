@@ -635,7 +635,6 @@ if os.path.exists(ckpt) and not os.path.exists(counts_csv):
     net.load_state_dict(torch.load(ckpt, map_location=dev))
     net = net.to(dev).eval()
 
-    rows = []
     for epoch in ("2020", "2023"):
         ed = os.path.join(out_dir, epoch)
         os.makedirs(ed, exist_ok=True)
@@ -685,9 +684,23 @@ if os.path.exists(ckpt) and not os.path.exists(counts_csv):
                 dict(p_dead=probs, area_m2=areas, source_epoch=epoch),
                 geometry=geoms, crs=crs)
             gdf.to_file(gpkg, driver="GPKG")
-            rows.append(dict(epoch=epoch, block=bid, candidates=len(geoms),
-                             median_p=round(float(np.median(probs)), 3) if probs else 0.0,
-                             median_area_m2=round(float(np.median(areas)), 1) if areas else 0.0))
+
+    # The table is built from every block on disk rather than from the blocks
+    # this run happened to write. Collecting only newly written blocks made an
+    # interrupted and resumed run emit a table that silently undercounted,
+    # because a resumed run skips everything already present. The numbered
+    # glob also excludes the "._" sidecar files the external volume leaves
+    # beside each GeoPackage, which would otherwise double every count.
+    rows = []
+    for epoch in ("2020", "2023"):
+        for f in sorted(glob.glob(os.path.join(out_dir, epoch,
+                                               "block_[0-9][0-9][0-9].gpkg"))):
+            g = gpd.read_file(f)
+            rows.append(dict(
+                epoch=epoch, block=os.path.basename(f)[6:9], candidates=len(g),
+                median_p=round(float(g["p_dead"].median()), 3) if len(g) else 0.0,
+                median_area_m2=round(float(g["area_m2"].median()), 1)
+                if len(g) else 0.0))
     if rows:
         with open(counts_csv, "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0]))
