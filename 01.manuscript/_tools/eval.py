@@ -418,7 +418,7 @@ DISPLACED_TABLES = [
 DISPLAY_LABEL = re.compile(r"^#\|\s*label:\s*((?:tbl|fig)-[\w-]+)", re.M)
 CHUNK_BLOCK = re.compile(r"^```\{.*?^```", re.S | re.M)
 YAML_BLOCK = re.compile(r"\A---\n.*?\n---\n", re.S)
-SUPPLEMENT_HEAD = re.compile(r"^#+\s+Supplement\b", re.M)
+SUPPLEMENT_HEAD = re.compile(r"^#+\s+Supplement(?:ary)?\b", re.M)
 
 
 def prose_of(text):
@@ -435,7 +435,13 @@ def display_items(text):
     moving a chunk past the heading is what moves the table, and nothing has
     to be listed twice.
     """
-    m = SUPPLEMENT_HEAD.search(text)
+    # The heading is looked for in a copy whose chunk bodies are blanked to
+    # spaces, so offsets still line up but a comment inside a chunk cannot be
+    # read as a section heading. An R comment reading "# Supplement tables
+    # carry a hand-numbered caption" did exactly that on 2026-09-08 and put
+    # the whole document in the supplement, which every check then passed.
+    masked = CHUNK_BLOCK.sub(lambda x: " " * len(x.group(0)), text)
+    m = SUPPLEMENT_HEAD.search(masked)
     cut = m.start() if m else len(text)
     main = [x.group(1) for x in DISPLAY_LABEL.finditer(text) if x.start() < cut]
     supp = [x.group(1) for x in DISPLAY_LABEL.finditer(text) if x.start() >= cut]
@@ -490,9 +496,16 @@ def check_displaced_tables_kept(base):
         return "blocked", "manuscript absent", "present", art
     text = open(QMD).read()
     main, supp = display_items(text)
-    present = set(main) | set(supp)
+    # A table moved to the supplement is renamed from tbl- to supp-, following
+    # ipcc-carbon-gains, so that Quarto stops numbering it and its caption can
+    # be hand-numbered Table S1 onwards. The check follows both names, or the
+    # rename would read as a deletion and fail every move.
+    labels = set(re.findall(r"^#\|\s*label:\s*(\S+)", text, re.M))
+    present = {x for x in DISPLACED_TABLES
+               if x in labels or x.replace("tbl-", "supp-") in labels}
     lost = [x for x in DISPLACED_TABLES if x not in present]
-    moved = [x for x in DISPLACED_TABLES if x in supp]
+    moved = [x for x in DISPLACED_TABLES
+             if x.replace("tbl-", "supp-") in labels or x in supp]
     if lost:
         return "fail", f"{len(lost)} deleted rather than moved: " + \
             ", ".join(lost[:4]), "all nine present", art
@@ -527,8 +540,14 @@ def check_no_assistant_traces(base):
     art = os.path.relpath(QMD, ROOT)
     if not os.path.exists(QMD):
         return "blocked", "manuscript absent", "present", art
-    prose = prose_of(open(QMD).read())
-    marks = re.findall(r"\[Pending[^\]]*\]|\bTODO\b|\bFIXME\b", prose)
+    text = open(QMD).read()
+    # The abstract lives in the YAML header, which prose_of strips, and it
+    # carries five placeholders of its own in the form "[... : pending.]".
+    # A check that reads only the body misses every one of them.
+    head = YAML_BLOCK.search(text)
+    scanned = prose_of(text) + (head.group(0) if head else "")
+    marks = re.findall(r"\[[^\]]*pending[^\]]*\]|\bTODO\b|\bFIXME\b",
+                       scanned, re.I)
     prev = base.get("pending_markers")
     measured = f"{len(marks)} placeholders"
     if prev is not None and len(marks) > prev:
@@ -753,7 +772,7 @@ def write_report(rows):
     return path
 
 
-def record_baseline(rows):
+def record_baseline(rows, manuscript_only=False):
     """Record the fingerprints the drift checks compare against."""
     base = load_baseline()
     text = open(PREREG, encoding="utf-8").read() if os.path.exists(PREREG) else ""
@@ -775,8 +794,10 @@ def record_baseline(rows):
                                          if x.startswith("fig-")])
         base["xref_breaches"] = len(display_breaches(text))
         prose = prose_of(text)
+        head = YAML_BLOCK.search(text)
         base["pending_markers"] = len(re.findall(
-            r"\[Pending[^\]]*\]|\bTODO\b|\bFIXME\b", prose))
+            r"\[[^\]]*pending[^\]]*\]|\bTODO\b|\bFIXME\b",
+            prose + (head.group(0) if head else ""), re.I))
         base["prose_colons"] = sum(1 for ln in prose.split("\n")
                                    if ":" in ln
                                    and not ln.strip().startswith("#"))
@@ -794,6 +815,12 @@ def record_baseline(rows):
         base["severity_readers"] = sorted(
             lab for lab, body in chunks(open(QMD).read())
             if SEVERITY_DIR in body)
+    if manuscript_only:
+        base["recorded_manuscript"] = datetime.now(timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        with open(BASELINE, "w") as f:
+            json.dump(base, f, indent=2, sort_keys=True)
+        return BASELINE
     # Full read of every raster, so the recorded index is a set proven
     # readable rather than a set merely seen.
     stats = raster_stats()
@@ -834,12 +861,21 @@ def main():
                     help="record the fingerprints the drift checks compare to")
     ap.add_argument("--attack", action="store_true",
                     help="prove each check can fail before trusting it")
+    ap.add_argument("--baseline-manuscript", action="store_true",
+                    help="re-record only the counts read from the manuscript")
     ap.add_argument("--render", action="store_true",
                     help="render the manuscript and fail on a broken build")
     args = ap.parse_args()
 
     if args.baseline:
         print("baseline written to", record_baseline([]))
+        return 0
+
+    if args.baseline_manuscript:
+        # The raster index costs about seven minutes and four gigabytes to
+        # rebuild and cannot move under an editing pass, so a pass that only
+        # touches prose re-records only what it could have changed.
+        print("manuscript counts written to", record_baseline([], manuscript_only=True))
         return 0
 
     if args.attack:

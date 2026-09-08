@@ -66,7 +66,10 @@ inputs <- file.path(root, "02.inputs")
 
 # House table format: 9 pt, centred headers, numeric right / text left,
 # single line spacing.
-fmt_tbl <- function(df, right = NULL) {
+# Supplement tables carry a hand-numbered caption, because they are labelled
+# supp- rather than tbl- so that Quarto stops numbering them, and a caption
+# passed here is the only one they then get.
+fmt_tbl <- function(df, right = NULL, caption = NULL) {
   right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
   left_cols <- setdiff(names(df), right_cols)
   ft <- flextable::flextable(df)
@@ -79,6 +82,7 @@ fmt_tbl <- function(df, right = NULL) {
   ft <- flextable::line_spacing(ft, space = 1, part = "all")
   ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1,
                            part = "all")
+  if (!is.null(caption)) ft <- flextable::set_caption(ft, caption)
   flextable::set_table_properties(ft, layout = "autofit", width = 1)
 }
 ```
@@ -370,18 +374,6 @@ if (!file.exists(pairs_csv)) {
   write.csv(do.call(rbind, rows), pairs_csv, row.names = FALSE)
 }
 pairs <- read.csv(pairs_csv)
-```
-
-```{r}
-#| label: tbl-label-pairs
-#| tbl-cap: "Tuning pairs assembled from the published crown delineations: four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with."
-fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
-              data.frame(area = sprintf("all %d areas", nrow(pairs)),
-                         crowns = sum(pairs$crowns), chip_px = "",
-                         bands = NA,
-                         crown_area_m2 = sum(pairs$crown_area_m2),
-                         pct_crown = round(mean(pairs$pct_crown), 2))),
-        right = c("crowns", "bands", "crown_area_m2", "pct_crown"))
 ```
 
 Of `r nrow(pairs)` delineation areas holding crowns, `r sum(!is.na(pairs$bands))` yielded imagery, carrying `r format(sum(pairs$crowns[!is.na(pairs$bands)]), big.mark = ",")` of the `r format(sum(pairs$crowns), big.mark = ",")` published crowns over `r format(sum(pairs$crown_area_m2[!is.na(pairs$bands)]), big.mark = ",")` m² of delineated dead canopy; dead crowns occupy `r sprintf("%.1f%%", mean(pairs$pct_crown, na.rm = TRUE))` of chip pixels on average. That imbalance is the reason the parent study weighted the dead class twenty times the background class, and the same weighting carries over here. Two properties of the delivered labels are worth recording, since neither was documented with them. One area declared a geographic coordinate reference system while holding projected coordinates, which inflates its computed crown areas by nine orders of magnitude if taken at face value, and the delineation areas vary in size by more than two orders of magnitude, so the smallest carry too few pixels to serve as training chips and were dropped at the tiling stage rather than here.
@@ -1657,3 +1649,22 @@ Five limitations are known by design. First, crown labels derive from visual int
 All inputs are publicly retrievable; the download script, checksums and provenance manifest are in the project repository. The severity rasters of @Zwieback_2024 are archived at doi:10.5281/zenodo.8423568, the crown labels at doi:10.5281/zenodo.10569990 and the trained network at doi:10.5281/zenodo.10569975; the latter two are distributed under the Creative Commons Attribution 4.0 licence, while the severity rasters carry no declared licence and are used for independent evaluation only, pending clarification with the author. Aerial detection survey data are distributed by the United States Forest Service as public-domain works, and Sentinel-2, Landsat and elevation data are open under their respective public licences. The Maxar mosaics of the State of Alaska Geoportal are accessible for non-commercial use by streaming and are not redistributed here.
 
 # References
+
+# Supplementary material
+
+The tables below record how the label pipeline was built and checked. They document that the
+pipeline works, which is a reproducibility claim rather than a result, and the main text draws
+on them without reproducing them.
+
+```{r}
+#| label: supp-label-pairs
+fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
+              data.frame(area = sprintf("all %d areas", nrow(pairs)),
+                         crowns = sum(pairs$crowns), chip_px = "",
+                         bands = NA,
+                         crown_area_m2 = sum(pairs$crown_area_m2),
+                         pct_crown = round(mean(pairs$pct_crown), 2))),
+        right = c("crowns", "bands", "crown_area_m2", "pct_crown"),
+        caption = "Table S1. Tuning pairs assembled from the published crown delineations: four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with.")
+```
+

@@ -236,11 +236,21 @@ def attack_displaced_tables_kept(base):
     """Delete a displaced table outright rather than moving it."""
     with Perturb(ev.QMD) as p:
         text = p.before.decode()
-        lab = ev.DISPLACED_TABLES[0]
-        m = re.search(r"^```\{[^}]*\}\n#\|\s*label: " + re.escape(lab) +
-                      r"\b.*?^```\n", text, re.S | re.M)
+        # Whichever name the table currently carries: a table already moved to
+        # the supplement is labelled supp-, and an attack that only knows the
+        # tbl- name stops attacking the moment the first move lands, which
+        # leaves the check untested exactly when it starts mattering.
+        names = [n for lab in ev.DISPLACED_TABLES
+                 for n in (lab, lab.replace("tbl-", "supp-"))]
+        m = lab = None
+        for n in names:
+            m = re.search(r"^```\{[^}]*\}\n#\|\s*label: " + re.escape(n) +
+                          r"\b.*?^```\n", text, re.S | re.M)
+            if m:
+                lab = n
+                break
         if not m:
-            return None, f"{lab} chunk not found to delete"
+            return None, "no displaced table chunk found to delete"
         p.write((text[:m.start()] + text[m.end():]).encode())
         return ev.check_displaced_tables_kept(base)[0], f"{lab} deleted"
 

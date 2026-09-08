@@ -16,8 +16,8 @@
     "2. **H3 (directional, added to the Holm family, now three tests):** TempCNN with"
   ],
   "main_figure_count": 2,
-  "main_table_count": 17,
-  "pending_markers": 4,
+  "main_table_count": 16,
+  "pending_markers": 9,
   "prose_colons": 9,
   "raster_index": {
     "02.inputs/chips/2020/block_001.tif": [
@@ -1915,6 +1915,7 @@
   },
   "raster_unreadable_at_baseline": [],
   "recorded": "2026-09-08T21:36:21Z",
+  "recorded_manuscript": "2026-09-08T21:41:22Z",
   "results_shells": 7,
   "severity_readers": [
     "climate-build",
@@ -1923,5 +1924,5 @@
     "fig-studyarea",
     "severity-metadata"
   ],
-  "xref_breaches": 14
+  "xref_breaches": 13
 }
