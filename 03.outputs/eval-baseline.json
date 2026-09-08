@@ -1,0 +1,1919 @@
+{
+  "bib_entry_count": 50,
+  "hypothesis_fingerprint": "d1d4b6c131d62d5e",
+  "hypothesis_lines": [
+    "- H1-H0: temporal deep learning does not exceed the SWIR change baseline in detection skill within the 0.01-0.10 severity stratum.",
+    "- H1 (directional): TempCNN achieves higher recall at 0.90 precision than the SWIR change baseline in the 0.01-0.10 stratum.",
+    "- H2-H0: interval-censored onset supervision does not reduce onset error relative to single-epoch point supervision.",
+    "- H2 (directional): TempCNN trained with the marginal-likelihood loss over each stand's onset bracket achieves lower onset MAE than the same architecture trained on bracket-midpoint point labels.",
+    "- H1 test: per-fold recall at precision 0.90 (operating point selected on the training folds' PR curve, applied unchanged to the test fold), paired difference TempCNN minus baseline within the 0.01-0.10 stratum; one-sided Wilcoxon signed-rank across the 8 folds; block bootstrap (resampling folds, 10,000 draws) for the 95% CI.",
+    "- H2 test: per-fold onset MAE (years), paired difference interval-trained minus point-trained TempCNN; one-sided Wilcoxon signed-rank across folds.",
+    "- H1: positive difference, planning magnitude ~0.3 (deep 0.4-0.5, baseline 0-0.15; sources: Perbet 2024/2025 omission rates; Zwieback 2024 sub-0.1 null).",
+    "- H2: negative MAE difference (interval better), magnitude unspecified; direction only.",
+    "H1 is disconfirmed by a fold-wise difference distribution centred at or below zero; concretely, if the baseline matches the deep model's low-severity recall (as it would if SWIR change carries more low-severity signal than Zwieback's single-epoch analysis could see), H1 fails. H2 is disconfirmed if bracket supervision adds nothing over midpoints, which is plausible if the true onset distribution is tight within brackets.",
+    "2. **H3 (directional, added to the Holm family, now three tests):** TempCNN with"
+  ],
+  "raster_index": {
+    "02.inputs/chips/2020/block_001.tif": [
+      4196423,
+      1786572221
+    ],
+    "02.inputs/chips/2020/block_002.tif": [
+      4196423,
+      1786572237
+    ],
+    "02.inputs/chips/2020/block_003.tif": [
+      4196423,
+      1786572250
+    ],
+    "02.inputs/chips/2020/block_004.tif": [
+      4196423,
+      1786572260
+    ],
+    "02.inputs/chips/2020/block_005.tif": [
+      4196423,
+      1786572269
+    ],
+    "02.inputs/chips/2020/block_006.tif": [
+      4196423,
+      1786572283
+    ],
+    "02.inputs/chips/2020/block_007.tif": [
+      4196423,
+      1786572291
+    ],
+    "02.inputs/chips/2020/block_008.tif": [
+      4196423,
+      1786572305
+    ],
+    "02.inputs/chips/2020/block_009.tif": [
+      4196423,
+      1786572314
+    ],
+    "02.inputs/chips/2020/block_010.tif": [
+      4196423,
+      1786572322
+    ],
+    "02.inputs/chips/2020/block_011.tif": [
+      4196423,
+      1786572330
+    ],
+    "02.inputs/chips/2020/block_012.tif": [
+      4196423,
+      1786572344
+    ],
+    "02.inputs/chips/2020/block_013.tif": [
+      4196423,
+      1786572353
+    ],
+    "02.inputs/chips/2020/block_014.tif": [
+      4196423,
+      1786572369
+    ],
+    "02.inputs/chips/2020/block_015.tif": [
+      4196423,
+      1786572383
+    ],
+    "02.inputs/chips/2020/block_016.tif": [
+      4196423,
+      1786572391
+    ],
+    "02.inputs/chips/2020/block_017.tif": [
+      4196423,
+      1786572407
+    ],
+    "02.inputs/chips/2020/block_018.tif": [
+      4196423,
+      1786572416
+    ],
+    "02.inputs/chips/2020/block_019.tif": [
+      4196423,
+      1786572432
+    ],
+    "02.inputs/chips/2020/block_020.tif": [
+      4196423,
+      1786572440
+    ],
+    "02.inputs/chips/2020/block_021.tif": [
+      4196423,
+      1786572447
+    ],
+    "02.inputs/chips/2020/block_022.tif": [
+      4196423,
+      1786572456
+    ],
+    "02.inputs/chips/2020/block_023.tif": [
+      4196423,
+      1786572472
+    ],
+    "02.inputs/chips/2020/block_024.tif": [
+      4196423,
+      1786572482
+    ],
+    "02.inputs/chips/2020/block_025.tif": [
+      4196423,
+      1786572490
+    ],
+    "02.inputs/chips/2020/block_026.tif": [
+      4196423,
+      1786572505
+    ],
+    "02.inputs/chips/2020/block_027.tif": [
+      4196423,
+      1786572515
+    ],
+    "02.inputs/chips/2020/block_028.tif": [
+      4196423,
+      1786572525
+    ],
+    "02.inputs/chips/2020/block_029.tif": [
+      4196423,
+      1786572541
+    ],
+    "02.inputs/chips/2020/block_030.tif": [
+      4196423,
+      1786572549
+    ],
+    "02.inputs/chips/2020/block_031.tif": [
+      4196423,
+      1786572557
+    ],
+    "02.inputs/chips/2020/block_032.tif": [
+      4196423,
+      1786572570
+    ],
+    "02.inputs/chips/2020/block_033.tif": [
+      4196423,
+      1786572583
+    ],
+    "02.inputs/chips/2020/block_034.tif": [
+      4196423,
+      1786572598
+    ],
+    "02.inputs/chips/2020/block_035.tif": [
+      4196423,
+      1786572614
+    ],
+    "02.inputs/chips/2020/block_036.tif": [
+      4196423,
+      1786572631
+    ],
+    "02.inputs/chips/2020/block_037.tif": [
+      4196423,
+      1786572647
+    ],
+    "02.inputs/chips/2020/block_038.tif": [
+      4196423,
+      1786572655
+    ],
+    "02.inputs/chips/2020/block_039.tif": [
+      4196423,
+      1786572672
+    ],
+    "02.inputs/chips/2020/block_040.tif": [
+      4196423,
+      1786572682
+    ],
+    "02.inputs/chips/2020/block_041.tif": [
+      4196423,
+      1786572698
+    ],
+    "02.inputs/chips/2020/block_042.tif": [
+      4196423,
+      1786572712
+    ],
+    "02.inputs/chips/2020/block_043.tif": [
+      4196423,
+      1786572725
+    ],
+    "02.inputs/chips/2020/block_044.tif": [
+      4196423,
+      1786572741
+    ],
+    "02.inputs/chips/2020/block_045.tif": [
+      4196423,
+      1786572757
+    ],
+    "02.inputs/chips/2020/block_046.tif": [
+      4196423,
+      1786572767
+    ],
+    "02.inputs/chips/2020/block_047.tif": [
+      4196423,
+      1786572781
+    ],
+    "02.inputs/chips/2020/block_048.tif": [
+      4196423,
+      1786572797
+    ],
+    "02.inputs/chips/2020/block_049.tif": [
+      4196423,
+      1786572811
+    ],
+    "02.inputs/chips/2020/block_050.tif": [
+      4196423,
+      1786572825
+    ],
+    "02.inputs/chips/2020/block_051.tif": [
+      4196423,
+      1786572839
+    ],
+    "02.inputs/chips/2020/block_052.tif": [
+      4196423,
+      1786572846
+    ],
+    "02.inputs/chips/2020/block_053.tif": [
+      4196423,
+      1786572856
+    ],
+    "02.inputs/chips/2020/block_054.tif": [
+      4196423,
+      1786572866
+    ],
+    "02.inputs/chips/2020/block_055.tif": [
+      4196423,
+      1786572876
+    ],
+    "02.inputs/chips/2020/block_056.tif": [
+      4196423,
+      1786572884
+    ],
+    "02.inputs/chips/2020/block_057.tif": [
+      4196423,
+      1786572893
+    ],
+    "02.inputs/chips/2020/block_058.tif": [
+      4196423,
+      1786572908
+    ],
+    "02.inputs/chips/2020/block_059.tif": [
+      4196423,
+      1786572917
+    ],
+    "02.inputs/chips/2020/block_060.tif": [
+      4196423,
+      1786572929
+    ],
+    "02.inputs/chips/2020/block_061.tif": [
+      4196423,
+      1786572941
+    ],
+    "02.inputs/chips/2020/block_062.tif": [
+      4196423,
+      1786572955
+    ],
+    "02.inputs/chips/2020/block_063.tif": [
+      4196423,
+      1786572969
+    ],
+    "02.inputs/chips/2020/block_064.tif": [
+      4196423,
+      1786572985
+    ],
+    "02.inputs/chips/2020/block_065.tif": [
+      4196423,
+      1786573000
+    ],
+    "02.inputs/chips/2020/block_066.tif": [
+      4196423,
+      1786573015
+    ],
+    "02.inputs/chips/2020/block_067.tif": [
+      4196423,
+      1786573024
+    ],
+    "02.inputs/chips/2020/block_068.tif": [
+      4196423,
+      1786573031
+    ],
+    "02.inputs/chips/2020/block_069.tif": [
+      4196423,
+      1786573037
+    ],
+    "02.inputs/chips/2020/block_070.tif": [
+      4196423,
+      1786573050
+    ],
+    "02.inputs/chips/2020/block_071.tif": [
+      4196423,
+      1786573058
+    ],
+    "02.inputs/chips/2020/block_072.tif": [
+      4196423,
+      1786573066
+    ],
+    "02.inputs/chips/2020/block_073.tif": [
+      4196423,
+      1786573072
+    ],
+    "02.inputs/chips/2020/block_074.tif": [
+      4196423,
+      1786573079
+    ],
+    "02.inputs/chips/2020/block_075.tif": [
+      4196423,
+      1786573095
+    ],
+    "02.inputs/chips/2020/block_076.tif": [
+      4196423,
+      1786573102
+    ],
+    "02.inputs/chips/2020/block_077.tif": [
+      4196423,
+      1786573110
+    ],
+    "02.inputs/chips/2020/block_078.tif": [
+      4196423,
+      1786573118
+    ],
+    "02.inputs/chips/2020/block_079.tif": [
+      4196423,
+      1786573133
+    ],
+    "02.inputs/chips/2020/block_080.tif": [
+      4196423,
+      1786573148
+    ],
+    "02.inputs/chips/2020/block_081.tif": [
+      4196423,
+      1786573156
+    ],
+    "02.inputs/chips/2020/block_082.tif": [
+      4196423,
+      1786573172
+    ],
+    "02.inputs/chips/2020/block_083.tif": [
+      4196423,
+      1786573188
+    ],
+    "02.inputs/chips/2020/block_084.tif": [
+      4196423,
+      1786573199
+    ],
+    "02.inputs/chips/2020/block_085.tif": [
+      4196423,
+      1786573207
+    ],
+    "02.inputs/chips/2020/block_086.tif": [
+      4196423,
+      1786573223
+    ],
+    "02.inputs/chips/2020/block_087.tif": [
+      4196423,
+      1786573239
+    ],
+    "02.inputs/chips/2020/block_088.tif": [
+      4196423,
+      1786573256
+    ],
+    "02.inputs/chips/2020/block_089.tif": [
+      4196423,
+      1786573271
+    ],
+    "02.inputs/chips/2020/block_090.tif": [
+      4196423,
+      1786573288
+    ],
+    "02.inputs/chips/2020/block_091.tif": [
+      4196423,
+      1786573296
+    ],
+    "02.inputs/chips/2020/block_092.tif": [
+      4196423,
+      1786573303
+    ],
+    "02.inputs/chips/2020/block_093.tif": [
+      4196423,
+      1786573317
+    ],
+    "02.inputs/chips/2020/block_094.tif": [
+      4196423,
+      1786573334
+    ],
+    "02.inputs/chips/2020/block_095.tif": [
+      4196423,
+      1786573348
+    ],
+    "02.inputs/chips/2020/block_096.tif": [
+      4196423,
+      1786573364
+    ],
+    "02.inputs/chips/2020/block_097.tif": [
+      4196423,
+      1786573378
+    ],
+    "02.inputs/chips/2020/block_098.tif": [
+      4196423,
+      1786573386
+    ],
+    "02.inputs/chips/2020/block_099.tif": [
+      4196423,
+      1786573393
+    ],
+    "02.inputs/chips/2020/block_100.tif": [
+      4196423,
+      1786573406
+    ],
+    "02.inputs/chips/2020/block_101.tif": [
+      4196423,
+      1786573412
+    ],
+    "02.inputs/chips/2020/block_102.tif": [
+      4196423,
+      1786573418
+    ],
+    "02.inputs/chips/2020/block_103.tif": [
+      4196423,
+      1786573438
+    ],
+    "02.inputs/chips/2020/block_104.tif": [
+      4196423,
+      1786573449
+    ],
+    "02.inputs/chips/2020/block_105.tif": [
+      4196423,
+      1786573463
+    ],
+    "02.inputs/chips/2020/block_106.tif": [
+      4196423,
+      1786573479
+    ],
+    "02.inputs/chips/2020/block_107.tif": [
+      4196423,
+      1786573487
+    ],
+    "02.inputs/chips/2020/block_108.tif": [
+      4196423,
+      1786573493
+    ],
+    "02.inputs/chips/2020/block_109.tif": [
+      4196423,
+      1786573500
+    ],
+    "02.inputs/chips/2020/block_110.tif": [
+      4196423,
+      1786573507
+    ],
+    "02.inputs/chips/2020/block_111.tif": [
+      4196423,
+      1786573522
+    ],
+    "02.inputs/chips/2020/block_112.tif": [
+      4196423,
+      1786573532
+    ],
+    "02.inputs/chips/2020/block_113.tif": [
+      4196423,
+      1786573543
+    ],
+    "02.inputs/chips/2020/block_114.tif": [
+      4196423,
+      1786573555
+    ],
+    "02.inputs/chips/2020/block_115.tif": [
+      4196423,
+      1786573573
+    ],
+    "02.inputs/chips/2020/block_116.tif": [
+      4196423,
+      1786573589
+    ],
+    "02.inputs/chips/2020/block_117.tif": [
+      4196423,
+      1786573605
+    ],
+    "02.inputs/chips/2020/block_118.tif": [
+      4196423,
+      1786573618
+    ],
+    "02.inputs/chips/2020/block_119.tif": [
+      4196423,
+      1786573633
+    ],
+    "02.inputs/chips/2020/block_120.tif": [
+      4196423,
+      1786573651
+    ],
+    "02.inputs/chips/2020/block_121.tif": [
+      4196423,
+      1786573660
+    ],
+    "02.inputs/chips/2020/block_122.tif": [
+      4196423,
+      1786573671
+    ],
+    "02.inputs/chips/2020/block_123.tif": [
+      4196423,
+      1786573685
+    ],
+    "02.inputs/chips/2020/block_124.tif": [
+      4196423,
+      1786573704
+    ],
+    "02.inputs/chips/2020/block_125.tif": [
+      4196423,
+      1786573713
+    ],
+    "02.inputs/chips/2020/block_126.tif": [
+      4196423,
+      1786573730
+    ],
+    "02.inputs/chips/2020/block_127.tif": [
+      4196423,
+      1786573751
+    ],
+    "02.inputs/chips/2020/block_128.tif": [
+      4196423,
+      1786573769
+    ],
+    "02.inputs/chips/2020/block_129.tif": [
+      4196423,
+      1786573786
+    ],
+    "02.inputs/chips/2020/block_130.tif": [
+      4196423,
+      1786573795
+    ],
+    "02.inputs/chips/2020/block_131.tif": [
+      4196423,
+      1786573809
+    ],
+    "02.inputs/chips/2020/block_132.tif": [
+      4196423,
+      1786573823
+    ],
+    "02.inputs/chips/2020/block_133.tif": [
+      4196423,
+      1786573830
+    ],
+    "02.inputs/chips/2020/block_134.tif": [
+      4196423,
+      1786573837
+    ],
+    "02.inputs/chips/2020/block_135.tif": [
+      4196423,
+      1786573843
+    ],
+    "02.inputs/chips/2020/block_136.tif": [
+      4196423,
+      1786573853
+    ],
+    "02.inputs/chips/2020/block_137.tif": [
+      4196423,
+      1786573868
+    ],
+    "02.inputs/chips/2020/block_138.tif": [
+      4196423,
+      1786573876
+    ],
+    "02.inputs/chips/2020/block_139.tif": [
+      4196423,
+      1786573884
+    ],
+    "02.inputs/chips/2020/block_140.tif": [
+      4196423,
+      1786573896
+    ],
+    "02.inputs/chips/2020/block_141.tif": [
+      4196423,
+      1786573912
+    ],
+    "02.inputs/chips/2020/block_142.tif": [
+      4196423,
+      1786573928
+    ],
+    "02.inputs/chips/2020/block_143.tif": [
+      4196423,
+      1786573942
+    ],
+    "02.inputs/chips/2020/block_144.tif": [
+      4196423,
+      1786573950
+    ],
+    "02.inputs/chips/2020/block_145.tif": [
+      4196423,
+      1786573965
+    ],
+    "02.inputs/chips/2020/block_146.tif": [
+      4196423,
+      1786573979
+    ],
+    "02.inputs/chips/2020/block_147.tif": [
+      4196423,
+      1786573995
+    ],
+    "02.inputs/chips/2020/block_148.tif": [
+      4196423,
+      1786574007
+    ],
+    "02.inputs/chips/2020/block_149.tif": [
+      4196423,
+      1786574022
+    ],
+    "02.inputs/chips/2020/block_150.tif": [
+      4196423,
+      1786574030
+    ],
+    "02.inputs/chips/2020/block_151.tif": [
+      4196423,
+      1786574046
+    ],
+    "02.inputs/chips/2020/block_152.tif": [
+      4196423,
+      1786574054
+    ],
+    "02.inputs/chips/2020/block_153.tif": [
+      4196423,
+      1786574068
+    ],
+    "02.inputs/chips/2020/block_154.tif": [
+      4196423,
+      1786574076
+    ],
+    "02.inputs/chips/2020/block_155.tif": [
+      4196423,
+      1786574091
+    ],
+    "02.inputs/chips/2020/block_156.tif": [
+      4196423,
+      1786574100
+    ],
+    "02.inputs/chips/2020/block_157.tif": [
+      4196423,
+      1786574109
+    ],
+    "02.inputs/chips/2020/block_158.tif": [
+      4196423,
+      1786574116
+    ],
+    "02.inputs/chips/2020/block_159.tif": [
+      4196423,
+      1786574131
+    ],
+    "02.inputs/chips/2020/block_160.tif": [
+      4196423,
+      1786574139
+    ],
+    "02.inputs/chips/2023/block_001.tif": [
+      12848231,
+      1786574164
+    ],
+    "02.inputs/chips/2023/block_002.tif": [
+      12848231,
+      1786574191
+    ],
+    "02.inputs/chips/2023/block_003.tif": [
+      12848231,
+      1786574217
+    ],
+    "02.inputs/chips/2023/block_004.tif": [
+      12848231,
+      1786574233
+    ],
+    "02.inputs/chips/2023/block_005.tif": [
+      12848231,
+      1786574263
+    ],
+    "02.inputs/chips/2023/block_006.tif": [
+      12848231,
+      1788870244
+    ],
+    "02.inputs/chips/2023/block_007.tif": [
+      12848231,
+      1786574340
+    ],
+    "02.inputs/chips/2023/block_008.tif": [
+      12848231,
+      1786574364
+    ],
+    "02.inputs/chips/2023/block_009.tif": [
+      12848231,
+      1786574376
+    ],
+    "02.inputs/chips/2023/block_010.tif": [
+      12848231,
+      1786574400
+    ],
+    "02.inputs/chips/2023/block_011.tif": [
+      12848231,
+      1786574410
+    ],
+    "02.inputs/chips/2023/block_012.tif": [
+      12848231,
+      1786574416
+    ],
+    "02.inputs/chips/2023/block_013.tif": [
+      12848231,
+      1786574441
+    ],
+    "02.inputs/chips/2023/block_014.tif": [
+      12848231,
+      1786574463
+    ],
+    "02.inputs/chips/2023/block_015.tif": [
+      12848231,
+      1786574492
+    ],
+    "02.inputs/chips/2023/block_016.tif": [
+      12848231,
+      1786574518
+    ],
+    "02.inputs/chips/2023/block_017.tif": [
+      12848231,
+      1786574530
+    ],
+    "02.inputs/chips/2023/block_018.tif": [
+      12848231,
+      1786574540
+    ],
+    "02.inputs/chips/2023/block_019.tif": [
+      12848231,
+      1786574548
+    ],
+    "02.inputs/chips/2023/block_020.tif": [
+      12848231,
+      1786574555
+    ],
+    "02.inputs/chips/2023/block_021.tif": [
+      12848231,
+      1786574575
+    ],
+    "02.inputs/chips/2023/block_022.tif": [
+      12848231,
+      1786574584
+    ],
+    "02.inputs/chips/2023/block_023.tif": [
+      12848231,
+      1786574591
+    ],
+    "02.inputs/chips/2023/block_024.tif": [
+      12848231,
+      1786574599
+    ],
+    "02.inputs/chips/2023/block_025.tif": [
+      12848231,
+      1786574622
+    ],
+    "02.inputs/chips/2023/block_026.tif": [
+      12848231,
+      1786574635
+    ],
+    "02.inputs/chips/2023/block_027.tif": [
+      12848231,
+      1786574643
+    ],
+    "02.inputs/chips/2023/block_028.tif": [
+      12848231,
+      1786574666
+    ],
+    "02.inputs/chips/2023/block_029.tif": [
+      12848231,
+      1786574677
+    ],
+    "02.inputs/chips/2023/block_030.tif": [
+      12848231,
+      1786574704
+    ],
+    "02.inputs/chips/2023/block_031.tif": [
+      12848231,
+      1786574729
+    ],
+    "02.inputs/chips/2023/block_032.tif": [
+      12848231,
+      1786574757
+    ],
+    "02.inputs/chips/2023/block_033.tif": [
+      12848231,
+      1786574765
+    ],
+    "02.inputs/chips/2023/block_034.tif": [
+      12848231,
+      1786574790
+    ],
+    "02.inputs/chips/2023/block_035.tif": [
+      12848231,
+      1786574815
+    ],
+    "02.inputs/chips/2023/block_036.tif": [
+      12848231,
+      1786574834
+    ],
+    "02.inputs/chips/2023/block_037.tif": [
+      12848231,
+      1786574842
+    ],
+    "02.inputs/chips/2023/block_038.tif": [
+      12848231,
+      1786574863
+    ],
+    "02.inputs/chips/2023/block_039.tif": [
+      12848231,
+      1786574876
+    ],
+    "02.inputs/chips/2023/block_040.tif": [
+      12848231,
+      1786574892
+    ],
+    "02.inputs/chips/2023/block_041.tif": [
+      12848231,
+      1786574919
+    ],
+    "02.inputs/chips/2023/block_042.tif": [
+      12848231,
+      1786574928
+    ],
+    "02.inputs/chips/2023/block_043.tif": [
+      12848231,
+      1786574937
+    ],
+    "02.inputs/chips/2023/block_044.tif": [
+      12848231,
+      1786574944
+    ],
+    "02.inputs/chips/2023/block_045.tif": [
+      12848231,
+      1786574959
+    ],
+    "02.inputs/chips/2023/block_046.tif": [
+      12848231,
+      1786574980
+    ],
+    "02.inputs/chips/2023/block_047.tif": [
+      12848231,
+      1786575002
+    ],
+    "02.inputs/chips/2023/block_048.tif": [
+      12848231,
+      1786575011
+    ],
+    "02.inputs/chips/2023/block_049.tif": [
+      12848231,
+      1786575017
+    ],
+    "02.inputs/chips/2023/block_050.tif": [
+      12848231,
+      1786575024
+    ],
+    "02.inputs/chips/2023/block_051.tif": [
+      12848231,
+      1786575030
+    ],
+    "02.inputs/chips/2023/block_052.tif": [
+      12848231,
+      1786575046
+    ],
+    "02.inputs/chips/2023/block_053.tif": [
+      12848231,
+      1786575068
+    ],
+    "02.inputs/chips/2023/block_054.tif": [
+      12848231,
+      1786575086
+    ],
+    "02.inputs/chips/2023/block_055.tif": [
+      12848231,
+      1786575097
+    ],
+    "02.inputs/chips/2023/block_056.tif": [
+      12848231,
+      1786575105
+    ],
+    "02.inputs/chips/2023/block_057.tif": [
+      12848231,
+      1786575114
+    ],
+    "02.inputs/chips/2023/block_058.tif": [
+      12848231,
+      1786575141
+    ],
+    "02.inputs/chips/2023/block_059.tif": [
+      12848231,
+      1786575160
+    ],
+    "02.inputs/chips/2023/block_060.tif": [
+      12848231,
+      1786575176
+    ],
+    "02.inputs/chips/2023/block_061.tif": [
+      12848231,
+      1786575186
+    ],
+    "02.inputs/chips/2023/block_062.tif": [
+      12848231,
+      1786575208
+    ],
+    "02.inputs/chips/2023/block_063.tif": [
+      12848231,
+      1786575230
+    ],
+    "02.inputs/chips/2023/block_064.tif": [
+      12848231,
+      1786575254
+    ],
+    "02.inputs/chips/2023/block_065.tif": [
+      12848231,
+      1786575269
+    ],
+    "02.inputs/chips/2023/block_066.tif": [
+      12848231,
+      1786575276
+    ],
+    "02.inputs/chips/2023/block_067.tif": [
+      12848231,
+      1786575285
+    ],
+    "02.inputs/chips/2023/block_068.tif": [
+      12848231,
+      1786575306
+    ],
+    "02.inputs/chips/2023/block_069.tif": [
+      12848231,
+      1786575337
+    ],
+    "02.inputs/chips/2023/block_070.tif": [
+      12848231,
+      1786575354
+    ],
+    "02.inputs/chips/2023/block_071.tif": [
+      12848231,
+      1786575372
+    ],
+    "02.inputs/chips/2023/block_072.tif": [
+      12848231,
+      1786575400
+    ],
+    "02.inputs/chips/2023/block_073.tif": [
+      12848231,
+      1786575414
+    ],
+    "02.inputs/chips/2023/block_074.tif": [
+      12848231,
+      1786575440
+    ],
+    "02.inputs/chips/2023/block_075.tif": [
+      12848231,
+      1786575450
+    ],
+    "02.inputs/chips/2023/block_076.tif": [
+      12848231,
+      1786575458
+    ],
+    "02.inputs/chips/2023/block_077.tif": [
+      12848231,
+      1786575485
+    ],
+    "02.inputs/chips/2023/block_078.tif": [
+      12848231,
+      1786575496
+    ],
+    "02.inputs/chips/2023/block_079.tif": [
+      12848231,
+      1786575522
+    ],
+    "02.inputs/chips/2023/block_080.tif": [
+      12848231,
+      1786575540
+    ],
+    "02.inputs/chips/2023/block_081.tif": [
+      12848231,
+      1786575549
+    ],
+    "02.inputs/chips/2023/block_082.tif": [
+      12848231,
+      1786575576
+    ],
+    "02.inputs/chips/2023/block_083.tif": [
+      12848231,
+      1786575585
+    ],
+    "02.inputs/chips/2023/block_084.tif": [
+      12848231,
+      1786575596
+    ],
+    "02.inputs/chips/2023/block_085.tif": [
+      12848231,
+      1786575622
+    ],
+    "02.inputs/chips/2023/block_086.tif": [
+      12848231,
+      1786575643
+    ],
+    "02.inputs/chips/2023/block_087.tif": [
+      12848231,
+      1786575654
+    ],
+    "02.inputs/chips/2023/block_088.tif": [
+      12848231,
+      1786575677
+    ],
+    "02.inputs/chips/2023/block_089.tif": [
+      12848231,
+      1786575685
+    ],
+    "02.inputs/chips/2023/block_090.tif": [
+      12848231,
+      1786576903
+    ],
+    "02.inputs/chips/2023/block_091.tif": [
+      12848231,
+      1786575697
+    ],
+    "02.inputs/chips/2023/block_092.tif": [
+      12848231,
+      1786575709
+    ],
+    "02.inputs/chips/2023/block_093.tif": [
+      12848231,
+      1786575719
+    ],
+    "02.inputs/chips/2023/block_094.tif": [
+      12848231,
+      1786576913
+    ],
+    "02.inputs/chips/2023/block_095.tif": [
+      12848231,
+      1786575737
+    ],
+    "02.inputs/chips/2023/block_096.tif": [
+      12848231,
+      1786575745
+    ],
+    "02.inputs/chips/2023/block_097.tif": [
+      12848231,
+      1786575766
+    ],
+    "02.inputs/chips/2023/block_098.tif": [
+      12848231,
+      1786575776
+    ],
+    "02.inputs/chips/2023/block_099.tif": [
+      12848231,
+      1786575792
+    ],
+    "02.inputs/chips/2023/block_100.tif": [
+      12848231,
+      1786575820
+    ],
+    "02.inputs/chips/2023/block_101.tif": [
+      12848231,
+      1786575841
+    ],
+    "02.inputs/chips/2023/block_102.tif": [
+      12848231,
+      1786575863
+    ],
+    "02.inputs/chips/2023/block_103.tif": [
+      12848231,
+      1786575883
+    ],
+    "02.inputs/chips/2023/block_104.tif": [
+      12848231,
+      1786575890
+    ],
+    "02.inputs/chips/2023/block_105.tif": [
+      12848231,
+      1786575898
+    ],
+    "02.inputs/chips/2023/block_106.tif": [
+      12848231,
+      1786575905
+    ],
+    "02.inputs/chips/2023/block_107.tif": [
+      12848231,
+      1786575911
+    ],
+    "02.inputs/chips/2023/block_108.tif": [
+      12848231,
+      1786575917
+    ],
+    "02.inputs/chips/2023/block_109.tif": [
+      12848231,
+      1786575924
+    ],
+    "02.inputs/chips/2023/block_110.tif": [
+      12848231,
+      1786575939
+    ],
+    "02.inputs/chips/2023/block_111.tif": [
+      12848231,
+      1786575955
+    ],
+    "02.inputs/chips/2023/block_112.tif": [
+      12848231,
+      1786575980
+    ],
+    "02.inputs/chips/2023/block_113.tif": [
+      12848231,
+      1786576007
+    ],
+    "02.inputs/chips/2023/block_114.tif": [
+      12848231,
+      1786576028
+    ],
+    "02.inputs/chips/2023/block_115.tif": [
+      12848231,
+      1786576044
+    ],
+    "02.inputs/chips/2023/block_116.tif": [
+      12848231,
+      1786576051
+    ],
+    "02.inputs/chips/2023/block_117.tif": [
+      12848231,
+      1786576072
+    ],
+    "02.inputs/chips/2023/block_118.tif": [
+      12848231,
+      1786576081
+    ],
+    "02.inputs/chips/2023/block_119.tif": [
+      12848231,
+      1786576101
+    ],
+    "02.inputs/chips/2023/block_120.tif": [
+      12848231,
+      1786576126
+    ],
+    "02.inputs/chips/2023/block_121.tif": [
+      12848231,
+      1786576135
+    ],
+    "02.inputs/chips/2023/block_122.tif": [
+      12848231,
+      1786576144
+    ],
+    "02.inputs/chips/2023/block_123.tif": [
+      12848231,
+      1786576165
+    ],
+    "02.inputs/chips/2023/block_124.tif": [
+      12848231,
+      1786576177
+    ],
+    "02.inputs/chips/2023/block_125.tif": [
+      12848231,
+      1786576199
+    ],
+    "02.inputs/chips/2023/block_126.tif": [
+      12848231,
+      1786576210
+    ],
+    "02.inputs/chips/2023/block_127.tif": [
+      12848231,
+      1786576240
+    ],
+    "02.inputs/chips/2023/block_128.tif": [
+      12848231,
+      1786576252
+    ],
+    "02.inputs/chips/2023/block_129.tif": [
+      12848231,
+      1786576261
+    ],
+    "02.inputs/chips/2023/block_130.tif": [
+      12848231,
+      1786576271
+    ],
+    "02.inputs/chips/2023/block_131.tif": [
+      12848231,
+      1786576281
+    ],
+    "02.inputs/chips/2023/block_132.tif": [
+      12848231,
+      1786576307
+    ],
+    "02.inputs/chips/2023/block_133.tif": [
+      12848231,
+      1786576320
+    ],
+    "02.inputs/chips/2023/block_134.tif": [
+      12848231,
+      1786576345
+    ],
+    "02.inputs/chips/2023/block_135.tif": [
+      12848231,
+      1786576369
+    ],
+    "02.inputs/chips/2023/block_136.tif": [
+      12848231,
+      1786576416
+    ],
+    "02.inputs/chips/2023/block_137.tif": [
+      12848231,
+      1786576432
+    ],
+    "02.inputs/chips/2023/block_138.tif": [
+      12848231,
+      1786576449
+    ],
+    "02.inputs/chips/2023/block_139.tif": [
+      12848231,
+      1786576466
+    ],
+    "02.inputs/chips/2023/block_140.tif": [
+      12848231,
+      1786576473
+    ],
+    "02.inputs/chips/2023/block_141.tif": [
+      12848231,
+      1786576481
+    ],
+    "02.inputs/chips/2023/block_142.tif": [
+      12848231,
+      1786576488
+    ],
+    "02.inputs/chips/2023/block_143.tif": [
+      12848231,
+      1786576520
+    ],
+    "02.inputs/chips/2023/block_144.tif": [
+      12848231,
+      1786576541
+    ],
+    "02.inputs/chips/2023/block_145.tif": [
+      12848231,
+      1786576577
+    ],
+    "02.inputs/chips/2023/block_146.tif": [
+      12848231,
+      1786576595
+    ],
+    "02.inputs/chips/2023/block_147.tif": [
+      12848231,
+      1786576622
+    ],
+    "02.inputs/chips/2023/block_148.tif": [
+      12848231,
+      1786576635
+    ],
+    "02.inputs/chips/2023/block_149.tif": [
+      12848231,
+      1786576651
+    ],
+    "02.inputs/chips/2023/block_150.tif": [
+      12848231,
+      1786576659
+    ],
+    "02.inputs/chips/2023/block_151.tif": [
+      12848231,
+      1786576674
+    ],
+    "02.inputs/chips/2023/block_152.tif": [
+      12848231,
+      1786576689
+    ],
+    "02.inputs/chips/2023/block_153.tif": [
+      12848231,
+      1786576702
+    ],
+    "02.inputs/chips/2023/block_154.tif": [
+      12848231,
+      1786576709
+    ],
+    "02.inputs/chips/2023/block_155.tif": [
+      12848231,
+      1786576727
+    ],
+    "02.inputs/chips/2023/block_156.tif": [
+      12848231,
+      1786576735
+    ],
+    "02.inputs/chips/2023/block_157.tif": [
+      12848231,
+      1786576741
+    ],
+    "02.inputs/chips/2023/block_158.tif": [
+      12848231,
+      1786576749
+    ],
+    "02.inputs/chips/2023/block_159.tif": [
+      12848231,
+      1786576773
+    ],
+    "02.inputs/chips/2023/block_160.tif": [
+      12848231,
+      1786576794
+    ],
+    "02.inputs/climate/clim_2012.tif": [
+      288448,
+      1786571953
+    ],
+    "02.inputs/climate/clim_2013.tif": [
+      358416,
+      1786571957
+    ],
+    "02.inputs/climate/clim_2014.tif": [
+      313710,
+      1786571963
+    ],
+    "02.inputs/climate/clim_2015.tif": [
+      333301,
+      1786571968
+    ],
+    "02.inputs/climate/clim_2016.tif": [
+      327620,
+      1786571973
+    ],
+    "02.inputs/climate/clim_2017.tif": [
+      310854,
+      1786571977
+    ],
+    "02.inputs/climate/clim_2018.tif": [
+      310206,
+      1786571981
+    ],
+    "02.inputs/climate/clim_2019.tif": [
+      369515,
+      1786571987
+    ],
+    "02.inputs/climate/clim_2020.tif": [
+      294920,
+      1786571992
+    ],
+    "02.inputs/climate/clim_2021.tif": [
+      334499,
+      1786571997
+    ],
+    "02.inputs/climate/clim_2022.tif": [
+      309538,
+      1786572002
+    ],
+    "02.inputs/climate/clim_2023.tif": [
+      329439,
+      1786572008
+    ],
+    "02.inputs/composites/ls_2014.tif": [
+      61921586,
+      1786579344
+    ],
+    "02.inputs/composites/ls_2015.tif": [
+      58181676,
+      1786579430
+    ],
+    "02.inputs/composites/ls_2016.tif": [
+      60872142,
+      1786579504
+    ],
+    "02.inputs/composites/ls_2017.tif": [
+      61103811,
+      1786579687
+    ],
+    "02.inputs/composites/ls_2018.tif": [
+      55486037,
+      1786579791
+    ],
+    "02.inputs/composites/s2_2016.tif": [
+      43375908,
+      1786576919
+    ],
+    "02.inputs/composites/s2_2017.tif": [
+      37295895,
+      1786576949
+    ],
+    "02.inputs/composites/s2_2018.tif": [
+      8956631,
+      1786576960
+    ],
+    "02.inputs/composites/s2_2019.tif": [
+      59174112,
+      1786577151
+    ],
+    "02.inputs/composites/s2_2020.tif": [
+      59053628,
+      1786577460
+    ],
+    "02.inputs/composites/s2_2021.tif": [
+      58834001,
+      1786578152
+    ],
+    "02.inputs/composites/s2_2022.tif": [
+      58779632,
+      1786578411
+    ],
+    "02.inputs/composites/s2_2023.tif": [
+      58451467,
+      1786578607
+    ],
+    "02.inputs/composites/s2_2024.tif": [
+      58562066,
+      1786578886
+    ],
+    "02.inputs/composites/s2_2025.tif": [
+      59070461,
+      1786579280
+    ],
+    "02.inputs/covariates/conifer_topcover_2020.tif": [
+      32348545,
+      1786563319
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2014-08-01.tif": [
+      13981352,
+      1786580218
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2015-08-01.tif": [
+      13050286,
+      1786580226
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2016-08-01.tif": [
+      13754621,
+      1786580235
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2017-08-01.tif": [
+      13681368,
+      1786580244
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2018-08-01.tif": [
+      12537004,
+      1786580251
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2019-08-01.tif": [
+      12721808,
+      1786580260
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2020-08-01.tif": [
+      12575916,
+      1786580274
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2021-08-01.tif": [
+      12709394,
+      1786580283
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2022-08-01.tif": [
+      12608826,
+      1786580292
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2023-08-01.tif": [
+      12402636,
+      1786580298
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2024-08-01.tif": [
+      12550056,
+      1786580304
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B04_2025-08-01.tif": [
+      12686064,
+      1786580309
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2014-08-01.tif": [
+      14577886,
+      1786580220
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2015-08-01.tif": [
+      13752310,
+      1786580228
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2016-08-01.tif": [
+      14441209,
+      1786580237
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2017-08-01.tif": [
+      14438118,
+      1786580246
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2018-08-01.tif": [
+      13151262,
+      1786580253
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2019-08-01.tif": [
+      14843112,
+      1786580266
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2020-08-01.tif": [
+      14897580,
+      1786580276
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2021-08-01.tif": [
+      14906258,
+      1786580285
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2022-08-01.tif": [
+      14917318,
+      1786580293
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2023-08-01.tif": [
+      14872892,
+      1786580299
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2024-08-01.tif": [
+      14953594,
+      1786580305
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B08_2025-08-01.tif": [
+      14982671,
+      1786580310
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2014-08-01.tif": [
+      14685501,
+      1786580222
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2015-08-01.tif": [
+      13796423,
+      1786580230
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2016-08-01.tif": [
+      14524957,
+      1786580239
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2017-08-01.tif": [
+      14490248,
+      1786580247
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2018-08-01.tif": [
+      13126229,
+      1786580254
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2019-08-01.tif": [
+      14228489,
+      1786580269
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2020-08-01.tif": [
+      14193267,
+      1786580279
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2021-08-01.tif": [
+      14105720,
+      1786580287
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2022-08-01.tif": [
+      14096545,
+      1786580294
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2023-08-01.tif": [
+      14018049,
+      1786580300
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2024-08-01.tif": [
+      14113709,
+      1786580306
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B11_2025-08-01.tif": [
+      14071750,
+      1786580311
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2014-08-01.tif": [
+      14194128,
+      1786580223
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2015-08-01.tif": [
+      13403560,
+      1786580232
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2016-08-01.tif": [
+      14120895,
+      1786580241
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2017-08-01.tif": [
+      14002230,
+      1786580249
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2018-08-01.tif": [
+      12723786,
+      1786580256
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2019-08-01.tif": [
+      13504249,
+      1786580271
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2020-08-01.tif": [
+      13305913,
+      1786580280
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2021-08-01.tif": [
+      13257093,
+      1786580289
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2022-08-01.tif": [
+      13204277,
+      1786580296
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2023-08-01.tif": [
+      13161843,
+      1786580301
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2024-08-01.tif": [
+      13170732,
+      1786580307
+    ],
+    "02.inputs/derived/sits_cube/SENTINEL-2_MSI_TBL01_B12_2025-08-01.tif": [
+      13189969,
+      1786580313
+    ],
+    "02.inputs/label-pairs/0002_img.tif": [
+      3672071,
+      1786582427
+    ],
+    "02.inputs/label-pairs/0002_mask.tif": [
+      20828,
+      1786582428
+    ],
+    "02.inputs/label-pairs/0003_img.tif": [
+      67143,
+      1786582429
+    ],
+    "02.inputs/label-pairs/0003_mask.tif": [
+      1356,
+      1786582430
+    ],
+    "02.inputs/label-pairs/0004_img.tif": [
+      132695,
+      1786582432
+    ],
+    "02.inputs/label-pairs/0004_mask.tif": [
+      1902,
+      1786582433
+    ],
+    "02.inputs/label-pairs/0032_img.tif": [
+      3672071,
+      1786582953
+    ],
+    "02.inputs/label-pairs/0032_mask.tif": [
+      21806,
+      1786582954
+    ],
+    "02.inputs/label-pairs/0033_img.tif": [
+      4196423,
+      1786582449
+    ],
+    "02.inputs/label-pairs/0033_mask.tif": [
+      22448,
+      1786582450
+    ],
+    "02.inputs/label-pairs/0034_img.tif": [
+      2099015,
+      1786582456
+    ],
+    "02.inputs/label-pairs/0034_mask.tif": [
+      9786,
+      1786582456
+    ],
+    "02.inputs/label-pairs/0035_img.tif": [
+      198239,
+      1786582461
+    ],
+    "02.inputs/label-pairs/0035_mask.tif": [
+      2078,
+      1786582461
+    ],
+    "02.inputs/label-pairs/0038_img.tif": [
+      525959,
+      1786582466
+    ],
+    "02.inputs/label-pairs/0038_mask.tif": [
+      3666,
+      1786582467
+    ],
+    "02.inputs/label-pairs/0046_img.tif": [
+      4196423,
+      1786582484
+    ],
+    "02.inputs/label-pairs/0046_mask.tif": [
+      28982,
+      1786582485
+    ],
+    "02.inputs/label-pairs/0048_img.tif": [
+      3672071,
+      1786582497
+    ],
+    "02.inputs/label-pairs/0048_mask.tif": [
+      20814,
+      1786582498
+    ],
+    "02.inputs/label-pairs/0049_img.tif": [
+      3147719,
+      1786582503
+    ],
+    "02.inputs/label-pairs/0049_mask.tif": [
+      17628,
+      1786582503
+    ],
+    "02.inputs/label-pairs/0050_img.tif": [
+      3147719,
+      1786582514
+    ],
+    "02.inputs/label-pairs/0050_mask.tif": [
+      16858,
+      1786582515
+    ],
+    "02.inputs/label-pairs/0057_img.tif": [
+      4196423,
+      1786582524
+    ],
+    "02.inputs/label-pairs/0057_mask.tif": [
+      25222,
+      1786582524
+    ],
+    "02.inputs/label-pairs/0062_img.tif": [
+      4720775,
+      1786582967
+    ],
+    "02.inputs/label-pairs/0062_mask.tif": [
+      28890,
+      1786582968
+    ],
+    "02.inputs/label-pairs/0067_img.tif": [
+      67143,
+      1786582528
+    ],
+    "02.inputs/label-pairs/0067_mask.tif": [
+      1240,
+      1786582529
+    ],
+    "02.inputs/label-pairs/0069_img.tif": [
+      5310671,
+      1786582540
+    ],
+    "02.inputs/label-pairs/0069_mask.tif": [
+      31564,
+      1786582541
+    ],
+    "02.inputs/label-pairs/0070_img.tif": [
+      4720775,
+      1786582548
+    ],
+    "02.inputs/label-pairs/0070_mask.tif": [
+      29348,
+      1786582549
+    ],
+    "02.inputs/label-pairs/0071_img.tif": [
+      2623367,
+      1786582559
+    ],
+    "02.inputs/label-pairs/0071_mask.tif": [
+      13130,
+      1786582560
+    ],
+    "02.inputs/label-pairs/0072_img.tif": [
+      4720775,
+      1786582579
+    ],
+    "02.inputs/label-pairs/0072_mask.tif": [
+      25072,
+      1786582579
+    ],
+    "02.inputs/label-pairs/0073_img.tif": [
+      2099015,
+      1786582583
+    ],
+    "02.inputs/label-pairs/0073_mask.tif": [
+      12918,
+      1786582584
+    ],
+    "02.inputs/label-pairs/0074_img.tif": [
+      5310671,
+      1786582592
+    ],
+    "02.inputs/label-pairs/0074_mask.tif": [
+      30394,
+      1786582593
+    ],
+    "02.inputs/label-pairs/0075_img.tif": [
+      984767,
+      1786582600
+    ],
+    "02.inputs/label-pairs/0075_mask.tif": [
+      6756,
+      1786582601
+    ],
+    "02.inputs/label-pairs/0087_img.tif": [
+      5310671,
+      1786582616
+    ],
+    "02.inputs/label-pairs/0087_mask.tif": [
+      28534,
+      1786582617
+    ],
+    "02.inputs/label-pairs/0088_img.tif": [
+      5310671,
+      1786582625
+    ],
+    "02.inputs/label-pairs/0088_mask.tif": [
+      47090,
+      1786582626
+    ],
+    "02.inputs/label-pairs/0089_img.tif": [
+      2623367,
+      1786582635
+    ],
+    "02.inputs/label-pairs/0089_mask.tif": [
+      22718,
+      1786582636
+    ],
+    "02.inputs/label-pairs/0090_img.tif": [
+      3540983,
+      1786582646
+    ],
+    "02.inputs/label-pairs/0090_mask.tif": [
+      34574,
+      1786582647
+    ],
+    "02.inputs/label-pairs/0091_img.tif": [
+      4720775,
+      1786582662
+    ],
+    "02.inputs/label-pairs/0091_mask.tif": [
+      28426,
+      1786582662
+    ],
+    "02.inputs/label-pairs/1000_img.tif": [
+      4130879,
+      1786582676
+    ],
+    "02.inputs/label-pairs/1000_mask.tif": [
+      23970,
+      1786582677
+    ],
+    "02.inputs/label-pairs/1001_img.tif": [
+      3672071,
+      1786582691
+    ],
+    "02.inputs/label-pairs/1001_mask.tif": [
+      22236,
+      1786582692
+    ],
+    "02.inputs/label-pairs/1002_img.tif": [
+      4196423,
+      1786582705
+    ],
+    "02.inputs/label-pairs/1002_mask.tif": [
+      21690,
+      1786582706
+    ],
+    "02.inputs/label-pairs/1003_img.tif": [
+      3147719,
+      1786582722
+    ],
+    "02.inputs/label-pairs/1003_mask.tif": [
+      16488,
+      1786582723
+    ],
+    "02.inputs/label-pairs/1004_img.tif": [
+      4720775,
+      1786582737
+    ],
+    "02.inputs/label-pairs/1004_mask.tif": [
+      40852,
+      1786582737
+    ],
+    "02.inputs/label-pairs/1005_img.tif": [
+      4720775,
+      1786582752
+    ],
+    "02.inputs/label-pairs/1005_mask.tif": [
+      27798,
+      1786582753
+    ],
+    "02.inputs/label-pairs/1006_img.tif": [
+      4196423,
+      1786582761
+    ],
+    "02.inputs/label-pairs/1006_mask.tif": [
+      24700,
+      1786582762
+    ],
+    "02.inputs/label-pairs/1011_img.tif": [
+      5310671,
+      1786582768
+    ],
+    "02.inputs/label-pairs/1011_mask.tif": [
+      38704,
+      1786582769
+    ],
+    "02.inputs/label-pairs/1016_img.tif": [
+      4196423,
+      1786582782
+    ],
+    "02.inputs/label-pairs/1016_mask.tif": [
+      21920,
+      1786582783
+    ],
+    "02.inputs/label-pairs/1017_img.tif": [
+      4130879,
+      1786582787
+    ],
+    "02.inputs/label-pairs/1017_mask.tif": [
+      26160,
+      1786582788
+    ],
+    "02.inputs/zwieback-severity/merged_ref_h_c250c.tif": [
+      604921,
+      1786411035
+    ],
+    "02.inputs/zwieback-severity/merged_ref_h_c30c.tif": [
+      41794513,
+      1786411024
+    ],
+    "02.inputs/zwieback-severity/merged_ref_h_c90c.tif": [
+      4643049,
+      1786411033
+    ]
+  },
+  "raster_unreadable_at_baseline": [],
+  "recorded": "2026-09-08T12:43:50Z",
+  "severity_readers": [
+    "climate-build",
+    "climate-rasters",
+    "composite-build",
+    "fig-studyarea",
+    "severity-metadata"
+  ]
+}

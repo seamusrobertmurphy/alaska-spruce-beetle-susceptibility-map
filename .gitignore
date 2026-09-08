@@ -71,3 +71,9 @@ INDEX.md
 
 # Local state for the prose guard; regenerated with --record.
 01.manuscript/_tools/.prose_guard.json
+
+# Eval run reports. One CSV per run of 01.manuscript/_tools/eval.py, so the
+# directory grows with every check rather than with every result. Nothing in
+# the manuscript cites them and no check reads them; the state a later run
+# compares against lives in 03.outputs/eval-baseline.json, which is committed.
+03.outputs/eval/
