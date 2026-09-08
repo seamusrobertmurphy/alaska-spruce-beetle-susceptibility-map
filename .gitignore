@@ -77,3 +77,8 @@ INDEX.md
 # the manuscript cites them and no check reads them; the state a later run
 # compares against lives in 03.outputs/eval-baseline.json, which is committed.
 03.outputs/eval/
+
+# The rendered manuscript. Regenerated from the .qmd, which is the single
+# source of truth, so a committed copy is only ever a stale one; the render
+# that matters is the one the eval runs with --render.
+01.manuscript/manuscript.html
