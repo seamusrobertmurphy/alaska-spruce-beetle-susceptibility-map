@@ -602,14 +602,11 @@ if os.path.exists(ckpt) and not os.path.exists(op_csv):
 ```
 
 ```{r}
-#| label: tbl-crownnet
-#| tbl-cap: "Fine-tuning of the four-band crown network, evaluated per epoch on held-out delineation areas. Precision, recall and intersection over union are pixel-wise against the published delineations, which are themselves imperfect targets over 2020 imagery: a crown that died between the mosaic and the 2021 delineation is marked dead over imagery in which it was still living, so measured precision is a lower bound."
+#| label: crownnet-data
+#| echo: true
+#| output: false
 crown_m <- read.csv(file.path(dirname(inputs), "03.outputs",
                               "crown_net_metrics.csv"))
-fmt_tbl(crown_m[, c("epoch", "train_loss", "val_precision", "val_recall",
-                    "val_iou", "checkpointed")],
-        right = c("epoch", "train_loss", "val_precision", "val_recall",
-                  "val_iou"))
 ```
 
 ```{r}
@@ -622,11 +619,11 @@ best <- crown_m[which.max(crown_m$val_iou), ]
 Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]` areas against `r crown_m$n_val_tiles[1]` crops from `r crown_m$n_val_areas[1]` held-out areas. The retained network is the one that validates best, epoch `r best$epoch` of `r max(crown_m$epoch)` trained, at a recall of `r sprintf("%.2f", best$val_recall)` and a precision of `r sprintf("%.2f", best$val_precision)`. `r if (best$epoch == max(crown_m$epoch)) "Validation intersection over union was still rising when the schedule ended, so the length of the run bounds the network rather than the network having converged." else "Validation intersection over union falls after that epoch while the training loss keeps falling, so the schedule already runs past its useful length."` For a pre-labeller feeding human triage the operating direction is nonetheless deliberate, because an annotator rejects a false candidate in one action, whereas a crown the network never proposes is never reviewed, and the twenty-to-one class weighting is what buys that recall. These are pixel-wise figures, so the precision an annotator experiences depends on candidate polygons after cleaning rather than on this number directly.
 
 ```{r}
-#| label: tbl-operating-point
-#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown; crown recall is the share of delineated crowns reached by at least one candidate; crowns per candidate and the share of scored area flagged say whether a candidate is still one crown, which is what an annotator can accept or reject in one action. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
+#| label: operating-point-data
+#| echo: true
+#| output: false
 op <- read.csv(file.path(dirname(inputs), "03.outputs",
                          "crown_operating_point.csv"))
-fmt_tbl(op, right = names(op))
 ```
 
 The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
@@ -737,17 +734,10 @@ if os.path.exists(ckpt) and not os.path.exists(counts_csv):
 ```
 
 ```{r}
-#| label: tbl-triage
-#| tbl-cap: "Triage queue as generated, summarised by mosaic epoch: blocks written, candidate crowns to review, and the median candidate probability and area. Each block is a GeoPackage layer opening directly in QGIS."
+#| label: triage-data
+#| echo: true
+#| output: false
 tq <- read.csv(file.path(dirname(inputs), "03.outputs", "triage_queue.csv"))
-fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
-  data.frame(epoch = d$epoch[1], blocks = nrow(d),
-             candidates = sum(d$candidates),
-             per_block_median = median(d$candidates),
-             median_p = round(median(d$median_p), 3),
-             median_area_m2 = round(median(d$median_area_m2), 1)))),
-  right = c("blocks", "candidates", "per_block_median", "median_p",
-            "median_area_m2"))
 ```
 
 The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on.
@@ -914,18 +904,10 @@ for (y in 2014:2018) {
 ```
 
 ```{r}
-#| label: tbl-composites
-#| tbl-cap: "Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed: their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019."
+#| label: composites-data
+#| echo: true
+#| output: false
 built <- list.files(comp_dir, pattern = "^(s2|ls)_\\d{4}\\.tif$", full.names = TRUE)
-fmt_tbl(do.call(rbind, lapply(built, function(f) {
-  r <- rast(f)
-  data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
-                             "Sentinel-2", "Landsat 8"),
-             year = sub("^\\w+_(\\d{4})\\.tif$", "\\1", basename(f)),
-             layers = nlyr(r),
-             mean_clear_obs = round(global(r$n_clear, "mean",
-                                           na.rm = TRUE)[1, 1], 1))
-})), right = "year")
 ```
 
 ## Analysis cube
@@ -964,8 +946,9 @@ if (all(file.exists(srcs))) {
 The cube was then loaded and checked. The checks were reported rather than suppressed, because a guard whose failure is invisible is not a guard, and an earlier build of this cube passed a silent assertion while holding files from two different grids under malformed dates.
 
 ```{r}
-#| label: tbl-cube
-#| tbl-cap: "Analysis cube as loaded by sits, with the checks each property must pass. The timeline must be gapless and annual, every date must carry all four bands with no stray files, and the cube geometry must equal that of the composite it was split from."
+#| label: cube-data
+#| echo: true
+#| output: false
 library(sits)
 cube <- sits_cube(source = "MPC", collection = "SENTINEL-2-L2A",
                   data_dir = cube_dir,
@@ -993,7 +976,6 @@ checks <- data.frame(
              identical(dim(cube_r)[1:2], dim(src_r)[1:2]),
              isTRUE(all.equal(as.vector(ext(cube_r)), as.vector(ext(src_r))))))
 stopifnot(all(checks$passes))
-fmt_tbl(checks)
 ```
 
 ## Climate variables
@@ -1182,12 +1164,6 @@ if (!file.exists(em_csv)) {
 endmember_tbl <- read.csv(em_csv)
 ```
 
-```{r}
-#| label: tbl-endmember
-#| tbl-cap: "Dead-crown endmember estimated from the published crown delineations under two estimators. The level estimator regresses 2021 reflectance on dead-crown fraction across cells; the change estimator regresses the 2021 minus pre-outbreak difference on the same fraction. The endmember column is the fitted change per unit of dead-crown area, so a stand at severity 0.05 moves by one twentieth of the tabulated value. Confidence intervals are 95 percent."
-fmt_tbl(endmember_tbl, right = c("intercept", "endmember", "ci_low",
-                                 "ci_high", "r2", "n_cells", "max_sev"))
-```
 
 ```{r}
 #| label: em-numbers
@@ -1315,11 +1291,6 @@ if (!all(file.exists(syn_f))) {
 syn_recall <- read.csv(syn_f[1]); syn_onset <- read.csv(syn_f[2])
 ```
 
-```{r}
-#| label: tbl-synthetic
-#| tbl-cap: "Recovery of an injected signal by severity stratum, on held-out synthetic samples, under two dead-crown endmembers: the value assumed before measurement and the value regressed from the crown delineations. Recall states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable."
-fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"))
-```
 
 ```{r}
 #| label: syn-numbers
@@ -1450,8 +1421,9 @@ holm_family <- function(p, labels) {
 The harness was exercised on constructed inputs whose correct answers follow from their construction rather than from running the code. A check that cannot fail proves nothing, so each case below has a determinate expected value and the chunk stops if any disagrees.
 
 ```{r}
-#| label: tbl-eval-checks
-#| tbl-cap: "Verification of the evaluation harness against inputs with known answers. Each row states what the case is built to produce and what the implementation returned; the chunk halts if any check fails, so a rendered document is itself evidence that all of them passed."
+#| label: eval-checks-data
+#| echo: true
+#| output: false
 chk <- function(what, expected, got, tol = 1e-8)
   data.frame(check = what, expected = round(expected, 4),
              got = round(got, 4), passes = abs(expected - got) < tol)
@@ -1516,7 +1488,6 @@ checks <- rbind(
       c10$producers[c10$class == "b"]))
 
 stopifnot(all(checks$passes))
-fmt_tbl(checks, right = c("expected", "got"))
 ```
 
 All `r nrow(checks)` checks pass, which is the only reason the document renders past this point. Two of them are worth naming because they encode decisions rather than arithmetic. The second case builds scores in which no threshold reaches the required precision, and requires the harness to return zero recall rather than silently reporting the recall of whatever threshold came closest, which is how a fixed-precision metric is most easily misreported. The bootstrap case resamples folds rather than cells, so spatial dependence stays inside the resampling unit; resampling cells would treat neighbouring stands as independent and return an interval far too narrow.
@@ -1668,3 +1639,77 @@ fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
         caption = "Table S1. Tuning pairs assembled from the published crown delineations: four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with.")
 ```
 
+```{r}
+#| label: supp-crownnet
+#| echo: true
+fmt_tbl(crown_m[, c("epoch", "train_loss", "val_precision", "val_recall",
+                    "val_iou", "checkpointed")],
+        right = c("epoch", "train_loss", "val_precision", "val_recall",
+                  "val_iou"),
+        caption = "Table S2. Fine-tuning of the four-band crown network, evaluated per epoch on held-out delineation areas. Precision, recall and intersection over union are pixel-wise against the published delineations, which are themselves imperfect targets over 2020 imagery: a crown that died between the mosaic and the 2021 delineation is marked dead over imagery in which it was still living, so measured precision is a lower bound.")
+```
+
+```{r}
+#| label: supp-operating-point
+#| echo: true
+fmt_tbl(op, right = names(op),
+        caption = "Table S3. Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown; crown recall is the share of delineated crowns reached by at least one candidate; crowns per candidate and the share of scored area flagged say whether a candidate is still one crown, which is what an annotator can accept or reject in one action. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic.")
+```
+
+```{r}
+#| label: supp-triage
+#| echo: true
+fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
+  data.frame(epoch = d$epoch[1], blocks = nrow(d),
+             candidates = sum(d$candidates),
+             per_block_median = median(d$candidates),
+             median_p = round(median(d$median_p), 3),
+             median_area_m2 = round(median(d$median_area_m2), 1)))),
+  right = c("blocks", "candidates", "per_block_median", "median_p",
+            "median_area_m2"),
+        caption = "Table S4. Triage queue as generated, summarised by mosaic epoch: blocks written, candidate crowns to review, and the median candidate probability and area. Each block is a GeoPackage layer opening directly in QGIS.")
+```
+
+```{r}
+#| label: supp-composites
+#| echo: true
+fmt_tbl(do.call(rbind, lapply(built, function(f) {
+  r <- rast(f)
+  data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
+                             "Sentinel-2", "Landsat 8"),
+             year = sub("^\\w+_(\\d{4})\\.tif$", "\\1", basename(f)),
+             layers = nlyr(r),
+             mean_clear_obs = round(global(r$n_clear, "mean",
+                                           na.rm = TRUE)[1, 1], 1))
+})), right = "year",
+        caption = "Table S5. Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed: their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019.")
+```
+
+```{r}
+#| label: supp-cube
+#| echo: true
+fmt_tbl(checks,
+        caption = "Table S6. Analysis cube as loaded by sits, with the checks each property must pass. The timeline must be gapless and annual, every date must carry all four bands with no stray files, and the cube geometry must equal that of the composite it was split from.")
+```
+
+```{r}
+#| label: supp-endmember
+#| echo: true
+fmt_tbl(endmember_tbl, right = c("intercept", "endmember", "ci_low",
+                                 "ci_high", "r2", "n_cells", "max_sev"),
+        caption = "Table S7. Dead-crown endmember estimated from the published crown delineations under two estimators. The level estimator regresses 2021 reflectance on dead-crown fraction across cells; the change estimator regresses the 2021 minus pre-outbreak difference on the same fraction. The endmember column is the fitted change per unit of dead-crown area, so a stand at severity 0.05 moves by one twentieth of the tabulated value. Confidence intervals are 95 percent.")
+```
+
+```{r}
+#| label: supp-synthetic
+#| echo: true
+fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"),
+        caption = "Table S8. Recovery of an injected signal by severity stratum, on held-out synthetic samples, under two dead-crown endmembers: the value assumed before measurement and the value regressed from the crown delineations. Recall states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable.")
+```
+
+```{r}
+#| label: supp-eval-checks
+#| echo: true
+fmt_tbl(checks, right = c("expected", "got"),
+        caption = "Table S9. Verification of the evaluation harness against inputs with known answers. Each row states what the case is built to produce and what the implementation returned; the chunk halts if any check fails, so a rendered document is itself evidence that all of them passed.")
+```

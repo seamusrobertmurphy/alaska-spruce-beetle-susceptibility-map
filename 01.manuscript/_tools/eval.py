@@ -836,23 +836,55 @@ def record_baseline(rows, manuscript_only=False):
     return BASELINE
 
 
-def render():
-    """Render the manuscript and report whether the build survived.
+# What a failed R chunk leaves in the rendered page. The YAML sets
+# execute.error to true, so a chunk that raises does not stop the render: the
+# error is printed into the document and quarto exits zero. An exit code is
+# therefore no evidence at all that the analysis ran, which is the defect a
+# render is being run to catch.
+RENDER_ERRORS = (
+    "Error in ", "could not find function", "object &#39;", "object '",
+    "cannot open file", "subscript out of bounds", "argument is of length zero",
+)
 
-    Kept out of the check list and off the loop's gate deliberately. A render
-    reruns every chunk whose guard is open, so it costs minutes rather than
-    seconds, and an editing pass that touches no chunk cannot break a build
-    that the chunk fingerprints already say is unchanged. Run it at the end of
-    a run of work, not after each step.
+
+def render():
+    """Render the manuscript and report whether the analysis actually ran.
+
+    Three things are checked and the exit code is the weakest of them. The page
+    must exist and be newer than the source, because quarto on this external
+    volume fails its own cleanup step and exits non-zero after writing a
+    perfectly good document. And the page is searched for the text an R error
+    leaves behind, because error: true prints a failure into the document
+    instead of stopping the build.
+
+    Kept off the loop's gate deliberately: a render reruns every chunk whose
+    guard is open and costs minutes rather than seconds.
     """
+    html = os.path.join(ROOT, "01.manuscript", "manuscript.html")
+    before = os.path.getmtime(html) if os.path.exists(html) else 0
     out = subprocess.run(
         ("quarto", "render", "manuscript.qmd", "--to", "html"),
         cwd=os.path.join(ROOT, "01.manuscript"),
         capture_output=True, text=True)
-    tail = (out.stderr or out.stdout).strip().split("\n")[-12:]
-    print("\n".join(tail))
-    print("\nrender exit", out.returncode)
-    return 0 if out.returncode == 0 else 1
+    if not os.path.exists(html) or os.path.getmtime(html) <= before:
+        print("\n".join((out.stderr or out.stdout).strip().split("\n")[-15:]))
+        print("\nno page written; render exit", out.returncode)
+        return 1
+    page = open(html, encoding="utf-8", errors="replace").read()
+    found = [m for m in RENDER_ERRORS if m in page]
+    if found:
+        for m in found:
+            i = page.index(m)
+            print("in the page:", " ".join(page[i:i + 160].split()))
+        print(f"\n{len(found)} error signatures in the rendered page; "
+              f"render exit {out.returncode}")
+        return 1
+    if out.returncode:
+        print(f"page written and clean; quarto exited {out.returncode}, "
+              "which on this volume is its cleanup step and not the build")
+    else:
+        print("page written and clean")
+    return 0
 
 
 def main():
