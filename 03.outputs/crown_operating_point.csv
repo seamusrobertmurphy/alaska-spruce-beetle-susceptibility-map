@@ -1,0 +1,5 @@
+threshold,candidates,candidates_hitting_a_crown,reference_crowns,crowns_reached,polygon_precision,crown_recall,candidates_per_km2
+0.3,344,86,1487,893,0.25,0.601,250.0
+0.5,287,63,1487,538,0.22,0.362,208.5
+0.7,271,124,1487,156,0.458,0.105,196.9
+0.9,0,0,1487,0,0.0,0.0,0.0

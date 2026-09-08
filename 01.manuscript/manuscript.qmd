@@ -453,13 +453,24 @@ def load(item, augment=False):
                       + np.random.uniform(-0.05, 0.05), 0, 1)
     return np.ascontiguousarray(img), np.ascontiguousarray(msk)
 
-if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
-    torch.manual_seed(20260812)
-    areas = sorted(os.path.basename(f)[:-8]
-                   for f in glob.glob(os.path.join(pair_dir, "*_img.tif")))
-    val_areas = set(areas[::5])                    # every fifth area held out
-    trn_areas = [a for a in areas if a not in val_areas]
+# The split, the tile lists and the network's construction sit outside both
+# guards below, because the operating point has to be recomputable from a saved
+# checkpoint without retraining. Held inside the training guard, as they were,
+# the sweep could only run as part of a training run, so a change to the sweep
+# cost eight epochs to test. The seed is set before anything draws from the
+# generator, and the order of the draws is unchanged, so the trained network is
+# the same one this arrangement replaces.
+torch.manual_seed(20260812)
+areas = sorted(os.path.basename(f)[:-8]
+               for f in glob.glob(os.path.join(pair_dir, "*_img.tif")))
+val_areas = set(areas[::5])                        # every fifth area held out
+trn_areas = [a for a in areas if a not in val_areas]
+trn = [t for a in trn_areas for t in index_of(a)]
+val = [t for a in sorted(val_areas) for t in index_of(a)]
+dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
+def build_net():
+    """The released seven-channel network with a four-band first layer."""
     net = torch.load(os.path.join(root, "02.inputs", "zwieback-cnn", "model.p"),
                      map_location="cpu", weights_only=False)
     old = net.backbone.conv1
@@ -469,11 +480,10 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
         new.weight.copy_(old.weight[:, KEEP, :, :])
     net.backbone.conv1 = new
     net.aux_classifier = None                      # COCO head, unused here
-    dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    net = net.to(dev).train()
+    return net.to(dev)
 
-    trn = [t for a in trn_areas for t in index_of(a)]
-    val = [t for a in sorted(val_areas) for t in index_of(a)]
+if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
+    net = build_net().train()
     loss_fn = nn.CrossEntropyLoss(
         weight=torch.tensor([1.0, DEAD_W], device=dev))
     opt = torch.optim.Adam(net.parameters(), lr=1e-4)
@@ -533,11 +543,19 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
             w = csv.DictWriter(f, fieldnames=list(rows[0]))
             w.writeheader(); w.writerows(rows)
 
-    # Operating point. Pixel precision is not what an annotator experiences:
-    # they accept or reject candidate polygons, so the threshold is chosen on
-    # polygon counts after the minimum-area filter, on held-out areas only.
+# Operating point. Pixel precision is not what an annotator experiences: they
+# accept or reject candidate polygons, so the threshold is chosen on polygon
+# counts after the minimum-area filter, on held-out areas only. Crowns reached
+# is counted alongside candidates that hit one, because raising the threshold
+# erodes a blob covering several crowns into one piece per crown, which raises
+# the count of candidates hitting a crown without reaching a single crown the
+# lower threshold missed. Without the second count that erosion reads as a
+# gain in precision.
+op_csv = os.path.join(root, "03.outputs", "crown_operating_point.csv")
+if os.path.exists(ckpt) and not os.path.exists(op_csv):
     import rasterio.features
     from shapely.geometry import shape
+    net = build_net()
     net.load_state_dict(torch.load(ckpt, map_location=dev))
     net.eval()
     GSD, MIN_CROWN_M2 = 0.5, 1.0
@@ -549,7 +567,7 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
             p = torch.softmax(net(torch.tensor(img[None]).to(dev))["out"], 1)
             probs.append((p[0, 1].cpu().numpy(), msk))
     for thr in [0.3, 0.5, 0.7, 0.9]:
-        n_cand = n_hit = n_true = 0
+        n_cand = n_hit = n_true = n_reached = 0
         for pr, msk in probs:
             binmask = (pr >= thr).astype(np.uint8)
             polys = [(shape(g), v) for g, v in
@@ -560,14 +578,17 @@ if not (os.path.exists(ckpt) and os.path.exists(metrics_csv)):
                                               mask=msk.astype(np.uint8) == 1)]
             n_cand += len(keep); n_true += len(truth)
             n_hit += sum(1 for g in keep if any(g.intersects(t) for t in truth))
+            n_reached += sum(1 for t in truth if any(g.intersects(t)
+                                                     for g in keep))
         sweep.append(dict(threshold=thr, candidates=n_cand,
                           candidates_hitting_a_crown=n_hit,
                           reference_crowns=n_true,
+                          crowns_reached=n_reached,
                           polygon_precision=round(n_hit / n_cand, 3) if n_cand else 0.0,
+                          crown_recall=round(n_reached / n_true, 3) if n_true else 0.0,
                           candidates_per_km2=round(
                               n_cand / (len(val) * (TILE * GSD) ** 2 / 1e6), 1)))
-    with open(os.path.join(root, "03.outputs", "crown_operating_point.csv"),
-              "w", newline="") as f:
+    with open(op_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(sweep[0]))
         w.writeheader(); w.writerows(sweep)
 ```
@@ -590,17 +611,17 @@ fmt_tbl(crown_m[, c("epoch", "train_loss", "val_precision", "val_recall",
 best <- crown_m[which.max(crown_m$val_iou), ]
 ```
 
-Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]` areas against `r crown_m$n_val_tiles[1]` crops from `r crown_m$n_val_areas[1]` held-out areas. The retained network is the one that validates best rather than the one trained longest, epoch `r best$epoch`, at a recall of `r sprintf("%.2f", best$val_recall)` and a precision of `r sprintf("%.2f", best$val_precision)`. Training loss keeps falling after that point while validation intersection over union does not, so the schedule is already past its useful length and the remaining epochs buy recall at a precision the triage queue would pay for. For a pre-labeller feeding human triage the operating direction is nonetheless deliberate, because an annotator rejects a false candidate in one action, whereas a crown the network never proposes is never reviewed, and the twenty-to-one class weighting is what buys that recall. These are pixel-wise figures, so the precision an annotator experiences depends on candidate polygons after cleaning rather than on this number directly.
+Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]` areas against `r crown_m$n_val_tiles[1]` crops from `r crown_m$n_val_areas[1]` held-out areas. The retained network is the one that validates best, epoch `r best$epoch` of `r max(crown_m$epoch)` trained, at a recall of `r sprintf("%.2f", best$val_recall)` and a precision of `r sprintf("%.2f", best$val_precision)`. `r if (best$epoch == max(crown_m$epoch)) "Validation intersection over union was still rising when the schedule ended, so the length of the run bounds the network rather than the network having converged." else "Validation intersection over union falls after that epoch while the training loss keeps falling, so the schedule already runs past its useful length."` For a pre-labeller feeding human triage the operating direction is nonetheless deliberate, because an annotator rejects a false candidate in one action, whereas a crown the network never proposes is never reviewed, and the twenty-to-one class weighting is what buys that recall. These are pixel-wise figures, so the precision an annotator experiences depends on candidate polygons after cleaning rather than on this number directly.
 
 ```{r}
 #| label: tbl-operating-point
-#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown, which is what an annotator experiences, and candidates per square kilometre is what the queue length follows from. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
+#| tbl-cap: "Choice of operating point for the triage queue, measured on held-out delineation areas. Polygon precision is the share of candidate polygons that intersect a delineated crown, which is what an annotator experiences; crown recall is the share of delineated crowns reached by at least one candidate; and candidates per square kilometre is what the queue length follows from. Precision here is a lower bound, since crowns delineated on 2021 imagery are scored against the 2020 mosaic."
 op <- read.csv(file.path(dirname(inputs), "03.outputs",
                          "crown_operating_point.csv"))
 fmt_tbl(op, right = names(op))
 ```
 
-The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review.
+The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns, and the two columns together make 0.3 the operating point for a pre-labeller, at `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.3] - op$candidates_per_km2[op$threshold == 0.5])` more candidates per square kilometre than the 0.5 the queue was generated at.
 
 ## Triage queue
 
