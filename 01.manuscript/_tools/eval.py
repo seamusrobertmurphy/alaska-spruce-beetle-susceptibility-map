@@ -679,7 +679,9 @@ def check_no_first_person(base):
     if not os.path.exists(QMD):
         return "blocked", "manuscript absent", "present", art
     prose = prose_of(open(QMD).read())
-    hits = re.findall(r"\b(we|our|ours|us)\b", prose, re.I)
+    # Case-sensitive on "us", because "US public domain" is the country and
+    # not the first person, and a check that counts it is counting noise.
+    hits = re.findall(r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b", prose)
     prev = base.get("first_person")
     measured = f"{len(hits)} first-person words"
     if prev is not None and len(hits) > prev:
@@ -810,8 +812,8 @@ def record_baseline(rows, manuscript_only=False):
              if lab.startswith("tbl-")
              and ('"pending"' in body or "_shell" in body
                   or re.search(r'=\s*"\."', body))])
-        base["first_person"] = len(re.findall(r"\b(we|our|ours|us)\b",
-                                              prose, re.I))
+        base["first_person"] = len(re.findall(
+            r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b", prose))
         base["severity_readers"] = sorted(
             lab for lab, body in chunks(open(QMD).read())
             if SEVERITY_DIR in body)
