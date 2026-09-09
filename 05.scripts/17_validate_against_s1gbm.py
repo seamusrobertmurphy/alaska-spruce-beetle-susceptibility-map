@@ -8,12 +8,14 @@ chain over the same ground, so if this study's block pattern does not track it,
 the chain here is wrong, and finding that against a peer reviewed mosaic is
 cheaper than finding it after a model is trained.
 
-Two differences are expected and neither is a fault. S1GBM is normalised to a
-fixed incidence angle where this study keeps gamma0 at the observed angle, and
-gamma0 divides by the cosine of that angle, which raises it. And the extraction
-here reads summer months first, so a partial run is summer weighted against a
-mosaic that averages the whole year, and this record's own seasonal swing is
-2.16 dB with July highest.
+The offset between the two decomposes, and the S1GBM filenames say how. Their
+statistical parameter is TMENSIG38, the temporal mean of sigma0 normalised to 38
+degrees. Sigma0 is not gamma0. Gamma0 divides by the cosine of the incidence
+angle, so at their fixed 38 degrees the conversion is exactly +1.03 dB and is
+applied here rather than left in the residual. The extraction also reads summer
+months first, so a partial run is summer weighted, and 98 per cent of the 2016 to
+2017 sample falls in June through September, which this record's own monthly
+means put +0.75 dB above the annual mean.
 
     python3 05.scripts/17_validate_against_s1gbm.py
 """
