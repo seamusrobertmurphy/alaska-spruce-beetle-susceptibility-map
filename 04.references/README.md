@@ -88,3 +88,33 @@ is the same guard the chip fetcher needed. The five with no open version at all 
 
 Retrieving the remaining seventeen needs either institutional access or a browser session,
 so it is not something a script can finish. Until then their rows above stand as written.
+
+### Claim audit, 2026-09-08
+
+Every sentence citing one of the twenty sources added that day was checked against what its
+abstract or title can carry. Seventeen claims stood. Three did not and were tightened.
+
+The dendrochronology sentence said the two Engelmann spruce studies related mortality to
+stand structure and to prior beetle pressure. Neither is read beyond its title, and neither
+title says either thing; they say "Factors Influencing the Spatial and Temporal Dynamics of
+Engelmann Spruce Mortality during a Spruce Beetle Outbreak" and "Combining dendrochronological
+data and the disturbance index to assess Engelmann spruce mortality". The sentence now claims
+only the approach and the quantity those titles name.
+
+The limitation on agent conflation said that separating agents spectrally "only partly
+resolves" it. That is an evaluation of how well the method works, which no title supports,
+and both sources are title-only. It now says that separating agents by their spectral and
+temporal signatures is the established way to attack the conflation, which is what the two
+titles do assert.
+
+The European disturbance sentence gave the reconstruction period as 1950 to 2019. The title
+says "since 1950" and the abstract gives no end year, so the end year was an assumption. It
+now says since 1950.
+
+Three claims stand that a reader might expect to fail this test, and they hold because the
+abstract carries them verbatim. Hart et al. 2017 is cited for outbreak detected from Landsat
+across the Southern Rocky Mountain Ecoregion for 2000 to 2014 with activity spatially
+correlated above 0.5 within about five kilometres, all of which its abstract states. Morris
+et al. 2016 is cited for framing outbreak impact as area affected, host mortality rate and
+altered structure, which its abstract states. Abdullah et al. 2018 is cited for mapping the
+green-attack stage from Sentinel-2 and Landsat-8, which its abstract states.
