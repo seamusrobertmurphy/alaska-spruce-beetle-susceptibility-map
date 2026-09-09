@@ -1224,6 +1224,62 @@ Two Kennaugh elements enter as channels, following equations 1 and 2 of @Hechtl_
 
 Earth Engine's collection arrives radiometrically calibrated and terrain corrected through the Sentinel-1 toolbox, but it does not apply the DEM-based calibration to flattening gamma that ends the processing chain of @Hechtl_2025. Whether that omission matters over the Susitna lowlands, which are flat by comparison with the Bavarian slopes that motivated it, is measured below rather than assumed either way.
 
+The chain was checked against an independent published one rather than trusted. The
+Sentinel-1 Global Backscatter Model of @BauerMarschallinger_2021 is the mean C-band
+backscatter of 2016 and 2017 at ten metre sampling, built by a different processor over the
+same ground and distributed through the Earth Engine community catalogue, so a disagreement
+in the block pattern would indict the chain here. Its values are stored as whole numbers
+holding decibels multiplied by ten, and its own file naming records the statistical
+parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence
+angle, which is not the same quantity as the gamma nought this study carries.
+
+```{r}
+#| label: s1gbm-reference
+#| echo: true
+#| output: false
+# The normalised Sentinel-1 Global Backscatter Model over the sampled blocks. Ten
+# metres is the sampling of this product, not the resolution of the instrument,
+# which is 20 by 22 m, so it is read at its own scale and compared rather than
+# resampled.
+s1gbm_f <- file.path(root, "03.outputs", "s1gbm_blocks.csv")
+if (!file.exists(s1gbm_f)) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  blk_g <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE)
+  blk_g$block <- sprintf("block_%03d", seq_len(nrow(blk_g)))
+  blk_ee <- sf_as_ee(st_transform(blk_g[, c("block", "geom")], 4326))
+  s1gbm <- ee$ImageCollection(
+      "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV")$
+    mosaic()$rename("VV")$addBands(
+      ee$ImageCollection(
+        "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH")$
+      mosaic()$rename("VH"))
+  g <- ee_as_sf(s1gbm$reduceRegions(collection = blk_ee,
+                                    reducer = ee$Reducer$mean(),
+                                    scale = 10L, tileScale = 4L),
+                via = "getInfo", quiet = TRUE)
+  # Stored as decibels times ten, so the tenth is not cosmetic.
+  write.csv(data.frame(block = g$block,
+                       s1gbm_vv_db = g$VV / 10,
+                       s1gbm_vh_db = g$VH / 10),
+            s1gbm_f, row.names = FALSE)
+}
+s1gbm <- read.csv(s1gbm_f)
+s1val <- read.csv(file.path(root, "03.outputs", "s1gbm_validation.csv"))
+# Sigma nought to gamma nought at their fixed 38 degrees.
+sig2gam <- -10 * log10(cos(38 * pi / 180))
+```
+
+Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of
+`r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and
+`r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here
+reproduces what an independent chain found over the same forest. The levels differ by
+`r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and
+`r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which
+`r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at
+thirty-eight degrees and is arithmetic rather than disagreement.
+
+
 ## Satellite composites
 
 Annual peak-growing-season composites were assembled in Google Earth Engine [@Gorelick_2017], with the complete compilation code executing within this manuscript. Sentinel-2 Level-2A surface reflectance from 2016 onward supplies ten-metre visible, red-edge, NIR and SWIR bands; Landsat Collection 2 Level-2 surface reflectance from Landsat 5 through 9 extends the record to the pre-outbreak baseline at 30 m, with bands harmonized across sensors as in @Perbet_2024. Joining the two sensors is not free of consequence, because the Operational Land Imager and the MultiSpectral Instrument differ in band pass, view geometry and gain, and those differences have been characterised directly by cross-comparison of top-of-atmosphere, surface and nadir-adjusted reflectance [@Zhang_2018] and by empirical cross-sensor regression [@Chastain_2019]. The reference implementation of a joined record is the Harmonized Landsat and Sentinel-2 product [@Claverie_2018; @Ju_2025], and adjustments have also been derived from the time series itself rather than from paired scenes [@Shang_2019], while cross-sensor annual compositing at national scale is established practice [@Griffiths_2019]. Compositing follows the July to August window standard for boreal disturbance work [@Perbet_2024]. Cloud and shadow were masked with the Cloud Score+ quality dataset [@Pasquarella_2023], retaining pixels whose cs score meets or exceeds 0.40, and each annual composite is a quality mosaic that selects the clearest observation per cell as ranked by the same score; where a summer yields no clear observation, the cell is gap-filled from the prior year. Every acquisition entering every composite is listed by sensor, date and archive identifier in Table S5. Southcentral Alaska's persistent cloud cover makes the per-cell count of clear observations itself a covariate. Composites were reduced to stand cells on the reference grid before any model sees them. The interferometric synthetic aperture radar (IFSAR) 5 m digital elevation model and the conifer-fraction map of @Macander_2022 enter as static covariates. Predictor composites were assembled below without reference to any severity label; no predictor-outcome relationship was examined before pre-registration.
