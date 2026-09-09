@@ -780,146 +780,37 @@ data.frame(year = sb$SURVEY_YEAR[sb$DCA_CODE == 11009],
 #| label: radar-record-data
 #| echo: true
 #| output: false
-# The radar record as extracted, read from the committed block series rather
-# than typed. The scene means carry the relative orbit, so the split of the
-# blocks between the two descending tracks, and the disagreement between the
-# tracks over the blocks both see, are computed here and nowhere else.
-s1_scenes <- read.csv(file.path(root, "03.outputs", "s1_rtc_scene_means.csv"))
-s1_month  <- read.csv(file.path(root, "03.outputs", "s1_rtc_monthly.csv"))
-s1_inv    <- read.csv(file.path(root, "03.outputs", "mpc_s1_inventory.csv"))
-s1_floor90 <- read.csv(file.path(root, "03.outputs",
-                                 "radar_noise_floor_90m.csv"))
-
+s1_scenes <- read.csv("../03.outputs/s1_rtc_scene_means.csv")
 seen <- lapply(split(s1_scenes$block, s1_scenes$track), unique)
 s1_blocks <- c(only_131 = length(setdiff(seen[["131"]], seen[["160"]])),
-               both     = length(intersect(seen[["131"]], seen[["160"]])),
+               both = length(intersect(seen[["131"]], seen[["160"]])),
                only_160 = length(setdiff(seen[["160"]], seen[["131"]])))
-s1_nscene <- tapply(s1_scenes$scene_id, s1_scenes$track,
-                    function(x) length(unique(x)))
-s1_first  <- min(as.Date(s1_scenes$date[s1_scenes$track == 131]))
-
-# Disagreement between the tracks in K0, in decibels, over the block-months
-# both tracks observed, so that a month one track missed does not stand in
-# for a difference between them.
-key   <- paste(s1_month$block, s1_month$year, s1_month$month)
-k0_db <- 10 * log10(s1_month$K0)
-on131 <- s1_month$track == 131
-on160 <- s1_month$track == 160
-paired <- intersect(key[on131], key[on160])
-track_diff <- k0_db[on131][match(paired, key[on131])] -
-  k0_db[on160][match(paired, key[on160])]
-s1_track <- c(n = length(track_diff), mean = mean(track_diff),
-              sd = sd(track_diff))
-
-# Descending scenes over the bounding box of the blocks, both collections,
-# so the price of the terrain correction is a count and not an assumption.
-s1_archive  <- tapply(s1_inv$scenes, s1_inv$collection, sum)
-s1_rtc_cost <- 100 * (s1_archive[["sentinel-1-grd"]] -
-                      s1_archive[["sentinel-1-rtc"]]) /
-  s1_archive[["sentinel-1-grd"]]
-floor90 <- function(b, m = 7)
-  s1_floor90$median_sd_db[s1_floor90$month == m & s1_floor90$band == b]
-
-# The floor measured where nothing happened, on the blocks the aerial survey
-# never recorded damage in, at 30 m, before and after the filter, and the
-# published size of total canopy removal it is set against.
-s1_floor30 <- read.csv(file.path(root, "03.outputs",
-                                 "radar_noise_floor_undamaged_30m.csv"))
-s1_ref <- read.csv(file.path(root, "03.outputs", "radar_noise_floor.csv"))
+s1_nscene <- tapply(s1_scenes$scene_id, s1_scenes$track, function(x) length(unique(x)))
+s1_first <- min(as.Date(s1_scenes$date[s1_scenes$track == 131]))
+s1_floor30 <- read.csv("../03.outputs/radar_noise_floor_undamaged_30m.csv")
+s1_ref <- read.csv("../03.outputs/radar_noise_floor.csv")
 floor30 <- function(what, b, p)
   s1_floor30[[what]][s1_floor30$processing == p & s1_floor30$band == b]
 ref_db <- function(q) s1_ref$value[s1_ref$quantity == q]
-yr_floor <- function(b, p = "mt_filtered")
-  floor30("year_to_year_median_db", b, p)
-rep_floor <- function(b, p = "mt_filtered")
-  floor30("repeatability_median_db", b, p)
+yr_floor <- function(b, p = "mt_filtered") floor30("year_to_year_median_db", b, p)
+rep_floor <- function(b, p = "mt_filtered") floor30("repeatability_median_db", b, p)
 removed <- function(b) 100 * (1 - yr_floor(b) / yr_floor(b, "unfiltered"))
 canopy_ratio <- c(VV = ref_db("windthrow_vv_db") / yr_floor("VV"),
                   VH = ref_db("windthrow_vh_db") / yr_floor("VH"))
-
-# The filtered monthly cube as written, counted from the directory rather
-# than typed. The pattern excludes the ._ sidecars the external volume leaves
-# beside each raster.
-s1_cube_files <- list.files(file.path(inputs, "derived", "s1_cube_30m"),
+s1val <- read.csv("../03.outputs/s1gbm_validation.csv")
+s1_cube_files <- list.files("../02.inputs/derived/s1_cube_30m",
                             pattern = "^SENTINEL-1_RTC_.*[.]tif$")
 s1_cube_dates <- as.Date(unique(regmatches(
   s1_cube_files, regexpr("[0-9]{4}-[0-9]{2}-[0-9]{2}", s1_cube_files))))
 ```
 
-The predictor record was Sentinel-1 C-band radar over the 160 sampled blocks of the Susitna lowlands from June 2017 onward, dual polarisation VV and VH in interferometric wide swath mode, held at every acquisition date on a 30 m grid and composited to calendar month only after speckle filtering. The decision to build on radar rather than on the optical composites was taken on 2026-09-09 and is recorded with the measurements that forced it in `05.tasks/2026-09-09-sensor-design-decision.md`; the amendment to the pre-registration is dated 2026-09-09 and stands unsigned until the author approves it. Cloud is the binding constraint on optical observation in Southcentral Alaska and radar is not stopped by it, which is why a monthly step was available here where the optical record supported only an annual one. Four choices defined the record, the archive, the track, the cell and the speckle treatment, and each replaced an earlier choice that was measured and found wanting, so each is given with the measurement that decided it.
+The predictor record was Sentinel-1 C-band radar over the 160 sampled blocks of the Susitna lowlands from June 2017 onward, in the satellite's interferometric wide swath mode with two polarisations, VV, the pulse sent and received vertically, and VH, received horizontally, which returns more from the canopy than from the ground. Radar passes through cloud, which is what limits optical observation in Southcentral Alaska, so a monthly step was available where the optical record supported only an annual one. The decision to build on radar rather than on the optical composites was taken on 2026-09-09 and the amendment to the pre-registration that carries it stands unsigned until the author approves it. Scenes were drawn from the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, in which the return is corrected for the slope and aspect of the ground by the flattening gamma method of @Small_2011, so that terrain does not read as forest, and delivered as gamma nought, the corrected backscatter, in linear power at 10 m sampling. The first extraction had been made from Earth Engine's uncorrected collection on the assumption that it held more scenes, and the comparison of the two archives that reversed that choice is in the supplement under Radar record.
 
-The archive was the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, rather than Earth Engine's `COPERNICUS/S1_GRD`, where the first extraction had been made. The collection's own description recorded its processing, the Ground Range Detected product converted to calibrated intensity by the European Space Agency's algorithm, then radiometrically terrain corrected by the flattening gamma method of @Small_2011 with PlanetDEM as the elevation source, and it is delivered as gamma nought in linear power at 10 m sampling. The Earth Engine collection was sigma nought with no terrain flattening. Compared on one acquisition over the blocks both hold, the flattened product ran above the unflattened one in both polarisations by an offset that was constant across most blocks and varied with the terrain across the rest, so the part that does not cancel between blocks follows the ground rather than the forest, which is what the correction exists to remove. The Planetary Computer had been assumed to hold fewer scenes than Earth Engine over this site, which was the reason the first extraction was built there, and the assumption was wrong. Counted through the archive's own catalogue by `05.scripts/09_mpc_sentinel1_inventory.py`, the descending record over the bounding box of the blocks held `r format(s1_archive[["sentinel-1-grd"]], big.mark = ",")` Ground Range Detected scenes and `r format(s1_archive[["sentinel-1-rtc"]], big.mark = ",")` terrain corrected ones from 2017 to 2026, so the terrain correction cost `r sprintf("%.1f", s1_rtc_cost)` per cent of the scenes.
+Two descending orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it saw every block, `r s1_blocks[["only_131"]]` of them alone and `r s1_blocks[["both"]]` together with orbit 160, which saw `r s1_blocks[["only_160"]]` alone. On the terrain corrected record the two orbits agreed over the blocks both saw, which is measured in the supplement, and orbit 160 was kept aside as a repeatability check. The record began on `r format(s1_first, "%d %B %Y")`, because earlier scenes over this frame carry VV alone, from which the polarisation pair cannot be formed, and the extraction holds `r s1_nscene[["131"]]` scenes on orbit 131 and `r s1_nscene[["160"]]` on orbit 160.
 
-Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The extraction to date holds `r s1_nscene[["131"]]` scenes on orbit 131 and `r s1_nscene[["160"]]` on orbit 160. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product. @fig-tracks draws the two footprints over the blocks, which is the whole case for one track.
+Each scene was held on a 30 m grid snapped to the 90 m optical grid, so that three cells nested exactly inside each 90 m stand cell and the severity labels joined both records without resampling. Ten metres is the product's sampling and not the instrument's resolution, which is coarser in both range and azimuth, so 30 m was the finest grid that did not oversample the instrument, and it is the floor below which Landsat is the sensible instrument. The area straddles the boundary between UTM zones 5 and 6 at 150 degrees west, so scenes arrive in both zones and the zone 6 scenes were reprojected window by window onto the zone 5 grid. Only the blocks were stored, 17 by 17 cells each. No layover and shadow mask was applied, since the blocks lie on the low relief of the Susitna lowlands, and the omission is recorded in the Limitations.
 
-```{r}
-#| label: tracks-data
-#| echo: true
-#| output: false
-fp_month <- with(s1_scenes, min(intersect(substr(date[track == 131], 1, 7),
-                                          substr(date[track == 160], 1, 7))))
-if (!file.exists("../03.outputs/s1_track_footprints.geojson")) {
-  st_read(paste0(
-    "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
-    "collections=sentinel-1-rtc&limit=200&bbox=",
-    paste(round(st_bbox(st_transform(blocks, 4326)), 4), collapse = ","),
-    "&datetime=", fp_month, "-01T00:00:00Z/", fp_month, "-28T23:59:59Z"
-  ), quiet = TRUE) |>
-    subset(sat.orbit_state == "descending",
-           select = c(id, sat.relative_orbit, sat.orbit_state)) |>
-    st_write("../03.outputs/s1_track_footprints.geojson", quiet = TRUE)
-}
-fp <- st_read("../03.outputs/s1_track_footprints.geojson", quiet = TRUE) |>
-  st_transform(32605)
-tracks <- aggregate(fp["id"], list(track = factor(fp$sat.relative_orbit)),
-                    length) |>
-  st_buffer(500) |>
-  st_buffer(-500)
-blocks$seen_by <- ifelse(sprintf("block_%03d", blocks$block) %in% seen[["160"]],
-                         "Both tracks", "Track 131 only")
-tracks_cap <- paste0(
-  "Footprints of the two descending Sentinel-1 relative orbits that cross the ",
-  "sampled blocks, 131 in green and 160 in violet, dissolved from the scene ",
-  "outlines the Planetary Computer catalogue holds for ",
-  format(as.Date(paste0(fp_month, "-01")), "%B %Y"), ", the first month both ",
-  "orbits flew over the blocks. Filled squares are the ", s1_blocks[["both"]],
-  " blocks both orbits see and hollow squares the ", s1_blocks[["only_131"]],
-  " seen by orbit 131 alone, with ", s1_blocks[["only_160"]], " seen by orbit ",
-  "160 alone. The dashed orange rectangle is the confirmatory study window. ",
-  "WGS 84 UTM zone 5N (EPSG:32605), graticule in km."
-)
-```
-
-```{r}
-#| label: fig-tracks
-#| echo: true
-#| fig-cap: !expr tracks_cap
-#| fig-width: 7
-#| fig-height: 5.4
-tm_shape(in_km(tracks), bbox = st_bbox(in_km(st_buffer(win_rect, 30000)))) +
-  tm_polygons(fill = "track", col = "track", fill_alpha = 0.12, lwd = 0.8,
-              fill.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
-              col.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
-              fill.legend = tm_legend(title = "Relative orbit"),
-              col.legend = tm_legend_combine("fill")) +
-  tm_shape(in_km(win_rect)) +
-  tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
-  tm_shape(in_km(blocks)) +
-  tm_symbols(fill = "seen_by", shape = 22, size = 0.3, col = "grey15", lwd = 0.3,
-             fill.scale = tm_scale_categorical(values = c("grey15", "white")),
-             fill.legend = tm_legend(title = "Block coverage")) +
-  tm_add_legend(type = "lines", labels = "Confirmatory study window",
-                col = "#E67E22", lty = "dashed", lwd = 0.7) +
-  map_frame("Sentinel-1 descending track footprints, UTM zone 5N (EPSG:32605)")
-```
-
-The record began in June 2017. Before that date the archive over this bounding box carried a run of single polarisation scenes holding a VV asset and no VH, from which neither Kennaugh element can be formed, and those scenes were what made the first cube build fail, so every scene entering the series was required to carry both polarisations in its metadata and both assets on disk, and the earliest scene accepted on orbit 131 was `r format(s1_first, "%d %B %Y")`. Only 2017 onward carries dual polarisation over this frame in any case, since the 2014 and 2015 archives hold VV alone.
-
-The cell was 30 m and not the 90 m of the optical grid. Ten metres is the product's sampling and not the instrument's resolution, which is coarser than the pixel in both range and azimuth in this mode, as the reference mosaic below records from the archive's own metadata, and 30 m was the finest grid that did not oversample the instrument. It was also set as the floor for any cube here, because below it Landsat is the sensible instrument and the comparator this study measured itself against. The 30 m cells were snapped to the 90 m optical grid so that three nested exactly inside each 90 m cell and the two grids joined without resampling. The area straddles the boundary between UTM zones 5 and 6 at 150 degrees west, so scenes arrive in both EPSG:32605 and EPSG:32606, and the zone 6 scenes were reprojected window by window onto the zone 5 grid; an earlier build with no guard on the projection silently dropped every zone 6 scene. Only the blocks were stored, 17 by 17 cells each, because a 30 m raster over the whole study frame would be almost entirely empty. No layover and shadow mask was applied, which the published processing graphs for this product place between terrain correction and filtering; the blocks sit on the low relief of the Susitna lowlands rather than in the mountains that bound them, and the omission is recorded here and in the Limitations rather than assumed harmless.
-
-Every date was kept rather than composited, because the multi-temporal speckle filter takes its noise reduction from the length of the series rather than from averaging neighbouring pixels together. The filter was implemented in `05.scripts/15_mt_speckle_filter.py` from the operator source in the Sentinel-1 Toolbox and its successor the Microwave Toolbox, `MultiTemporalSpeckleFilterOp`, which cite @Quegan_2000 as their reference; the two versions differ in 48 lines and change the algorithm in none, and the description here is of the operator rather than of the paper, which was not read. Each date keeps its own local mean over a 3 by 3 window, the ratios of every image to its own local mean are averaged across all dates, and each date's local mean is multiplied back, so the filter is unbiased per date and leaves real change between dates in place while the speckle cancels across the stack. The stack was filtered whole, every scene on orbit 131 from June 2017 at every block, and the filtered stack was written to `02.inputs/derived/s1_block_stack_30m_mtfiltered.npz`. The first extraction had omitted this step and suppressed speckle with a 7 by 7 focal mean on each date, which is why it kept arriving at coarse cells and a discouraging noise floor, and a monthly composite built that way on the 90 m grid is retained as the measure of what the filter had to remove. On that unfiltered composite, across `r unique(s1_floor90$n_years)` years and `r format(unique(s1_floor90$n_cells), big.mark = ",")` cells, the year-to-year standard deviation of one 90 m cell had a median of `r sprintf("%.2f", floor90("VV"))` dB in July VV, `r sprintf("%.2f", floor90("VH"))` dB in July VH, `r sprintf("%.2f", floor90("VV", 8))` dB in August VV and `r sprintf("%.2f", floor90("VH", 8))` dB in August VH. Those spreads were taken over all blocks, the damaged ones included, so they carry signal as well as noise and are not a floor.
-
-The floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. Two quantities were taken at each cell. Repeatability, the spread between scenes inside one calendar month, where nothing in the forest can have changed, fell with the filter from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH, over `r format(floor30("repeatability_n", "VV", "unfiltered"), big.mark = ",")` cell-months before and `r format(floor30("repeatability_n", "VV", "mt_filtered"), big.mark = ",")` after. The year-to-year floor, the spread of the monthly mean at one cell across years for the same calendar month, which is what a multi-year change has to clear, fell from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, over `r format(floor30("year_to_year_n", "VV", "unfiltered"), big.mark = ",")` and `r format(floor30("year_to_year_n", "VV", "mt_filtered"), big.mark = ",")` cell-months, so the filter removed `r sprintf("%.0f", removed("VV"))` per cent of that spread in VV and `r sprintf("%.0f", removed("VH"))` per cent in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered year-to-year floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. That was the floor at one cell in one year and not the model's floor, which has not been measured, because a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here. @fig-filter shows what the filter does to one block on one date.
+Every date was kept rather than composited, because the multi-temporal speckle filter takes its noise reduction from the length of the series rather than from averaging neighbouring cells; speckle is the grainy noise of a radar image. The filter was implemented in `05.scripts/15_mt_speckle_filter.py` from the operator source of the Sentinel-1 Toolbox, which cites @Quegan_2000. Each date keeps its own local mean over a 3 by 3 window, the ratios of every image to its own local mean are averaged across all dates, and each date's local mean is multiplied back, so the filter is unbiased per date and leaves real change between dates in place while the speckle cancels across the stack. The stack was filtered whole, every scene on orbit 131 from June 2017 at every block, and written to `02.inputs/derived/s1_block_stack_30m_mtfiltered.npz`. @fig-filter shows what the filter does to one block on one date.
 
 ```{python}
 #| label: filter-data
@@ -1007,7 +898,11 @@ tmap_arrange(
 )
 ```
 
-From the filtered stack the series was composited to calendar month and written as a local cube for the sits package under the naming `SENTINEL-1_RTC_TBL01_<band>_<date>.tif`, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, on the 30 m grid nesting inside the optical cube's 90 m cells with the same bounding box. Read with `parse_info = c("X1", "X2", "tile", "band", "date")`, sits loads it as one tile and reports it regular, so no regularisation step stands between the cube and the models. The two Kennaugh elements are not written to disk but formed inside sits where the model is built, K0 as the sum and K1 as the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, and only then is the result converted to decibels, in that order, because the decibel of a sum is not the sum of decibels. K0 and K1 are an invertible transform of the pair and carry no information VV and VH do not; K1 is the axis sensitive to the storey the return comes from, and the ratio of VH to VV is the same contrast made free of scale. The remaining two elements of the dual polarised Kennaugh matrix, K5 and K8, encode phase differences that a Ground Range Detected product has discarded, so they are unavailable here, and @Hechtl_2025 report K0 first and K1 second in every epoch of their own importance analysis, so the two elements that survive the product are the two carrying their signal. @fig-season draws the cube's July and November of one year block by block, so the seasonal cycle the Limitations return to is seen rather than reported.
+The chain was checked against the Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021, the mean C-band backscatter of 2016 and 2017 built by a different processor over the same ground, and across the `r s1val$n_blocks[1]` blocks the two records agreed in pattern at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH. Their levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, and the decomposition of that offset into the conversion between the two backscatter conventions and the summer weighting of the sample is in the supplement under Radar record.
+
+The noise floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. The year-to-year spread of one cell's monthly mean for the same calendar month, which is what a multi-year change has to clear, fell with the filter from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, so the filter removed `r sprintf("%.0f", removed("VV"))` and `r sprintf("%.0f", removed("VH"))` per cent of it, and the repeatability between scenes inside one calendar month, where nothing in the forest can have changed, fell from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. Two things keep that from being the model's floor, which has not been measured, in that a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here.
+
+From the filtered stack the series was composited to calendar month and written as a local cube for the sits package, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, which sits loads as one regular tile. The two channels the models receive are the Kennaugh elements K0 and K1, the sum and the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, formed inside sits and converted to decibels only afterwards, because the decibel of a sum is not the sum of decibels. K1 is the axis sensitive to the storey the return comes from, and @Hechtl_2025 ranked K0 and K1 first and second in every epoch of their own importance analysis; the two remaining elements of the dual polarised Kennaugh matrix need phase that a Ground Range Detected product has discarded. @fig-season draws the cube's July and November of one year block by block, the seasonal cycle the Limitations return to.
 
 ```{r}
 #| label: season-data
@@ -1059,178 +954,6 @@ tmap_arrange(
   ncol = 2, outer.margins = 0.01
 )
 ```
-
-The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries.
-
-```{r}
-#| label: s1gbm-reference
-#| echo: true
-#| output: false
-s1gbm_ids <- paste0("projects/sat-io/open-datasets/S1GBM/",
-                    "normalized_s1_backscatter_", c("VV", "VH"))
-s1gbm_f <- file.path(root, "03.outputs", "s1gbm_blocks.csv")
-s1gbm_grid_f <- file.path(root, "03.outputs", "s1gbm_grid.csv")
-s1gbm_wkt_f <- file.path(root, "03.outputs", "s1gbm_crs.wkt")
-s1gbm_tif <- file.path(inputs, "s1gbm", "s1gbm_window_200m.tif")
-# The grid the mosaic is asserted to sit on. Earth Engine cannot resolve this
-# code by name, so the grid is read from the asset as WKT, every request below
-# is placed in that WKT, and sf certifies the WKT as the code afterwards.
-s1gbm_epsg <- 27705
-if (!all(file.exists(c(s1gbm_f, s1gbm_grid_f, s1gbm_wkt_f, s1gbm_tif)))) {
-  library(rgee)
-  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  # No date filter anywhere. These assets carry a negative system:time_start,
-  # and filterDate on the collection returns nothing without an error.
-  s1gbm_vv <- ee$ImageCollection(s1gbm_ids[1])
-  s1gbm_vh <- ee$ImageCollection(s1gbm_ids[2])
-  s1gbm_img <- s1gbm_vv$first()
-  s1gbm_wkt <- s1gbm_img$projection()$wkt()$getInfo()
-  # mosaic() drops the tiles' projection for WGS 84 at one degree, so the
-  # projection is passed explicitly to every reducer and download below, or
-  # the pixels are resampled onto a latitude-longitude grid before they are
-  # averaged. The first build of this table left it implicit and was
-  # resampled that way; the block means moved by under 0.005 dB when it was
-  # rebuilt on the native grid.
-  s1gbm_mos <- s1gbm_vv$mosaic()$rename("VV")$addBands(
-    s1gbm_vh$mosaic()$rename("VH"))
-  if (!file.exists(s1gbm_grid_f)) {
-    writeLines(s1gbm_wkt, s1gbm_wkt_f)
-    # The instrument's resolution, as distinct from the product's sampling,
-    # read from one scene of the archive the radar record itself is built on.
-    blk_bb <- st_bbox(st_transform(st_read(
-      file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE), 4326))
-    pc <- jsonlite::fromJSON(paste0(
-      "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
-      "collections=sentinel-1-rtc&limit=1&bbox=",
-      paste(round(blk_bb, 4), collapse = ","),
-      "&datetime=2019-07-01T00:00:00Z/2019-07-31T23:59:59Z"),
-      simplifyVector = FALSE)$features[[1]]
-    write.csv(data.frame(
-      collection_vv = s1gbm_ids[1], collection_vh = s1gbm_ids[2],
-      n_tiles_vv = s1gbm_vv$size()$getInfo(),
-      n_tiles_vh = s1gbm_vh$size()$getInfo(),
-      band = s1gbm_img$bandNames()$getInfo()[1],
-      agg_stat_param = s1gbm_img$get("agg_stat_param")$getInfo(),
-      nominal_scale_m = s1gbm_img$projection()$nominalScale()$getInfo(),
-      transform = paste(s1gbm_img$projection()$getInfo()$transform,
-                        collapse = " "),
-      pc_item = pc$id,
-      sar_resolution_range_m = pc$properties[["sar:resolution_range"]],
-      sar_resolution_azimuth_m = pc$properties[["sar:resolution_azimuth"]],
-      sar_pixel_spacing_range_m = pc$properties[["sar:pixel_spacing_range"]],
-      sar_pixel_spacing_azimuth_m =
-        pc$properties[["sar:pixel_spacing_azimuth"]]),
-      s1gbm_grid_f, row.names = FALSE)
-  }
-  if (!file.exists(s1gbm_f)) {
-    blk_g <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
-                     quiet = TRUE)
-    blk_g$block <- sprintf("block_%03d", seq_len(nrow(blk_g)))
-    blk_ee <- sf_as_ee(st_transform(blk_g[, c("block", "geom")], 4326))
-    g <- ee_as_sf(s1gbm_mos$reduceRegions(collection = blk_ee,
-                                          reducer = ee$Reducer$mean(),
-                                          scale = 10L, crs = s1gbm_wkt,
-                                          tileScale = 4L),
-                  via = "getInfo", quiet = TRUE)
-    # Stored as decibels times ten, so the tenth is not cosmetic.
-    write.csv(data.frame(block = g$block,
-                         s1gbm_vv_db = g$VV / 10,
-                         s1gbm_vh_db = g$VH / 10),
-              s1gbm_f, row.names = FALSE)
-  }
-  if (!file.exists(s1gbm_tif)) {
-    # Both polarisations over the confirmatory study window drawn in
-    # fig-studyarea, on the native grid thinned to 200 m, which is finer than
-    # the printed figure resolves.
-    dir.create(dirname(s1gbm_tif), showWarnings = FALSE)
-    win7 <- st_bbox(st_transform(win_rect, s1gbm_epsg))
-    sc <- 200
-    x0 <- floor(win7["xmin"] / sc) * sc; x1 <- ceiling(win7["xmax"] / sc) * sc
-    y0 <- floor(win7["ymin"] / sc) * sc; y1 <- ceiling(win7["ymax"] / sc) * sc
-    url <- s1gbm_mos$getDownloadURL(list(
-      region = ee$Geometry$Rectangle(c(x0, y0, x1, y1), s1gbm_wkt, FALSE),
-      crs = s1gbm_wkt, crs_transform = c(sc, 0, x0, 0, -sc, y1),
-      format = "GEO_TIFF"))
-    old_to <- options(timeout = 600)
-    download.file(url, s1gbm_tif, mode = "wb", quiet = TRUE)
-    options(old_to)
-  }
-}
-s1gbm <- read.csv(s1gbm_f)
-s1grid <- read.csv(s1gbm_grid_f)
-s1val <- read.csv(file.path(root, "03.outputs", "s1gbm_validation.csv"))
-# The projection is read back from the asset's WKT and checked against the
-# code asserted above, because a silent mismatch here would put every block
-# on the wrong ground. sf holds the EPSG registry entry the asset's WKT lacks.
-s1gbm_crs <- st_crs(paste(readLines(s1gbm_wkt_f), collapse = "\n"))
-stopifnot(s1gbm_crs == st_crs(s1gbm_epsg))
-s1gbm_crs_name <- st_crs(s1gbm_epsg)$Name
-# The cell size is measured twice, from the nominal scale and from the affine
-# transform, and every reading must be 10 before the prose may say so.
-s1gbm_cell <- c(nominal = s1grid$nominal_scale_m,
-                abs(as.numeric(strsplit(s1grid$transform, " ")[[1]])[c(1, 5)]))
-stopifnot(all(s1gbm_cell == 10))
-s1gbm_cell_m <- unname(s1gbm_cell[1])
-# The window raster must sit on the same grid as the block means.
-s1gbm_r <- rast(s1gbm_tif)
-names(s1gbm_r) <- c("VV", "VH")
-stopifnot(st_crs(crs(s1gbm_r)) == st_crs(s1gbm_epsg))
-# Sigma nought to gamma nought at their fixed 38 degrees.
-sig2gam <- -10 * log10(cos(38 * pi / 180))
-# The catalogue's own example displays VV over -200 to -60 and VH over -237
-# to -70 in the stored units, on these two palettes. The figure applies them
-# as shipped, converted to decibels, rather than a stretch chosen by eye.
-s1gbm_disp <- list(
-  VV = list(range = c(-200, -60) / 10,
-            palette = c("#081d58", "#253494", "#225ea8", "#1d91c0", "#41b6c4",
-                        "#7fcdbb", "#c7e9b4", "#edf8b1", "#ffffd9")),
-  VH = list(range = c(-237, -70) / 10,
-            palette = c("#f7fcf5", "#e5f5e0", "#c7e9c0", "#a1d99b", "#74c476",
-                        "#41ab5d", "#238b45", "#006d2c", "#00441b")))
-```
-
-```{r}
-#| label: fig-s1gbm
-#| echo: true
-#| fig-cap: "The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Graticule in Equi7 eastings and northings, km. Cook Inlet is the dark water at the lower left."
-#| fig-width: 7
-#| fig-height: 3.3
-library(tmap)
-tmap_mode("plot")
-# The same projection in kilometre units, so the graticule reads in km
-# unaided. The false easting and northing stay in metres, which is how PROJ
-# defines them whatever the unit.
-s1gbm_crs_km <- sub("+units=m", "+units=km", st_crs(s1gbm_epsg)$proj4string,
-                    fixed = TRUE)
-s1gbm_db <- s1gbm_r / 10
-ext(s1gbm_db) <- as.vector(ext(s1gbm_r)) / 1000
-crs(s1gbm_db) <- s1gbm_crs_km
-s1gbm_blk <- st_transform(st_read(file.path(inputs, "derived",
-                                            "sample_blocks.gpkg"),
-                                  quiet = TRUE), s1gbm_crs_km)
-s1gbm_panel <- function(pol, tag) {
-  d <- s1gbm_disp[[pol]]
-  tm_shape(s1gbm_db[[pol]]) +
-    tm_raster(col.scale = tm_scale_continuous(values = d$palette,
-                                              limits = d$range,
-                                              outliers.trunc = c(TRUE, TRUE)),
-              col.legend = tm_legend(title = "dB", title.size = 0.7,
-                                     text.size = 0.6, reverse = TRUE,
-                                     height = 9,
-                                     position = tm_pos_out("right", "center"))) +
-    tm_shape(s1gbm_blk) + tm_borders(col = "red", lwd = 0.6) +
-    # Axis titles are left to the caption, because tm_xlab displaces the x
-    # grid labels in tmap 4.2.
-    tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70") +
-    tm_title(paste0("(", tag, ") ", pol), size = 0.8, fontface = "bold") +
-    tm_layout(frame = TRUE, inner.margins = 0,
-              outer.margins = c(0.08, 0.08, 0.01, 0.01))
-}
-tmap_arrange(s1gbm_panel("VV", "a"), s1gbm_panel("VH", "b"), ncol = 2,
-             asp = 1, outer.margins = 0.01)
-```
-
-The mosaic sat on `r s1gbm_crs_name` (EPSG:`r sprintf("%d", s1gbm_epsg)`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. @fig-s1gbm draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
 
 ## Satellite composites
 
@@ -2217,6 +1940,229 @@ c(label_areas = length(list.files("../02.inputs/zwieback-labels/gpkg", pattern =
   extent_files = length(list.files("../02.inputs/zwieback-labels/gpkg", pattern = "_extent\\.gpkg$")))
 ```
 
+## Radar record
+
+Four choices defined the radar record, the archive, the track, the cell and the speckle treatment, and each replaced an earlier choice that was measured and found wanting. The main text gives each choice; the measurements that decided the archive and the track, the unfiltered floor the first extraction arrived at, and the check of the whole chain against an independent mosaic are recorded here. The decision to build on radar rather than on the optical composites is recorded with the measurements that forced it in `05.tasks/2026-09-09-sensor-design-decision.md`.
+
+```{r}
+#| label: radar-archive-data
+#| echo: true
+#| output: false
+s1_month <- read.csv("../03.outputs/s1_rtc_monthly.csv")
+s1_inv <- read.csv("../03.outputs/mpc_s1_inventory.csv")
+s1_floor90 <- read.csv("../03.outputs/radar_noise_floor_90m.csv")
+key <- paste(s1_month$block, s1_month$year, s1_month$month)
+k0_db <- 10 * log10(s1_month$K0)
+on131 <- s1_month$track == 131
+on160 <- s1_month$track == 160
+paired <- intersect(key[on131], key[on160])
+track_diff <- k0_db[on131][match(paired, key[on131])] -
+  k0_db[on160][match(paired, key[on160])]
+s1_track <- c(n = length(track_diff), mean = mean(track_diff), sd = sd(track_diff))
+s1_archive <- tapply(s1_inv$scenes, s1_inv$collection, sum)
+s1_rtc_cost <- 100 * (s1_archive[["sentinel-1-grd"]] - s1_archive[["sentinel-1-rtc"]]) /
+  s1_archive[["sentinel-1-grd"]]
+floor90 <- function(b, m = 7)
+  s1_floor90$median_sd_db[s1_floor90$month == m & s1_floor90$band == b]
+```
+
+The archive was the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, rather than Earth Engine's `COPERNICUS/S1_GRD`, where the first extraction had been made. The collection's own description recorded its processing, the Ground Range Detected product converted to calibrated intensity by the European Space Agency's algorithm, then radiometrically terrain corrected by the flattening gamma method of @Small_2011 with PlanetDEM as the elevation source, and it is delivered as gamma nought in linear power at 10 m sampling. The Earth Engine collection was sigma nought with no terrain flattening. Compared on one acquisition over the blocks both hold, the flattened product ran above the unflattened one in both polarisations by an offset that was constant across most blocks and varied with the terrain across the rest, so the part that does not cancel between blocks follows the ground rather than the forest, which is what the correction exists to remove. The Planetary Computer had been assumed to hold fewer scenes than Earth Engine over this site, which was the reason the first extraction was built there, and the assumption was wrong. Counted through the archive's own catalogue by `05.scripts/09_mpc_sentinel1_inventory.py`, the descending record over the bounding box of the blocks held `r format(s1_archive[["sentinel-1-grd"]], big.mark = ",")` Ground Range Detected scenes and `r format(s1_archive[["sentinel-1-rtc"]], big.mark = ",")` terrain corrected ones from 2017 to 2026, so the terrain correction cost `r sprintf("%.1f", s1_rtc_cost)` per cent of the scenes.
+
+Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product. Figure S4 draws the two footprints over the blocks, which is the whole case for one track.
+
+```{r}
+#| label: tracks-data
+#| echo: true
+#| output: false
+fp_month <- with(s1_scenes, min(intersect(substr(date[track == 131], 1, 7),
+                                          substr(date[track == 160], 1, 7))))
+if (!file.exists("../03.outputs/s1_track_footprints.geojson")) {
+  st_read(paste0(
+    "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
+    "collections=sentinel-1-rtc&limit=200&bbox=",
+    paste(round(st_bbox(st_transform(blocks, 4326)), 4), collapse = ","),
+    "&datetime=", fp_month, "-01T00:00:00Z/", fp_month, "-28T23:59:59Z"
+  ), quiet = TRUE) |>
+    subset(sat.orbit_state == "descending",
+           select = c(id, sat.relative_orbit, sat.orbit_state)) |>
+    st_write("../03.outputs/s1_track_footprints.geojson", quiet = TRUE)
+}
+fp <- st_read("../03.outputs/s1_track_footprints.geojson", quiet = TRUE) |>
+  st_transform(32605)
+tracks <- aggregate(fp["id"], list(track = factor(fp$sat.relative_orbit)),
+                    length) |>
+  st_buffer(500) |>
+  st_buffer(-500)
+blocks$seen_by <- ifelse(sprintf("block_%03d", blocks$block) %in% seen[["160"]],
+                         "Both tracks", "Track 131 only")
+tracks_cap <- paste0(
+  "Figure S4. Footprints of the two descending Sentinel-1 relative orbits that ",
+  "cross the sampled blocks, 131 in green and 160 in violet, dissolved from the ",
+  "scene outlines the Planetary Computer catalogue holds for ",
+  format(as.Date(paste0(fp_month, "-01")), "%B %Y"), ", the first month both ",
+  "orbits flew over the blocks. Filled squares are the ", s1_blocks[["both"]],
+  " blocks both orbits see and hollow squares the ", s1_blocks[["only_131"]],
+  " seen by orbit 131 alone, with ", s1_blocks[["only_160"]], " seen by orbit ",
+  "160 alone. The dashed orange rectangle is the confirmatory study window. ",
+  "WGS 84 UTM zone 5N (EPSG:32605), graticule in km."
+)
+```
+
+```{r}
+#| label: supp-fig-tracks
+#| echo: true
+#| fig-cap: !expr tracks_cap
+#| fig-width: 7
+#| fig-height: 5.4
+tm_shape(in_km(tracks), bbox = st_bbox(in_km(st_buffer(win_rect, 30000)))) +
+  tm_polygons(fill = "track", col = "track", fill_alpha = 0.12, lwd = 0.8,
+              fill.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
+              col.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
+              fill.legend = tm_legend(title = "Relative orbit"),
+              col.legend = tm_legend_combine("fill")) +
+  tm_shape(in_km(win_rect)) +
+  tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
+  tm_shape(in_km(blocks)) +
+  tm_symbols(fill = "seen_by", shape = 22, size = 0.3, col = "grey15", lwd = 0.3,
+             fill.scale = tm_scale_categorical(values = c("grey15", "white")),
+             fill.legend = tm_legend(title = "Block coverage")) +
+  tm_add_legend(type = "lines", labels = "Confirmatory study window",
+                col = "#E67E22", lty = "dashed", lwd = 0.7) +
+  map_frame("Sentinel-1 descending track footprints, UTM zone 5N (EPSG:32605)")
+```
+
+The record began in June 2017. Before that date the archive over this bounding box carried a run of single polarisation scenes holding a VV asset and no VH, from which neither Kennaugh element can be formed, and those scenes were what made the first cube build fail, so every scene entering the series was required to carry both polarisations in its metadata and both assets on disk. Only 2017 onward carries dual polarisation over this frame in any case, since the 2014 and 2015 archives hold VV alone. The cell was set at 30 m, and an earlier build with no guard on the projection silently dropped every zone 6 scene, which is why the reprojection onto the zone 5 grid is done window by window with the projection asserted. The published processing graphs for this product place a layover and shadow mask between terrain correction and filtering, and none was applied here.
+
+The first extraction had omitted the multi-temporal filter and suppressed speckle with a 7 by 7 focal mean on each date, which is why it kept arriving at coarse cells and a discouraging noise floor, and a monthly composite built that way on the 90 m grid is retained as the measure of what the filter had to remove. On that unfiltered composite, across `r unique(s1_floor90$n_years)` years and `r format(unique(s1_floor90$n_cells), big.mark = ",")` cells, the year-to-year standard deviation of one 90 m cell had a median of `r sprintf("%.2f", floor90("VV"))` dB in July VV, `r sprintf("%.2f", floor90("VH"))` dB in July VH, `r sprintf("%.2f", floor90("VV", 8))` dB in August VV and `r sprintf("%.2f", floor90("VH", 8))` dB in August VH. Those spreads were taken over all blocks, the damaged ones included, so they carry signal as well as noise and are not a floor. The floor reported in the main text, on the undamaged blocks at 30 m, rests on `r format(floor30("repeatability_n", "VV", "unfiltered"), big.mark = ",")` cell-months before the filter and `r format(floor30("repeatability_n", "VV", "mt_filtered"), big.mark = ",")` after for the repeatability, and on `r format(floor30("year_to_year_n", "VV", "unfiltered"), big.mark = ",")` and `r format(floor30("year_to_year_n", "VV", "mt_filtered"), big.mark = ",")` cell-months for the year-to-year spread.
+
+The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries. Earth Engine cannot resolve the mosaic's grid by its registry code, so the grid is read from the asset as well-known text, every request is placed in that text, and sf certifies the text as the code afterwards; the block outlines are moved into that projection rather than the pixels moved out of it, because `mosaic()` otherwise replaces the tiles' projection with a one-degree latitude-longitude grid before the pixels are averaged. The first build of the block means left that implicit, and rebuilding on the native grid moved them by under 0.005 dB. The chunk also reads the instrument's resolution, as distinct from the product's sampling, from one scene of the archive the radar record is built on.
+
+```{r}
+#| label: s1gbm-reference
+#| echo: true
+#| output: false
+s1gbm_ids <- paste0("projects/sat-io/open-datasets/S1GBM/",
+                    "normalized_s1_backscatter_", c("VV", "VH"))
+s1gbm_epsg <- 27705
+if (!all(file.exists(c("../03.outputs/s1gbm_blocks.csv", "../03.outputs/s1gbm_grid.csv",
+                       "../03.outputs/s1gbm_crs.wkt",
+                       "../02.inputs/s1gbm/s1gbm_window_200m.tif")))) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  s1gbm_vv <- ee$ImageCollection(s1gbm_ids[1])
+  s1gbm_vh <- ee$ImageCollection(s1gbm_ids[2])
+  s1gbm_img <- s1gbm_vv$first()
+  s1gbm_wkt <- s1gbm_img$projection()$wkt()$getInfo()
+  s1gbm_mos <- s1gbm_vv$mosaic()$rename("VV")$addBands(
+    s1gbm_vh$mosaic()$rename("VH"))
+  if (!file.exists("../03.outputs/s1gbm_grid.csv")) {
+    writeLines(s1gbm_wkt, "../03.outputs/s1gbm_crs.wkt")
+    blk_bb <- st_bbox(st_transform(blocks, 4326))
+    pc <- jsonlite::fromJSON(paste0(
+      "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
+      "collections=sentinel-1-rtc&limit=1&bbox=",
+      paste(round(blk_bb, 4), collapse = ","),
+      "&datetime=2019-07-01T00:00:00Z/2019-07-31T23:59:59Z"),
+      simplifyVector = FALSE)$features[[1]]
+    write.csv(data.frame(
+      collection_vv = s1gbm_ids[1], collection_vh = s1gbm_ids[2],
+      n_tiles_vv = s1gbm_vv$size()$getInfo(),
+      n_tiles_vh = s1gbm_vh$size()$getInfo(),
+      band = s1gbm_img$bandNames()$getInfo()[1],
+      agg_stat_param = s1gbm_img$get("agg_stat_param")$getInfo(),
+      nominal_scale_m = s1gbm_img$projection()$nominalScale()$getInfo(),
+      transform = paste(s1gbm_img$projection()$getInfo()$transform,
+                        collapse = " "),
+      pc_item = pc$id,
+      sar_resolution_range_m = pc$properties[["sar:resolution_range"]],
+      sar_resolution_azimuth_m = pc$properties[["sar:resolution_azimuth"]],
+      sar_pixel_spacing_range_m = pc$properties[["sar:pixel_spacing_range"]],
+      sar_pixel_spacing_azimuth_m =
+        pc$properties[["sar:pixel_spacing_azimuth"]]),
+      "../03.outputs/s1gbm_grid.csv", row.names = FALSE)
+  }
+  if (!file.exists("../03.outputs/s1gbm_blocks.csv")) {
+    blk_g <- blocks[, "block"]
+    blk_g$block <- sprintf("block_%03d", blk_g$block)
+    g <- ee_as_sf(s1gbm_mos$reduceRegions(collection = sf_as_ee(st_transform(blk_g, 4326)),
+                                          reducer = ee$Reducer$mean(),
+                                          scale = 10L, crs = s1gbm_wkt,
+                                          tileScale = 4L),
+                  via = "getInfo", quiet = TRUE)
+    write.csv(data.frame(block = g$block,
+                         s1gbm_vv_db = g$VV / 10,
+                         s1gbm_vh_db = g$VH / 10),
+              "../03.outputs/s1gbm_blocks.csv", row.names = FALSE)
+  }
+  if (!file.exists("../02.inputs/s1gbm/s1gbm_window_200m.tif")) {
+    dir.create("../02.inputs/s1gbm", showWarnings = FALSE)
+    win7 <- st_bbox(st_transform(win_rect, s1gbm_epsg))
+    x0 <- floor(win7["xmin"] / 200) * 200; x1 <- ceiling(win7["xmax"] / 200) * 200
+    y0 <- floor(win7["ymin"] / 200) * 200; y1 <- ceiling(win7["ymax"] / 200) * 200
+    url <- s1gbm_mos$getDownloadURL(list(
+      region = ee$Geometry$Rectangle(c(x0, y0, x1, y1), s1gbm_wkt, FALSE),
+      crs = s1gbm_wkt, crs_transform = c(200, 0, x0, 0, -200, y1),
+      format = "GEO_TIFF"))
+    old_to <- options(timeout = 600)
+    download.file(url, "../02.inputs/s1gbm/s1gbm_window_200m.tif", mode = "wb", quiet = TRUE)
+    options(old_to)
+  }
+}
+s1gbm <- read.csv("../03.outputs/s1gbm_blocks.csv")
+s1grid <- read.csv("../03.outputs/s1gbm_grid.csv")
+s1gbm_crs <- st_crs(paste(readLines("../03.outputs/s1gbm_crs.wkt"), collapse = "\n"))
+stopifnot(s1gbm_crs == st_crs(s1gbm_epsg))
+s1gbm_crs_name <- st_crs(s1gbm_epsg)$Name
+s1gbm_cell <- c(nominal = s1grid$nominal_scale_m,
+                abs(as.numeric(strsplit(s1grid$transform, " ")[[1]])[c(1, 5)]))
+stopifnot(all(s1gbm_cell == 10))
+s1gbm_cell_m <- unname(s1gbm_cell[1])
+s1gbm_r <- rast("../02.inputs/s1gbm/s1gbm_window_200m.tif")
+names(s1gbm_r) <- c("VV", "VH")
+stopifnot(st_crs(crs(s1gbm_r)) == st_crs(s1gbm_epsg))
+sig2gam <- -10 * log10(cos(38 * pi / 180))
+s1gbm_disp <- list(
+  VV = list(range = c(-200, -60) / 10,
+            palette = c("#081d58", "#253494", "#225ea8", "#1d91c0", "#41b6c4",
+                        "#7fcdbb", "#c7e9b4", "#edf8b1", "#ffffd9")),
+  VH = list(range = c(-237, -70) / 10,
+            palette = c("#f7fcf5", "#e5f5e0", "#c7e9c0", "#a1d99b", "#74c476",
+                        "#41ab5d", "#238b45", "#006d2c", "#00441b")))
+```
+
+```{r}
+#| label: supp-fig-s1gbm
+#| echo: true
+#| fig-cap: "Figure S5. The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Graticule in Equi7 eastings and northings, km. Cook Inlet is the dark water at the lower left."
+#| fig-width: 7
+#| fig-height: 3.3
+s1gbm_crs_km <- sub("+units=m", "+units=km", st_crs(s1gbm_epsg)$proj4string, fixed = TRUE)
+s1gbm_db <- s1gbm_r / 10
+ext(s1gbm_db) <- as.vector(ext(s1gbm_r)) / 1000
+crs(s1gbm_db) <- s1gbm_crs_km
+s1gbm_blk <- st_transform(blocks, s1gbm_crs_km)
+s1gbm_panel <- function(pol, tag) {
+  d <- s1gbm_disp[[pol]]
+  tm_shape(s1gbm_db[[pol]]) +
+    tm_raster(col.scale = tm_scale_continuous(values = d$palette,
+                                              limits = d$range,
+                                              outliers.trunc = c(TRUE, TRUE)),
+              col.legend = tm_legend(title = "dB", title.size = 0.7,
+                                     text.size = 0.6, reverse = TRUE,
+                                     height = 9,
+                                     position = tm_pos_out("right", "center"))) +
+    tm_shape(s1gbm_blk) + tm_borders(col = "red", lwd = 0.6) +
+    tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70") +
+    tm_title(paste0("(", tag, ") ", pol), size = 0.8, fontface = "bold") +
+    tm_layout(frame = TRUE, inner.margins = 0,
+              outer.margins = c(0.08, 0.08, 0.01, 0.01))
+}
+tmap_arrange(s1gbm_panel("VV", "a"), s1gbm_panel("VH", "b"), ncol = 2,
+             asp = 1, outer.margins = 0.01)
+```
+
+The mosaic sat on `r s1gbm_crs_name` (EPSG:`r sprintf("%d", s1gbm_epsg)`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. Figure S5 draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement; the sample behind this study's medians is weighted to the summer months, which sit above the annual mean in a record whose seasonal swing is larger than any canopy signal, and the remainder of the offset has not been decomposed between those two causes and is not quoted as if it had.
+
 ## Composite assembly
 
 Annual peak-growing-season composites were assembled in Google Earth Engine [@Gorelick_2017] between 2026-08-11 and 2026-09-08, with the complete compilation code executing within this manuscript. Sentinel-2 Level-2A surface reflectance from 2016 onward supplied ten-metre visible, red-edge, NIR and SWIR bands; Landsat Collection 2 Level-2 surface reflectance from Landsat 5 through 9 extended the record to the pre-outbreak baseline at 30 m, with bands harmonized across sensors as in @Perbet_2024. Joining the two sensors was not free of consequence, because the Operational Land Imager and the MultiSpectral Instrument differ in band pass, view geometry and gain, and those differences have been characterised directly by cross-comparison of top-of-atmosphere, surface and nadir-adjusted reflectance [@Zhang_2018] and by empirical cross-sensor regression [@Chastain_2019]. The reference implementation of a joined record is the Harmonized Landsat and Sentinel-2 product [@Claverie_2018; @Ju_2025], and adjustments have also been derived from the time series itself rather than from paired scenes [@Shang_2019], while cross-sensor annual compositing at national scale is established practice [@Griffiths_2019]. Compositing followed the July to August window standard for boreal disturbance work [@Perbet_2024]. Cloud and shadow were masked with the Cloud Score+ quality dataset [@Pasquarella_2023], retaining pixels whose cs score met or exceeded 0.40, and each annual composite was a quality mosaic that selected the clearest observation per cell as ranked by the same score; where a summer yielded no clear observation, the cell was gap-filled from the prior year. Composites were reduced to stand cells on the reference grid. The interferometric synthetic aperture radar 5 m digital elevation model and the conifer-fraction map of @Macander_2022 were assembled as static covariates for that design. Composites were assembled without reference to any severity label; no predictor-outcome relationship was examined before pre-registration.
@@ -2281,7 +2227,7 @@ if (length(todo)) {
 }
 ```
 
-Figure S4 shows one of those composites over the confirmatory study window, the 2023 season in false colour, with the sampled blocks and the severity reference footprint on it.
+Figure S6 shows one of those composites over the confirmatory study window, the 2023 season in false colour, with the sampled blocks and the severity reference footprint on it.
 
 ```{r}
 #| label: composite-map-data
@@ -2291,7 +2237,7 @@ s2_map <- rast("../02.inputs/composites/s2_2023.tif")[[c("swir16", "nir", "red")
   aggregate(2, mean, na.rm = TRUE) |>
   stretch(minq = 0.02, maxq = 0.98)
 composite_cap <- paste0(
-  "Figure S4. The 2023 Sentinel-2 annual composite over the confirmatory study ",
+  "Figure S6. The 2023 Sentinel-2 annual composite over the confirmatory study ",
   "window in false colour, shortwave infrared (1.6 µm) as red, near infrared as ",
   "green and red as blue, each band stretched between its second and ",
   "ninety-eighth percentile and drawn at ", res(s2_map)[1], " m from the ",
@@ -2416,12 +2362,12 @@ clear_sum <- do.call(rbind, lapply(
     share_under_3 = sum(d$cells[d$n_clear < 3]) / sum(d$cells))))
 ```
 
-The pre-outbreak window the optical baseline rested on was thin. Across the Landsat years 2014 to 2018 the median cell carried `r min(clear_sum$med[clear_sum$sensor == "Landsat 8"])` to `r max(clear_sum$med[clear_sum$sensor == "Landsat 8"])` clear observations, and between `r sprintf("%.0f", 100 * min(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` and `r sprintf("%.0f", 100 * max(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` per cent of cells carried fewer than three, against a median of `r clear_sum$med[clear_sum$sensor == "Sentinel-2" & clear_sum$year == 2019]` in 2019. A summer mean built on two looks is close to a single date, and the pre-outbreak window of the baseline is built from exactly those years, which is the second reason after the sensor boundary to treat that window with care. Figure S5 shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
+The pre-outbreak window the optical baseline rested on was thin. Across the Landsat years 2014 to 2018 the median cell carried `r min(clear_sum$med[clear_sum$sensor == "Landsat 8"])` to `r max(clear_sum$med[clear_sum$sensor == "Landsat 8"])` clear observations, and between `r sprintf("%.0f", 100 * min(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` and `r sprintf("%.0f", 100 * max(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` per cent of cells carried fewer than three, against a median of `r clear_sum$med[clear_sum$sensor == "Sentinel-2" & clear_sum$year == 2019]` in 2019. A summer mean built on two looks is close to a single date, and the pre-outbreak window of the baseline is built from exactly those years, which is the second reason after the sensor boundary to treat that window with care. Figure S7 shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
 
 ```{r}
 #| label: supp-fig-clearobs
 #| echo: true
-#| fig-cap: "Figure S5. Per-cell clear observations entering each annual composite on the 90 m reference grid, from a frequency table of the count band rather than a sample. The point is the median cell and the bar spans the tenth to ninetieth percentile. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 composites built for 2016 to 2018 are drawn alongside to show why they cannot carry those years. The dashed line marks three observations, below which a cell rests on so few looks that the composite is close to a single date."
+#| fig-cap: "Figure S7. Per-cell clear observations entering each annual composite on the 90 m reference grid, from a frequency table of the count band rather than a sample. The point is the median cell and the bar spans the tenth to ninetieth percentile. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 composites built for 2016 to 2018 are drawn alongside to show why they cannot carry those years. The dashed line marks three observations, below which a cell rests on so few looks that the composite is close to a single date."
 #| fig-width: 7
 #| fig-height: 3.8
 ggplot(clear_sum, aes(year, med, colour = sensor)) +
@@ -2512,12 +2458,12 @@ fmt_tbl(cube_checks,
         caption = "Table S6. Analysis cube as loaded by sits, with the checks each property must pass. The timeline must be gapless and annual, every date must carry all four bands with no stray files, and the cube geometry must equal that of the composite it was split from.")
 ```
 
-Figure S6 shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline the optical design differenced them from, and it shows the discontinuity at the sensor boundary that the main text quantifies and that set the record aside.
+Figure S8 shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline the optical design differenced them from, and it shows the discontinuity at the sensor boundary that the main text quantifies and that set the record aside.
 
 ```{r}
 #| label: supp-fig-trajectory
 #| echo: true
-#| fig-cap: "Figure S6. Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the main text quantifies. The dashed line marks the 2016 outbreak onset."
+#| fig-cap: "Figure S8. Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the main text quantifies. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
 band_lab <- c(B04 = "B04, red", B08 = "B08, near infrared",
@@ -2775,3 +2721,4 @@ prog_shell[c("Mapped_kha", "Surveyed_kha", "Ratio", "IoU")] <- "pending"
 fmt_tbl(prog_shell, right = c("Mapped_kha","Surveyed_kha","Ratio","IoU"),
         caption = "Table S12. Reconstructed annual outbreak area against aerial survey extent, 2016 to 2025, descriptive. Values pending execution of the pre-registered analysis.")
 ```
+
