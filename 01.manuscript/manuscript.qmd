@@ -1362,7 +1362,68 @@ The predictor record was Sentinel-1 C-band radar over the 160 sampled blocks of 
 
 The archive was the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, rather than Earth Engine's `COPERNICUS/S1_GRD`, where the first extraction had been made. The collection's own description recorded its processing, the Ground Range Detected product converted to calibrated intensity by the European Space Agency's algorithm, then radiometrically terrain corrected by the flattening gamma method of @Small_2011 with PlanetDEM as the elevation source, and it is delivered as gamma nought in linear power at 10 m sampling. The Earth Engine collection was sigma nought with no terrain flattening. Compared on one acquisition over the blocks both hold, the flattened product ran above the unflattened one in both polarisations by an offset that was constant across most blocks and varied with the terrain across the rest, so the part that does not cancel between blocks follows the ground rather than the forest, which is what the correction exists to remove. The Planetary Computer had been assumed to hold fewer scenes than Earth Engine over this site, which was the reason the first extraction was built there, and the assumption was wrong. Counted through the archive's own catalogue by `05.scripts/09_mpc_sentinel1_inventory.py`, the descending record over the bounding box of the blocks held `r format(s1_archive[["sentinel-1-grd"]], big.mark = ",")` Ground Range Detected scenes and `r format(s1_archive[["sentinel-1-rtc"]], big.mark = ",")` terrain corrected ones from 2017 to 2026, so the terrain correction cost `r sprintf("%.1f", s1_rtc_cost)` per cent of the scenes.
 
-Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The extraction to date holds `r s1_nscene[["131"]]` scenes on orbit 131 and `r s1_nscene[["160"]]` on orbit 160. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product.
+Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The extraction to date holds `r s1_nscene[["131"]]` scenes on orbit 131 and `r s1_nscene[["160"]]` on orbit 160. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product. @fig-tracks draws the two footprints over the blocks, which is the whole case for one track.
+
+```{r}
+#| label: tracks-data
+#| echo: true
+#| output: false
+fp_month <- with(s1_scenes, min(intersect(substr(date[track == 131], 1, 7),
+                                          substr(date[track == 160], 1, 7))))
+if (!file.exists("../03.outputs/s1_track_footprints.geojson")) {
+  st_read(paste0(
+    "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
+    "collections=sentinel-1-rtc&limit=200&bbox=",
+    paste(round(st_bbox(st_transform(blocks, 4326)), 4), collapse = ","),
+    "&datetime=", fp_month, "-01T00:00:00Z/", fp_month, "-28T23:59:59Z"
+  ), quiet = TRUE) |>
+    subset(sat.orbit_state == "descending",
+           select = c(id, sat.relative_orbit, sat.orbit_state)) |>
+    st_write("../03.outputs/s1_track_footprints.geojson", quiet = TRUE)
+}
+fp <- st_read("../03.outputs/s1_track_footprints.geojson", quiet = TRUE) |>
+  st_transform(32605)
+tracks <- aggregate(fp["id"], list(track = factor(fp$sat.relative_orbit)),
+                    length) |>
+  st_buffer(500) |>
+  st_buffer(-500)
+blocks$seen_by <- ifelse(sprintf("block_%03d", blocks$block) %in% seen[["160"]],
+                         "Both tracks", "Track 131 only")
+tracks_cap <- paste0(
+  "Footprints of the two descending Sentinel-1 relative orbits that cross the ",
+  "sampled blocks, 131 in green and 160 in violet, dissolved from the scene ",
+  "outlines the Planetary Computer catalogue holds for ",
+  format(as.Date(paste0(fp_month, "-01")), "%B %Y"), ", the first month both ",
+  "orbits flew over the blocks. Filled squares are the ", s1_blocks[["both"]],
+  " blocks both orbits see and hollow squares the ", s1_blocks[["only_131"]],
+  " seen by orbit 131 alone, with ", s1_blocks[["only_160"]], " seen by orbit ",
+  "160 alone. The dashed orange rectangle is the confirmatory study window. ",
+  "WGS 84 UTM zone 5N (EPSG:32605), graticule in km."
+)
+```
+
+```{r}
+#| label: fig-tracks
+#| echo: true
+#| fig-cap: !expr tracks_cap
+#| fig-width: 7
+#| fig-height: 5.4
+tm_shape(in_km(tracks), bbox = st_bbox(in_km(st_buffer(win_rect, 30000)))) +
+  tm_polygons(fill = "track", col = "track", fill_alpha = 0.12, lwd = 0.8,
+              fill.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
+              col.scale = tm_scale_categorical(values = c("#1B9E77", "#7570B3")),
+              fill.legend = tm_legend(title = "Relative orbit"),
+              col.legend = tm_legend_combine("fill")) +
+  tm_shape(in_km(win_rect)) +
+  tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
+  tm_shape(in_km(blocks)) +
+  tm_symbols(fill = "seen_by", shape = 22, size = 0.3, col = "grey15", lwd = 0.3,
+             fill.scale = tm_scale_categorical(values = c("grey15", "white")),
+             fill.legend = tm_legend(title = "Block coverage")) +
+  tm_add_legend(type = "lines", labels = "Confirmatory study window",
+                col = "#E67E22", lty = "dashed", lwd = 0.7) +
+  map_frame("Sentinel-1 descending track footprints, UTM zone 5N (EPSG:32605)")
+```
 
 The record began in June 2017. Before that date the archive over this bounding box carried a run of single polarisation scenes holding a VV asset and no VH, from which neither Kennaugh element can be formed, and those scenes were what made the first cube build fail, so every scene entering the series was required to carry both polarisations in its metadata and both assets on disk, and the earliest scene accepted on orbit 131 was `r format(s1_first, "%d %B %Y")`. Only 2017 onward carries dual polarisation over this frame in any case, since the 2014 and 2015 archives hold VV alone.
 
