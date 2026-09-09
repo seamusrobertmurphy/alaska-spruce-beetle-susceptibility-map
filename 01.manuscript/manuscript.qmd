@@ -1817,6 +1817,47 @@ if (length(todo)) {
 }
 ```
 
+@fig-composite shows one of those composites over the confirmatory study window, the 2023 season in false colour, with the sampled blocks and the severity reference footprint on it.
+
+```{r}
+#| label: composite-map-data
+#| echo: true
+#| output: false
+s2_map <- rast("../02.inputs/composites/s2_2023.tif")[[c("swir16", "nir", "red")]] |>
+  aggregate(2, mean, na.rm = TRUE) |>
+  stretch(minq = 0.02, maxq = 0.98)
+composite_cap <- paste0(
+  "The 2023 Sentinel-2 annual composite over the confirmatory study window in ",
+  "false colour, shortwave infrared (1.6 µm) as red, near infrared as green and ",
+  "red as blue, each band stretched between its second and ninety-eighth ",
+  "percentile and drawn at ", res(s2_map)[1], " m from the ", res(s2_map)[1] / 2,
+  " m grid. Live vegetation reads green to yellow, bare ground and rock red, ",
+  "water and shadow dark, and snow and ice cyan. Yellow squares are the ",
+  nrow(blocks), " sampled blocks, drawn larger than the blocks; the magenta ",
+  "rectangle is the footprint of the independent severity reference. WGS 84 ",
+  "UTM zone 5N (EPSG:32605), graticule in km."
+)
+```
+
+```{r}
+#| label: fig-composite
+#| echo: true
+#| fig-cap: !expr composite_cap
+#| fig-width: 6
+#| fig-height: 6.8
+tm_shape(in_km(s2_map)) +
+  tm_rgb(col = tm_vars(c("swir16", "nir", "red"), multivariate = TRUE)) +
+  tm_shape(in_km(blocks)) +
+  tm_symbols(shape = 22, size = 0.25, fill = NA, col = "yellow", lwd = 0.5) +
+  tm_shape(in_km(foot)) + tm_borders(col = "magenta", lwd = 0.9) +
+  tm_add_legend(type = "symbols", labels = "Sampled block", shape = 22,
+                fill = NA, col = "yellow", lwd = 0.5) +
+  tm_add_legend(type = "lines", labels = "Severity reference footprint",
+                col = "magenta", lwd = 0.9) +
+  map_frame("Sentinel-2 composite 2023, SWIR, NIR, red, UTM zone 5N (EPSG:32605)",
+            legend = tm_pos_in("right", "bottom"))
+```
+
 The Landsat baseline composites cover 2014 to 2018, the pre-outbreak reference state and the early outbreak years that precede dense Sentinel-2 coverage. Landsat 8 Collection 2 Level-2 surface reflectance was masked to clear observations with the QA pixel band, scaled, and reduced to July to August medians on the same grid.
 
 ```{r}
