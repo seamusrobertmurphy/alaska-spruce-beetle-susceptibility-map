@@ -100,7 +100,12 @@ def search_scenes():
         body = nxt[0].get("body") or body
         if "token" not in body:
             break
-    out.sort(key=lambda r: (r["date"], r["id"]))
+    # Summer first, then the rest in date order. The analysis is restricted to
+    # the unfrozen months, because four fifths of the 2.16 dB annual swing in
+    # this record is the ground freezing, so a run stopped early should leave
+    # complete summers rather than complete early years.
+    out.sort(key=lambda r: (int(r["date"][5:7]) not in (6, 7, 8, 9),
+                            r["date"], r["id"]))
     return out
 
 
