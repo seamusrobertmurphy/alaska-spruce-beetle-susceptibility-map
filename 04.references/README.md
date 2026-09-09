@@ -34,3 +34,45 @@ Empty.
 ## standards/
 
 Empty.
+
+## Search corpus, 2026-09-08
+
+Twenty entries added by the literature search of 2026-09-08, recorded in full in
+`02.inputs/derived/literature_screening.csv`, which carries all 115 screened records with
+each one's strand, decision and reason. Every entry below was verified against CrossRef by
+content negotiation on its DOI before it entered `references.bib`. No PDF was retrieved.
+
+Read status is the important column here and it is uniform. **None of these twenty was read
+in full.** Fifteen were read at abstract level, retrieved from OpenAlex on 2026-09-08, and
+the claims made about them in the manuscript are held to what the abstract states. Five
+returned no abstract from either OpenAlex or Semantic Scholar, namely `Meigs_2011`,
+`Meddens_2013`, `Senf_2015`, `DeRose_2011` and `DeRose_2012`, and those five are cited only
+for the claim their title states outright, grouped in a parenthetical, never paraphrased.
+
+Before any of these carries a load-bearing claim, a specific threshold, a quoted phrase or a
+reported effect size, the paper is retrieved and read, and this table is rewritten with what
+the reading found. That is the same standard the seed corpus was held to and the reason
+`Bright_2020` above records two corrected misreadings.
+
+| Key | Identity | Read status |
+|---|---|---|
+| `Patacca_2022` | Global Change Biology, disturbance impacts on European forests 1950 to 2019 | Abstract only, 2026-09-08 |
+| `White_2017` | Remote Sensing of Environment, 25 years of annual national disturbance and recovery for Canada | Abstract only, 2026-09-08 |
+| `Meigs_2011` | Remote Sensing of Environment, Landsat time series for bark beetle and defoliator mortality | Title only, no abstract available |
+| `Meddens_2013` | Remote Sensing of Environment, single-date against multi-date detection of beetle-caused mortality | Title only, no abstract available |
+| `Huo_2021` | Remote Sensing of Environment, early stress detection and a new index for *Ips typographus* | Abstract only, 2026-09-08 |
+| `Abdullah_2018` | Remote Sensing in Ecology and Conservation, Sentinel-2 green-attack mapping | Abstract only, 2026-09-08 |
+| `Senf_2015` | Remote Sensing of Environment, spectral-temporal patterns of defoliator and bark beetle disturbance | Title only, no abstract available |
+| `Morris_2016` | Journal of Applied Ecology, priority questions on bark beetle impacts | Abstract only, 2026-09-08 |
+| `Dalponte_2022` | Remote Sensing, Sentinel-2 outbreak mapping at crown level in the Italian Alps | Abstract only, 2026-09-08 |
+| `Candotti_2022` | Remote Sensing, multi-temporal Sentinel-2 framework for wind and bark beetle damage | Abstract only, 2026-09-08 |
+| `Yuan_2021` | IEEE JSTARS, self-supervised transformer pretraining for satellite image time series | Abstract only, 2026-09-08 |
+| `Kong_2018` | Remote Sensing, recurrent networks for online disturbance detection in image time series | Abstract only, 2026-09-08 |
+| `Tang_2022` | IEEE GRSL, channel attention over a temporal convolutional network | Abstract only, 2026-09-08 |
+| `Miller_2024` | IEEE GRSM, review of deep learning for satellite image time series | Abstract only, 2026-09-08 |
+| `Hall_2016` | The Canadian Entomologist, review of remote sensing of forest pest damage | Abstract only, 2026-09-08 |
+| `Hart_2017` | Ecology, summer and winter drought driving *Dendroctonus rufipennis* outbreak | Abstract only, 2026-09-08 |
+| `DeRose_2012` | Forest Science, spatial and temporal dynamics of Engelmann spruce mortality | Title only, no abstract available |
+| `DeRose_2011` | Remote Sensing of Environment, dendrochronology with a disturbance index | Title only, no abstract available |
+| `Housman_2018` | Remote Sensing, insect and disease survey data against satellite products. The search resolved a preprints.org record first; the peer-reviewed version at doi 10.3390/rs10081184 is what entered the bibliography | Abstract only, 2026-09-08 |
+| `Marvasti_Zadeh_2023` | ACM Computing Surveys, review of early bark beetle detection by remote sensing and machine learning | Abstract only, 2026-09-08 |
