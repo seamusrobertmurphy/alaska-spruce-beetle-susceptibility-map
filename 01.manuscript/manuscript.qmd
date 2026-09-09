@@ -764,6 +764,39 @@ tq <- read.csv(file.path(dirname(inputs), "03.outputs", "triage_queue.csv"))
 
 The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on.
 
+@fig-triage-map places that queue in the study area, so the blocks carrying the most candidate crowns can be read against the fold they sit in rather than against a block number.
+
+```{r}
+#| label: fig-triage-map
+#| echo: true
+#| fig-cap: "Candidate dead-spruce crowns per sampled block, over the 2020 and 2023 statewide mosaic epochs, from the triage queue as generated. Each point is one of the 160 blocks at its centroid on the WGS 84 UTM zone 5N working grid, sized and shaded by the number of candidates the pre-labeller proposed in it. The fold each block belongs to is not drawn, because eight categories on an outline at this size cannot be told apart."
+#| fig-width: 7
+#| fig-height: 4.4
+blk <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                   quiet = TRUE)
+# The sampling script wrote block_id as seq_len(nrow(samp)) from the same
+# object it wrote the GeoPackage from, so row order is the identifier and the
+# join needs no key column.
+blk$block <- seq_len(nrow(blk))
+ctr <- sf::st_centroid(sf::st_geometry(blk))
+xy <- sf::st_coordinates(ctr)
+blk_df <- data.frame(block = blk$block, fold = factor(blk$fold),
+                     x = xy[, 1] / 1000, y = xy[, 2] / 1000)
+tq_map <- merge(blk_df, tq[, c("epoch", "block", "candidates")], by = "block")
+tq_map$epoch <- factor(tq_map$epoch, labels = c("2020 mosaic", "2023 mosaic"))
+
+ggplot(tq_map, aes(x, y)) +
+  geom_point(aes(size = candidates, fill = candidates),
+             shape = 21, stroke = .3, colour = "grey30", alpha = .9) +
+  scale_fill_viridis_c(option = "inferno", direction = -1,
+                       name = "Candidates") +
+  scale_size_continuous(range = c(1, 5.5), guide = "none") +
+  coord_equal() +
+  facet_wrap(~ epoch) +
+  labs(x = "Easting (km)", y = "Northing (km)") +
+  th + theme(legend.position = "right", legend.key.size = unit(.3, "cm"))
+```
+
 ## Spectral separability
 
 Before any label enters training, the spectral basis of the visual classes was tested on the mosaic imagery itself. From the accepted delineations, samples of dead spruce crowns, live conifer crowns and non-forest background were drawn per epoch, and class separability in the available mosaic bands was quantified by pairwise Jeffries-Matusita distance and transformed divergence, with values above 1.9 on the Jeffries-Matusita scale of 0 to 2 taken as strong separability. A principal component analysis of the same samples summarised the band space, so that component loadings identified which bands carried the dead-crown contrast, and class scores on the first two components were inspected for overlap. Classes that failed separability in an epoch were flagged, and their labels weighted or excluded at the pre-registered decision rule. The assessment runs when label digitisation begins; the code below is inert until then.
