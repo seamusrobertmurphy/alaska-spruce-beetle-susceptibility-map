@@ -94,6 +94,7 @@ fmt_tbl <- function(df, right = NULL, caption = NULL) {
 # figures use it and a theme defined inside one of them is not available to the
 # figures above it. That ordering cost a render on 2026-09-08.
 library(ggplot2)
+library(patchwork)
 th <- theme_bw(base_size = 8) +
   theme(panel.grid.minor = element_blank(),
         plot.title = element_text(face = "bold", size = 8.5))
@@ -261,6 +262,69 @@ dir.create(file.path(root, "03.outputs", "figures"), showWarnings = FALSE)
 ggsave(file.path(root, "03.outputs", "figures", "fig-studyarea.png"),
        fig_study, width = 170, height = 195, units = "mm", dpi = 500,
        bg = "white")
+```
+
+## Outbreak history
+
+The aerial detection survey has recorded spruce beetle damage in Alaska since 1997, and reading its whole span rather than the years this study models puts the present outbreak in its place. @fig-spread draws it.
+
+```{r}
+#| label: spread-build
+#| echo: true
+#| output: false
+# The full survey record rather than the study window. Centroids are taken in
+# the archive's own projected system and only then transformed to geographic
+# coordinates, because several polygons carry duplicate vertices that the
+# spherical geometry engine rejects.
+spread_f <- file.path(root, "03.outputs", "survey_spread.csv")
+if (!file.exists(spread_f)) {
+  sf::sf_use_s2(FALSE)
+  q <- paste("SELECT SURVEY_YEAR, ACRES, Shape FROM",
+             "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10",
+             "WHERE DCA_COMMON_NAME LIKE '%spruce beetle%'")
+  pg <- sf::st_read(file.path(inputs, "ids-region10",
+                              "AK_Region10_AllYears.gdb"),
+                    query = q, quiet = TRUE)
+  ll <- sf::st_coordinates(sf::st_transform(
+    suppressWarnings(sf::st_centroid(sf::st_geometry(pg))), 4326))
+  sp <- data.frame(year = pg$SURVEY_YEAR, acres = pg$ACRES,
+                   lat = ll[, 2], lon = ll[, 1])
+  sp <- sp[stats::complete.cases(sp) & sp$acres > 0, ]
+  sp$hectares <- sp$acres * 0.40468564
+  write.csv(sp, spread_f, row.names = FALSE)
+}
+spread <- read.csv(spread_f)
+spread_yr <- do.call(rbind, lapply(split(spread, spread$year), function(d)
+  data.frame(year = d$year[1],
+             lat = sum(d$lat * d$hectares) / sum(d$hectares),
+             kha = sum(d$hectares) / 1000)))
+spread_fit <- lm(lat ~ year, spread_yr)
+```
+
+Across `r nrow(spread_yr)` survey years the area-weighted mean latitude of recorded damage moved north by `r sprintf("%.2f", coef(spread_fit)[2] * diff(range(spread_yr$year)))` degrees, about `r sprintf("%.0f", coef(spread_fit)[2] * diff(range(spread_yr$year)) * 111)` km [F(1, `r spread_fit$df.residual`) = `r sprintf("%.2f", summary(spread_fit)$fstatistic[1])`, p = `r sprintf("%.3f", summary(spread_fit)$coefficients[2, 4])`, R² = `r sprintf("%.3f", summary(spread_fit)$r.squared)`]. Three things bound that number. The trend explains under a quarter of the year-to-year variance, so it describes a drift rather than a march. The survey records where observers flew, so a shift in the recorded centre is partly a shift in effort. And the mass at the start of the record is the Kenai Peninsula outbreak while the mass at the end is the Susitna lowlands, so this is the centre of recorded damage moving between two events rather than one population tracked as it moves.
+
+```{r}
+#| label: fig-spread
+#| echo: true
+#| fig-cap: "Spruce beetle damage recorded by the Alaska aerial detection survey, 1997 to 2025, from all 33,015 polygons the survey attributes to the agent. (a) Damage area by quarter-degree latitude band and survey year, on a square-root colour scale so the smaller years remain visible. (b) The area-weighted mean latitude of damage in each year, sized by the area recorded that year, with a least-squares line and its interval. The survey records where observers flew, so the recorded centre reflects survey effort as well as beetle activity."
+#| fig-width: 7
+#| fig-height: 5.4
+spread$band <- floor(spread$lat * 4) / 4
+sp_grid <- aggregate(hectares ~ band + year, spread, sum)
+ps_a <- ggplot(sp_grid, aes(year, band, fill = hectares / 1000)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "inferno", direction = -1, trans = "sqrt",
+                       name = "kha") +
+  labs(title = "(a) Recorded damage by latitude", x = NULL,
+       y = "Latitude (degrees north)") + th
+ps_b <- ggplot(spread_yr, aes(year, lat)) +
+  geom_smooth(method = "lm", se = TRUE, colour = "#C0392B", fill = "#C0392B",
+              alpha = .15, linewidth = .5, formula = y ~ x) +
+  geom_point(aes(size = kha), colour = "steelblue4", alpha = .85) +
+  scale_size_continuous(range = c(.8, 4.5), name = "kha") +
+  labs(title = "(b) Area-weighted mean latitude", x = NULL,
+       y = "Latitude (degrees north)") + th
+ps_a / ps_b
 ```
 
 ## Input datasets

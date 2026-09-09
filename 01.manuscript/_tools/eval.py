@@ -31,6 +31,7 @@ Usage
 
 import argparse
 import csv
+import glob
 import hashlib
 import json
 import os
@@ -724,6 +725,157 @@ def check_venue_requirements_on_file(base):
 
 
 
+
+# Figures that document the pipeline rather than the forest. Seamus's reading
+# on 2026-09-08: the first interesting diagram arrives two thirds through,
+# because these sit between the study area and anything about beetles.
+DIAGNOSTIC_FIGURES = ["fig-crownnet", "fig-triage-map", "fig-clearobs"]
+
+
+def check_science_figures_first(base):
+    """No pipeline diagnostic stands between the reader and the science.
+
+    The study area map opens the document and then two figures of training
+    curves and candidate counts follow before any figure about the outbreak,
+    the climate or the record itself. This fails while a diagnostic figure
+    appears before the first figure that is about the forest.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    figs = [m.group(1) for m in
+            re.finditer(r"^#\|\s*label:\s*(fig-[\w-]+)", text, re.M)]
+    science = [f for f in figs if f not in DIAGNOSTIC_FIGURES
+               and f != "fig-studyarea"]
+    if not science:
+        return "blocked", "no science figure yet", "one or more", art
+    first_science = figs.index(science[0])
+    early_diag = [f for f in figs[:first_science] if f in DIAGNOSTIC_FIGURES]
+    if early_diag:
+        return "fail", f"{len(early_diag)} diagnostic figures before the first " \
+            f"science figure ({science[0]}): " + ", ".join(early_diag), \
+            "none before it", art
+    return "pass", f"first science figure is {science[0]}, " \
+        f"position {first_science + 1} of {len(figs)}", "none before it", art
+
+
+def check_survey_record_used_whole(base):
+    """The survey record is used across its full span, not its recent slice.
+
+    The geodatabase holds 33,015 spruce beetle polygons from 1997 to 2025.
+    Using only 2016 onward throws away the previous outbreak, which is the
+    comparison that shows whether this one sits further north.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    # A bare mention of 1997 in prose is not use. The test is a figure built
+    # from the record, whose chunk reads survey years before 2016.
+    fig = re.search(r"```\{r\}\n#\|\s*label:\s*fig-spread\b.*?\n```", text,
+                    re.S)
+    if not fig:
+        return "fail", "no figure is built from the survey record", \
+            "a figure over the full span", art
+    body = fig.group(0)
+    limited = re.search(r"SURVEY_YEAR\s*>=?\s*20(1[6-9]|2[0-9])", body)
+    if limited:
+        return "fail", "the figure is limited to " + limited.group(0), \
+            "the full span", art
+    return "pass", "a figure is built from the record with no recent cutoff", \
+        "the full span", art
+
+
+def check_climate_variance_claim(base):
+    """The Methods claim about climate variance matches the measurement.
+
+    Measured over the 160 sampled blocks on 2026-09-08, the ratio of
+    between-year to between-block variation is 1.70 for the warmth index but
+    0.56 for winter minimum and 0.84 for the lagged summer mean, so the claim
+    that climate varies far more between years than between cells is false for
+    two of the three channels. This fails while the unqualified sentence
+    stands.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    text = open(QMD).read()
+    bad = "climate varies far more between years than between cells" in text
+    return ("fail" if bad else "pass",
+            "the unqualified claim still stands" if bad
+            else "claim absent or qualified",
+            "qualified per channel", art)
+
+
+
+def sensor_decision_path():
+    """The dated sensor decision, whatever date it carries."""
+    hits = sorted(glob.glob(os.path.join(
+        ROOT, "05.tasks", "*-sensor-design-decision.md")))
+    return hits[-1] if hits else os.path.join(
+        ROOT, "05.tasks", "sensor-design-decision.md")
+
+# Sources the Introduction must draw on for the beetle's biology, measured
+# against beetle-topography-and-wind-study, whose Introduction runs 1,703 words
+# over 11 paragraphs and argues each mechanism rather than describing it.
+BIOLOGY_MINIMUM = 12
+
+
+def check_sensor_decision_recorded(base):
+    """The sensor design decision exists as a dated record.
+
+    The cube joins Landsat to Sentinel-2 inside the baseline's own comparison
+    window, and the step at that join is three to four times any other
+    year-to-year change. Three ways out were measured on 2026-09-08, and the
+    choice between them changes what the study is. This blocks until the
+    decision is written down, because an unrecorded choice is one that gets
+    remade differently next week.
+    """
+    path = sensor_decision_path()
+    art = os.path.relpath(path, ROOT)
+    if not os.path.exists(path):
+        return "blocked", "no dated sensor decision on file", \
+            "a dated decision", art
+    text = open(path).read()
+    need = ["Landsat", "Sentinel-1", "Sentinel-2"]
+    missing = [n for n in need if n not in text]
+    if missing:
+        return "fail", "decision omits " + ", ".join(missing), \
+            "all three options weighed", art
+    return "pass", f"{len(text.split())} words weighing all three options", \
+        "a dated decision", art
+
+
+def check_biology_developed(base):
+    """The beetle's biology is argued at the depth the exemplar sets.
+
+    The Introduction must place the species taxonomically at first mention, as
+    the wind study does with order, family and subfamily, and must draw on
+    enough distinct sources that the mechanism linking temperature to flight,
+    development and overwinter survival is argued rather than asserted.
+    """
+    art = os.path.relpath(QMD, ROOT)
+    if not os.path.exists(QMD):
+        return "blocked", "manuscript absent", "present", art
+    prose = prose_of(open(QMD).read())
+    m = re.search(r"^# Introduction$", prose, re.M)
+    n = re.search(r"^# Materials and methods$", prose, re.M)
+    if not (m and n):
+        return "blocked", "Introduction not found", "present", art
+    intro = prose[m.end():n.start()]
+    placed = "Curculionidae" in intro and "Scolytinae" in intro
+    cites = len(set(re.findall(r"@([A-Za-z][A-Za-z_]*_\d{4}[a-z]?)", intro)))
+    problems = []
+    if not placed:
+        problems.append("species not placed in order, family and subfamily")
+    if cites < BIOLOGY_MINIMUM:
+        problems.append(f"{cites} distinct sources, fewer than {BIOLOGY_MINIMUM}")
+    return ("fail" if problems else "pass",
+            "; ".join(problems) or f"placed taxonomically, {cites} sources",
+            f"placed, {BIOLOGY_MINIMUM} or more sources", art)
+
+
 def check_restore_point(base):
     """A restore point exists for the current session."""
     d = os.path.expanduser(
@@ -755,6 +907,13 @@ CHECKS = [
     ("prose carries no first person", check_no_first_person, True),
     ("venue requirements read and recorded", check_venue_requirements_on_file,
      True),
+    ("science figures come first", check_science_figures_first, True),
+    ("survey record used across its full span", check_survey_record_used_whole,
+     True),
+    ("climate variance claim matches the data", check_climate_variance_claim,
+     True),
+    ("sensor design decision recorded", check_sensor_decision_recorded, True),
+    ("beetle biology argued, not asserted", check_biology_developed, True),
     ("session restore point exists", check_restore_point, False),
 ]
 
