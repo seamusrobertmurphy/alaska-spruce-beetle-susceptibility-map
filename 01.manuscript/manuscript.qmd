@@ -103,8 +103,7 @@ library(tmap)
 tmap_mode("plot")
 blocks <- st_read("../02.inputs/derived/sample_blocks.gpkg", quiet = TRUE) |>
   transform(block = seq_along(fold), fold = factor(fold))
-in_km <- function(x) {
-  km <- "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs"
+in_km <- function(x, km = "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs") {
   if (!inherits(x, "SpatRaster")) return(st_transform(x, km))
   ext(x) <- as.vector(ext(x)) / 1000
   crs(x) <- km
@@ -566,6 +565,67 @@ ps_b <- ggplot(spread_yr, aes(year, lat)) +
   labs(title = "(b) Area-weighted mean latitude", x = NULL,
        y = "Latitude (degrees north)") + th
 ps_a / ps_b
+```
+
+@fig-survey-map draws the same record on the ground, the Kenai Peninsula outbreak of the record's first years against the Susitna lowlands of its last.
+
+```{r}
+#| label: survey-map-data
+#| echo: true
+#| output: false
+albers_km <- paste("+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0",
+                   "+y_0=0 +datum=NAD83 +units=km +no_defs")
+sb <- st_read(
+  "../02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE,
+  query = paste("SELECT SURVEY_YEAR, ACRES, Shape FROM",
+                "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10",
+                "WHERE DCA_COMMON_NAME LIKE '%spruce beetle%' AND ACRES > 0")
+) |>
+  st_simplify(dTolerance = 100) |>
+  in_km(albers_km)
+sb <- sb[order(-sb$SURVEY_YEAR), ]
+ak <- rnaturalearth::ne_states(country = "united states of america",
+                               returnclass = "sf") |>
+  subset(name == "Alaska") |>
+  in_km(albers_km)
+sb_frame <- st_bbox(c(xmin = -100, ymin = 900, xmax = 700, ymax = 1750),
+                    crs = st_crs(albers_km))
+sb_inside <- st_intersects(sb, st_as_sfc(sb_frame), sparse = FALSE)[, 1]
+sb_share <- 100 * sum(sb$ACRES[sb_inside]) / sum(sb$ACRES)
+survey_map_cap <- paste0(
+  "Spruce beetle damage recorded by the Alaska aerial detection survey, ",
+  min(sb$SURVEY_YEAR), " to ", max(sb$SURVEY_YEAR), ", all ",
+  format(nrow(sb), big.mark = ","), " polygons the survey attributes to the ",
+  "agent, coloured by survey year with the earliest drawn on top, so where ",
+  "damage was recorded at one place in several years the colour is the year it ",
+  "was first recorded. The frame holds ", sprintf("%.0f", sb_share), " per cent ",
+  "of the area recorded statewide; the rest lies west towards Bristol Bay and ",
+  "east in the panhandle. The dashed orange rectangle is the confirmatory study ",
+  "window. Drawn in the archive's own NAD83 Alaska Albers (EPSG:3338) because ",
+  "the record spans fifteen degrees of longitude; graticule in km; land from ",
+  "Natural Earth 10 m."
+)
+```
+
+```{r}
+#| label: fig-survey-map
+#| echo: true
+#| fig-cap: !expr survey_map_cap
+#| fig-width: 7
+#| fig-height: 5.8
+tm_shape(ak, bbox = sb_frame) +
+  tm_fill(fill = "grey92") + tm_borders(col = "grey55", lwd = 0.3) +
+  tm_shape(sb) +
+  tm_fill(fill = "SURVEY_YEAR",
+          fill.scale = tm_scale_continuous(values = "viridis",
+                                           label.format = list(big.mark = "")),
+          fill.legend = tm_legend(title = "Year of first detection",
+                                  reverse = TRUE, height = 9)) +
+  tm_shape(in_km(win_rect, albers_km)) +
+  tm_borders(col = "#E67E22", lwd = 0.8, lty = "dashed") +
+  tm_add_legend(type = "lines", labels = "Confirmatory study window",
+                col = "#E67E22", lty = "dashed", lwd = 0.8) +
+  map_frame("Spruce beetle damage by survey year, NAD83 Alaska Albers (EPSG:3338)")
 ```
 
 ## Input datasets
