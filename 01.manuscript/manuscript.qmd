@@ -65,14 +65,6 @@ csl: ../04.references/apa.csl
 #| output: false
 library(sf)
 library(terra)
-root <- normalizePath("..")
-inputs <- file.path(root, "02.inputs")
-
-# House table format: 9 pt, centred headers, numeric right / text left,
-# single line spacing.
-# Supplement tables carry a hand-numbered caption, because they are labelled
-# supp- rather than tbl- so that Quarto stops numbering them, and a caption
-# passed here is the only one they then get.
 fmt_tbl <- function(df, right = NULL, caption = NULL) {
   right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
   left_cols <- setdiff(names(df), right_cols)
@@ -90,9 +82,6 @@ fmt_tbl <- function(df, right = NULL, caption = NULL) {
   flextable::set_table_properties(ft, layout = "autofit", width = 1)
 }
 
-# House figure theme, defined here beside the table format because several
-# figures use it and a theme defined inside one of them is not available to the
-# figures above it. That ordering cost a render on 2026-09-08.
 library(ggplot2)
 library(patchwork)
 th <- theme_bw(base_size = 8) +
@@ -144,9 +133,7 @@ The winter sets the last threshold, and it is a depth rather than a temperature.
 
 # Materials and methods
 
-The Introduction closed on the snow line because that is where the biology stops describing the insect and starts describing the climate of a stand, and every climate variable defined for the models was defined from that biology, the warmth index from the univoltinism threshold, the winter minimum from the cold to which brood above the snow is exposed, and the lagged summer mean from the delay between a warm summer and the population it produces. The climate description was therefore placed first, before the literature, the study area and the imagery, so that the quantities the biology named are seen measured, and at what distance from the phloem temperature and the snow depth the biology turned on, before any other input is introduced. All inputs were open source, and scripted retrieval, integrity checksums and a provenance manifest accompanied the analysis code.
-
-The sections that follow run in the order the analysis was assembled. Climate variables defined the three channels and measured whether each varied by year or by place. Study area and Outbreak history placed the outbreak in its region and in the full span of the aerial survey record. Input datasets listed every source with its role and access terms, and Training data and Crown labels described the severity reference and how the labels were made from the two mosaic epochs. Survey polygons and Radar record built the predictor record, and Satellite composites records the optical record that was built first and set aside, with the measurement that set it aside. Subsequence sampling, Architectures, Baseline model and Model training defined what was fitted, Pipeline validation tested the pipeline on synthetic stands before any label was scored, and Model evaluation set out the cross-validation and the tests of the three hypotheses. The construction and checking of the label pipeline and the optical record are recorded in full in the supplement, whose sections carry the same names.
+Every climate variable the models received was defined from the biology the Introduction closed on, the warmth index from the univoltinism threshold, the winter minimum from the cold to which brood above the snow is exposed, and the lagged summer mean from the delay between a warm summer and the population it produces, so the climate is described first. The sections then place the outbreak in its region and in the aerial survey record, list the inputs, describe the reference labels, the radar record and the optical record that was built first and set aside, define what is fitted, and set out the cross-validation and the tests of the three hypotheses. The construction and checking of the label pipeline and the optical record are recorded in full in the supplement under the same section names. All inputs were open source, with scripted retrieval, integrity checksums and a provenance manifest beside the analysis code.
 
 ```{r}
 #| label: lit-screening
@@ -159,19 +146,17 @@ The literature the study was argued against was searched on 2026-09-08 over Open
 
 ## Climate variables
 
-The biology named phloem temperature and snow depth, and neither was observed at stand scale across the outbreak years, so the channels were built from the gridded daily air temperature record standing nearest to both. Daily minimum and maximum air temperature from the Daymet version 4 gridded forcings at 1 km resolution [@Thornton_2021] were reduced, per 90 m stand cell and year, to three biologically motivated variables, namely a summer warmth index, the cumulative degree-hours above 17 °C from June through September, a fixed-window approximation of the univoltinism predictor of @Hansen_2001, whose original formulation counts hours above that threshold from 40 to 90 days after peak flight; the winter minimum daily temperature from November through March, indexing the cold to which brood above the snow line was exposed, the snow depth that governed survival below it lying outside the pre-registered channels; and the two-year lagged mean summer temperature, following the lagged temperature association in the regional outbreak record [@Berg_2006; @Sherriff_2011]. @fig-climate shows the three variables over the study window from 1990 through the most recent complete Daymet year, with the seasonal integration windows drawn from the biology, June through September for the warmth index, when development above the 17 °C threshold accrues [@Hansen_2001], and November through March for the winter minimum, when the overwintering stages are exposed [@Werner_2006; @Bentz_2010]. The regional series was computed live from the daily forcings and cached.
+Daily minimum and maximum air temperature from the Daymet version 4 gridded forcings at 1 km [@Thornton_2021], the record standing nearest to the phloem temperature and the snow depth the biology named, were reduced per 90 m stand cell and year to three variables. The summer warmth index was the cumulative degree-hours above 17 °C from June through September, a fixed-window form of the univoltinism predictor of @Hansen_2001, which counts hours above that threshold from 40 to 90 days after peak flight. The winter minimum was the lowest daily minimum from November through March, the cold to which brood above the snow line is exposed [@Werner_2006; @Bentz_2010]. The lagged summer mean was the mean summer temperature two years earlier, following the lagged association in the regional outbreak record [@Berg_2006; @Sherriff_2011]. The regional series was computed from the daily forcings for 1990 to 2023 and cached, and per-cell rasters were exported at 1 km for each year from 2012 for resampling to the stand grid.
 
 ```{r}
 #| label: climate-build
 #| echo: true
 #| output: false
-clim_f <- file.path(inputs, "derived", "climate_series.csv")
-if (!file.exists(clim_f)) {
+if (!file.exists("../02.inputs/derived/climate_series.csv")) {
   library(rgee)
   ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
-  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
-                                           crs = crs(tpl_c)), "EPSG:4326")))
+  tpl_c <- rast("../02.inputs/zwieback-severity/merged_ref_h_c90c.tif")
+  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000, crs = crs(tpl_c)), "EPSG:4326")))
   roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
   dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
   yearly <- function(y) {
@@ -184,35 +169,28 @@ if (!file.exists(clim_f)) {
     wtr <- dm$filterDate(sprintf("%d-11-01", y - 1), sprintf("%d-04-01", y))$
       select("tmin")$min()$rename("winter_min")
     gdd$addBands(smean)$addBands(wtr)$reduceRegion(
-      reducer = ee$Reducer$mean(), geometry = roi_c, scale = 1000,
-      maxPixels = 1e10)
+      reducer = ee$Reducer$mean(), geometry = roi_c, scale = 1000, maxPixels = 1e10)
   }
-  years <- 1990:2023
-  vals <- lapply(years, function(y) unlist(yearly(y)$getInfo()))
-  clim <- data.frame(year = years, do.call(rbind, vals))
+  vals <- lapply(1990:2023, function(y) unlist(yearly(y)$getInfo()))
+  clim <- data.frame(year = 1990:2023, do.call(rbind, vals))
   clim$summer_mean_lag2 <- c(NA, NA, head(clim$summer_mean, -2))
-  dir.create(dirname(clim_f), showWarnings = FALSE)
-  write.csv(clim, clim_f, row.names = FALSE)
+  dir.create("../02.inputs/derived", showWarnings = FALSE)
+  write.csv(clim, "../02.inputs/derived/climate_series.csv", row.names = FALSE)
 }
-clim <- read.csv(clim_f)
+clim <- read.csv("../02.inputs/derived/climate_series.csv")
 ```
-
-Per-cell channel rasters were exported at Daymet's native 1 km resolution for each year, for resampling to the stand grid when subsequences are assembled.
 
 ```{r}
 #| label: climate-rasters
 #| echo: true
 #| output: false
-clim_dir <- file.path(inputs, "climate")
-dir.create(clim_dir, showWarnings = FALSE)
-todo_c <- (2012:2023)[!file.exists(file.path(clim_dir,
-                                             sprintf("clim_%d.tif", 2012:2023)))]
+dir.create("../02.inputs/climate", showWarnings = FALSE)
+todo_c <- (2012:2023)[!file.exists(sprintf("../02.inputs/climate/clim_%d.tif", 2012:2023))]
 if (length(todo_c)) {
   library(rgee)
   ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
-  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
-                                           crs = crs(tpl_c)), "EPSG:4326")))
+  tpl_c <- rast("../02.inputs/zwieback-severity/merged_ref_h_c90c.tif")
+  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000, crs = crs(tpl_c)), "EPSG:4326")))
   roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
   dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
   for (y in todo_c) {
@@ -222,42 +200,27 @@ if (length(todo_c)) {
     img <- tmean$map(function(im) im$subtract(17)$max(0)$multiply(24))$sum()$
       rename("warmth")$
       addBands(tmean$mean()$rename("summer_mean"))$
-      addBands(dm$filterDate(sprintf("%d-11-01", y - 1),
-                             sprintf("%d-04-01", y))$
+      addBands(dm$filterDate(sprintf("%d-11-01", y - 1), sprintf("%d-04-01", y))$
                  select("tmin")$min()$rename("winter_min"))
-    url <- img$toFloat()$getDownloadURL(list(region = roi_c,
-                                             scale = 1000,
-                                             crs = "EPSG:32605",
-                                             format = "GEO_TIFF"))
-    f <- file.path(clim_dir, sprintf("clim_%d.tif", y))
+    url <- img$toFloat()$getDownloadURL(list(region = roi_c, scale = 1000,
+                                             crs = "EPSG:32605", format = "GEO_TIFF"))
     old_to <- options(timeout = 600)
-    try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE)
+    try(download.file(url, sprintf("../02.inputs/climate/clim_%d.tif", y), mode = "wb",
+                      quiet = TRUE), silent = TRUE)
     options(old_to)
   }
 }
 ```
 
-@fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion, and it is reduced from the same daily Daymet forcings from which climate values are to be fitted at the radar's monthly step.
-
 ```{r}
 #| label: climograph-build
 #| echo: true
 #| output: false
-# Monthly climatology from the same Daymet version 4 forcings the annual
-# variables are built from, reduced server-side one calendar month at a time so
-# the whole daily archive never has to be pulled. Written once and read
-# thereafter, on the pattern every other input chunk here follows.
-mon_f <- file.path(inputs, "derived", "climate_monthly.csv")
-if (!file.exists(mon_f)) {
+if (!file.exists("../02.inputs/derived/climate_monthly.csv")) {
   library(rgee)
   ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  # The extent comes from a climate raster already built for this study rather
-  # than from the severity reference. A climograph needs a bounding box, not a
-  # severity value, and reading the reference here would put a sixth chunk on
-  # the list of those that touch it before the analysis is unblocked.
-  tpl_m <- rast(file.path(inputs, "climate", "clim_2016.tif"))
-  bbm <- as.vector(ext(project(as.polygons(ext(tpl_m), crs = crs(tpl_m)),
-                               "EPSG:4326")))
+  tpl_m <- rast("../02.inputs/climate/clim_2016.tif")
+  bbm <- as.vector(ext(project(as.polygons(ext(tpl_m), crs = crs(tpl_m)), "EPSG:4326")))
   aoi_m <- ee$Geometry$Rectangle(c(bbm[1], bbm[3], bbm[2], bbm[4]))
   dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")$
     filterDate("1990-01-01", "2024-01-01")$filterBounds(aoi_m)
@@ -265,16 +228,15 @@ if (!file.exists(mon_f)) {
     sub <- dm$filter(ee$Filter$calendarRange(m, m, "month"))
     img <- sub$select(c("tmax", "tmin"))$mean()$
       addBands(sub$select("prcp")$mean()$multiply(
-        c(31,28,31,30,31,30,31,31,30,31,30,31)[m])$rename("prcp_month"))
+        c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)[m])$rename("prcp_month"))
     v <- img$reduceRegion(reducer = ee$Reducer$mean(), geometry = aoi_m,
-                          scale = 1000, maxPixels = 1e9, bestEffort = TRUE)$
-      getInfo()
+                          scale = 1000, maxPixels = 1e9, bestEffort = TRUE)$getInfo()
     data.frame(month = m, tmax = v$tmax, tmin = v$tmin, prcp = v$prcp_month)
   }))
   rows$tmean <- (rows$tmax + rows$tmin) / 2
-  write.csv(rows, mon_f, row.names = FALSE)
+  write.csv(rows, "../02.inputs/derived/climate_monthly.csv", row.names = FALSE)
 }
-clim_m <- read.csv(mon_f)
+clim_m <- read.csv("../02.inputs/derived/climate_monthly.csv")
 clim_m$month_name <- month.abb[clim_m$month]
 ```
 
@@ -285,7 +247,7 @@ clim_m$month_name <- month.abb[clim_m$month]
 warm_m <- clim_m[which.max(clim_m$tmax), ]
 ```
 
-The threshold sits above the season rather than inside it. The warmest month was `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 was `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature did not reach the 17 °C univoltinism threshold at all and degree-hours accrue only on the warmer days within the window. That is why the warmth index varies so strongly between years, and it is the reason a summer that runs a degree above normal changes the generation time of a population that an average summer leaves on a two-year cycle [@Hansen_2001].
+@fig-climograph gives the seasonal setting the annual variables are integrated from. The warmest month was `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 was `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature did not reach the 17 °C threshold and degree-hours accrue only on the warmer days of the window, which is why the index varies so strongly between years and why a summer that runs a degree above normal changes the generation time of a population an average summer leaves on a two-year cycle [@Hansen_2001]. @fig-climate shows the three variables over 1990 to 2023.
 
 ```{r}
 #| label: fig-climograph
@@ -293,15 +255,8 @@ The threshold sits above the season rather than inside it. The warmest month was
 #| fig-cap: "Climograph of the study area from Daymet version 4 daily forcings averaged over 1990 to 2023, monthly mean precipitation as bars against monthly mean, maximum and minimum daily air temperature. The horizontal line marks the 17 °C threshold above which spruce beetle development accrues toward a one-year generation, and the shaded band marks June through September, the window over which the summer warmth index integrates. Adult flight occurs in early summer, at the opening of that band."
 #| fig-width: 7
 #| fig-height: 4.2
-# Precipitation is drawn from a baseline at the floor of the temperature axis
-# rather than from zero. Sharing zero puts the bars over the winter curves and
-# makes the right-hand axis run negative, which is a precipitation no station
-# has ever recorded.
 base <- floor(min(clim_m$tmin) / 5) * 5
 sc <- max(clim_m$prcp) / (max(clim_m$tmax) - base)
-# The month axis is numeric so the bars can be drawn as rectangles standing on
-# the baseline. geom_col always starts a bar at zero, which here would hang the
-# drier months below the axis.
 ggplot(clim_m, aes(x = month)) +
   annotate("rect", xmin = 5.5, xmax = 9.5, ymin = -Inf, ymax = Inf,
            fill = "grey85", alpha = .55) +
@@ -317,8 +272,7 @@ ggplot(clim_m, aes(x = month)) +
                                        "Daily mean" = "grey20",
                                        "Daily minimum" = "steelblue4")) +
   scale_y_continuous(name = "Temperature (°C)",
-                     sec.axis = sec_axis(~ (. - base) * sc,
-                                         name = "Precipitation (mm)")) +
+                     sec.axis = sec_axis(~ (. - base) * sc, name = "Precipitation (mm)")) +
   scale_x_continuous(breaks = 1:12, labels = month.abb, expand = c(.01, .01)) +
   labs(x = NULL) + th + theme(legend.position = "bottom")
 ```
@@ -329,125 +283,59 @@ ggplot(clim_m, aes(x = month)) +
 #| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index, the cumulative degree-hours above 17 °C from June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
-library(patchwork)
 pa <- ggplot(clim, aes(year, warmth)) +
   geom_col(fill = "#C0392B", width = .75) +
   geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
-  labs(title = "(a) Summer warmth index", y = "Degree-hours > 17 °C",
-       x = NULL) + th
+  labs(title = "(a) Summer warmth index", y = "Degree-hours > 17 °C", x = NULL) + th
 pb <- ggplot(clim, aes(year)) +
   geom_line(aes(y = winter_min, colour = "Winter minimum"), linewidth = .5) +
-  geom_line(aes(y = summer_mean_lag2, colour = "Summer mean, lag 2 yr"),
-            linewidth = .5) +
+  geom_line(aes(y = summer_mean_lag2, colour = "Summer mean, lag 2 yr"), linewidth = .5) +
   geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
   scale_colour_manual(NULL, values = c("Winter minimum" = "steelblue4",
                                        "Summer mean, lag 2 yr" = "#E67E22")) +
-  labs(title = "(b) Winter minimum and lagged summer mean",
-       y = "°C", x = NULL) + th + theme(legend.position = "bottom")
+  labs(title = "(b) Winter minimum and lagged summer mean", y = "°C", x = NULL) +
+  th + theme(legend.position = "bottom")
 pa / pb
 ```
-
-The three annual channels were defined and computed as above, and they are what the third hypothesis names in the pre-registration. The design of 2026-09-09 fits temporally corresponding climate values to the model at the radar's monthly step, before classification, from the same daily Daymet forcings the climograph is reduced from; that fit is the design and has not been built, so what stands is the annual channels and the monthly record they will be fitted from. Daymet extended through 2023 when the analysis was run, and later years carry an availability flag in place of measured values until the forcing series updates.
 
 ```{r}
 #| label: climate-variance
 #| echo: true
 #| output: false
-# Whether these channels carry timing information, spatial information or both,
-# measured over the blocks the models actually see rather than over the whole
-# frame, which includes the Alaska Range and inflates the spatial spread.
-climvar_f <- file.path(root, "03.outputs", "climate_variance.csv")
-if (!file.exists(climvar_f)) {
-  cf <- sort(list.files(file.path(inputs, "climate"),
-                        pattern = "^clim_[0-9]{4}[.]tif$", full.names = TRUE))
-  blk_c <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
-                       quiet = TRUE)
+if (!file.exists("../03.outputs/climate_variance.csv")) {
+  cf <- sort(list.files("../02.inputs/climate", pattern = "^clim_[0-9]{4}[.]tif$",
+                        full.names = TRUE))
   nm <- c("summer warmth index", "winter minimum", "lagged summer mean")
   cv <- do.call(rbind, lapply(1:3, function(b) {
     st <- rast(lapply(cf, function(x) rast(x)[[b]]))
-    v <- terra::extract(st, vect(sf::st_transform(blk_c, crs(st))),
-                        fun = mean, na.rm = TRUE, ID = FALSE)
-    v <- v[stats::complete.cases(v), ]
-    data.frame(channel = nm[b], blocks = nrow(v),
-               between_year = sd(colMeans(v)),
+    v <- terra::extract(st, vect(st_transform(blocks, crs(st))), fun = mean,
+                        na.rm = TRUE, ID = FALSE)
+    v <- v[complete.cases(v), ]
+    data.frame(channel = nm[b], blocks = nrow(v), between_year = sd(colMeans(v)),
                between_block = mean(apply(v, 2, sd)))
   }))
   cv$ratio <- cv$between_year / cv$between_block
-  write.csv(cv, climvar_f, row.names = FALSE)
+  write.csv(cv, "../03.outputs/climate_variance.csv", row.names = FALSE)
 }
-climvar <- read.csv(climvar_f)
+climvar <- read.csv("../03.outputs/climate_variance.csv")
 cvr <- function(ch) climvar$ratio[climvar$channel == ch]
 ```
 
-Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks of the cross-validation design described below rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand. @fig-warmth-map shows the summer warmth index over the blocks in the warmest and the coolest year of the raster record, which is what a timing channel looks like on the ground.
-
-```{r}
-#| label: warmth-map-data
-#| echo: true
-#| output: false
-clim_raster_years <- subset(clim, year %in% 2012:2023)
-warm_cool <- clim_raster_years$year[c(which.max(clim_raster_years$warmth),
-                                      which.min(clim_raster_years$warmth))]
-warmth <- rast(sprintf("../02.inputs/climate/clim_%d.tif", warm_cool),
-               lyrs = c(1, 4)) |>
-  crop(st_buffer(st_as_sfc(st_bbox(blocks)), 5000))
-names(warmth) <- warm_cool
-warmth_lim <- range(values(warmth), na.rm = TRUE)
-warmth_map_cap <- paste0(
-  "Summer warmth index, the cumulative degree-hours above 17 °C from June to ",
-  "September, from the Daymet version 4 rasters at ", res(warmth)[1] / 1000,
-  " km over the sampled blocks, in (a) ", warm_cool[1], ", the warmest year of ",
-  "the raster record, and (b) ", warm_cool[2], ", the coolest, on one colour ",
-  "range from ", round(warmth_lim[1]), " to ", format(round(warmth_lim[2]), big.mark = ","),
-  " degree-hours. The regional mean was ",
-  format(round(clim$warmth[clim$year == warm_cool[1]]), big.mark = ","),
-  " degree-hours in the warm year and ",
-  round(clim$warmth[clim$year == warm_cool[2]]), " in the cool one, so the cool ",
-  "year is nearly blank on a scale that the warm year fills, which is the ",
-  "sense in which the channel carries timing rather than place. Grey points ",
-  "are the ", nrow(blocks), " sampled blocks. WGS 84 UTM zone 5N (EPSG:32605), ",
-  "graticule in km."
-)
-```
-
-```{r}
-#| label: fig-warmth-map
-#| echo: true
-#| fig-cap: !expr warmth_map_cap
-#| fig-width: 7
-#| fig-height: 4.2
-warmth_panel <- function(lyr, title, legend) {
-  tm_shape(in_km(warmth[[lyr]])) +
-    tm_raster(col.scale = tm_scale_continuous(values = "-brewer.yl_or_rd",
-                                              limits = warmth_lim),
-              col.legend = legend) +
-    tm_shape(in_km(blocks)) + tm_borders(col = "grey15", lwd = 0.5) +
-    map_frame(title, legend = tm_pos_in("right", "bottom"))
-}
-tmap_arrange(
-  warmth_panel(1, sprintf("(a) %d, warmest year", warm_cool[1]), tm_legend_hide()),
-  warmth_panel(2, sprintf("(b) %d, coolest year", warm_cool[2]),
-               tm_legend(title = "Degree-hours", reverse = TRUE, height = 8,
-                         width = 7)),
-  ncol = 2, outer.margins = 0.01
-)
-```
+The three annual channels are what the third hypothesis names in the pre-registration; the design of 2026-09-09 fits climate values to the model at the radar's monthly step from the same daily forcings, and that fit has not been built. Whether each channel carries timing or place was measured over the `r climvar$blocks[1]` sampled blocks rather than the whole frame, whose mountains would inflate any spatial spread. The summer warmth index varied `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel, while the winter minimum and the lagged summer mean varied more between blocks within a year than between years, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, so two of the three carry spatial contrast the network can use to tell one stand from another; the warmth index over the blocks in the warmest and the coolest year of the raster record is drawn in the supplement as Figure S1.
 
 ## Study area
 
-The study area is the Southcentral Alaska outbreak region, centred on the Susitna lowlands and Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range, in the NAD83 Alaska Albers projection. Forests are boreal mosaics of white spruce (*Picea glauca* (Moench) Voss), black spruce (*P. mariana* (Mill.) Britton et al.), Alaska birch (*Betula neoalaskana* Sarg.) and trembling aspen (*Populus tremuloides* Michx.), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate [@Zwieback_2024]. The ongoing outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The nearest precedent for what follows such an outbreak is the Kenai Peninsula, where the 1987 to 2000 event was tracked through its vegetation change and forest regeneration [@Boucher_2006] and where stand susceptibility in Lutz and Sitka spruce had already been classified from stand structure [@Roynolds_1996]. The temporal window of the study spans the full history of this outbreak, from its onset around 2016 through the most recent survey year, observed by annual Sentinel-2 and Landsat composites; earlier Landsat years enter only as the undisturbed pre-outbreak baseline against which the outbreak trajectory was measured. Model training and cross-validation blocks span the confirmatory study window, a 39,050 km2 frame around the reference footprint; the Talkeetna to Byers Lake footprint of the independent severity reference serves as the held-out evaluation area for the severity product. A larger application extent, the Matanuska-Susitna Borough, receives the trained model's wall-to-wall severity and progression maps for management use; predictions outside the confirmatory window are application products whose transfer was not confirmed by the cross-validation, and were labelled accordingly. One limit follows from that choice of extent and is stated here rather than deferred. The design samples one outbreak in one region, so nothing in it estimates how the models would transfer to the Kenai Peninsula, to Interior Alaska or to another *Dendroctonus* system, and the cross-validation bounds error within this region alone. Severity summaries are additionally reported per stand of the state Mat-Su Borough forest inventory for use by forest managers.
-
-All spatial figures shared one cartographic standard. The working grid was WGS 84 UTM zone 5N, matching the severity reference grid, graticules were drawn in the same projected grid in kilometres, and every map carried its coordinate reference system, a scale bar and a north arrow. @fig-studyarea locates the sampled blocks and their folds over the terrain, with the recorded outbreak footprint and the boundary between UTM zones 5 and 6, which crosses the study window.
+The study area was the Southcentral Alaska outbreak region, centred on the Susitna lowlands and the Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range. Forests are boreal mosaics of white spruce (*Picea glauca* (Moench) Voss), black spruce (*P. mariana* (Mill.) Britton et al.), Alaska birch (*Betula neoalaskana* Sarg.) and trembling aspen (*Populus tremuloides* Michx.), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate, and the outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The nearest precedent is the Kenai Peninsula outbreak of 1987 to 2000, tracked through its vegetation change and regeneration [@Boucher_2006] after stand susceptibility there had been classified from stand structure [@Roynolds_1996]. Training and cross-validation blocks lay in a 39,050 km² confirmatory window around the footprint of the independent severity reference, the Talkeetna to Byers Lake area, which was held out as the evaluation area, and the Matanuska-Susitna Borough was the application extent for the wall-to-wall severity and progression maps, whose transfer beyond the window the cross-validation does not confirm; severity summaries were also reported per stand of the Borough forest inventory. The design samples one outbreak in one region, so nothing in it estimates transfer to the Kenai Peninsula, to Interior Alaska or to another *Dendroctonus* system. Every map used WGS 84 UTM zone 5N, the grid of the severity reference, with a graticule in kilometres, a scale bar and a north arrow, and @fig-studyarea locates the blocks and their folds over the terrain with the survey-recorded outbreak footprint and the boundary between UTM zones 5 and 6, which crosses the window.
 
 ```{r}
 #| label: studyarea-data
 #| echo: true
 #| output: false
-ctx <- "../02.inputs/context/naturalearth.gpkg"
-matsu <- st_read(ctx, "matsu_borough", quiet = TRUE) |> st_transform(32605)
+matsu <- st_read("../02.inputs/context/naturalearth.gpkg", "matsu_borough", quiet = TRUE) |>
+  st_transform(32605)
 ev <- st_bbox(st_buffer(matsu, 15000))
 within_ev <- function(layer, crs) {
-  st_read(ctx, layer, quiet = TRUE,
+  st_read("../02.inputs/context/naturalearth.gpkg", layer, quiet = TRUE,
           wkt_filter = st_as_text(st_transform(st_as_sfc(ev), crs))) |>
     st_transform(32605)
 }
@@ -551,55 +439,54 @@ tmap_save(fig_study, "../03.outputs/figures/fig-studyarea.png", width = 7,
 
 ## Outbreak history
 
-The aerial detection survey has recorded spruce beetle damage in Alaska since 1997, and reading its whole span rather than the years this study models puts the present outbreak in its place. @fig-spread draws it.
-
 ```{r}
 #| label: spread-build
 #| echo: true
 #| output: false
-# The full survey record rather than the study window. Centroids are taken in
-# the archive's own projected system and only then transformed to geographic
-# coordinates, because several polygons carry duplicate vertices that the
-# spherical geometry engine rejects.
-spread_f <- file.path(root, "03.outputs", "survey_spread.csv")
-if (!file.exists(spread_f)) {
-  sf::sf_use_s2(FALSE)
-  q <- paste("SELECT SURVEY_YEAR, ACRES, Shape FROM",
-             "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10",
-             "WHERE DCA_COMMON_NAME LIKE '%spruce beetle%'")
-  pg <- sf::st_read(file.path(inputs, "ids-region10",
-                              "AK_Region10_AllYears.gdb"),
-                    query = q, quiet = TRUE)
-  ll <- sf::st_coordinates(sf::st_transform(
-    suppressWarnings(sf::st_centroid(sf::st_geometry(pg))), 4326))
-  sp <- data.frame(year = pg$SURVEY_YEAR, acres = pg$ACRES,
-                   lat = ll[, 2], lon = ll[, 1])
-  sp <- sp[stats::complete.cases(sp) & sp$acres > 0, ]
+if (!file.exists("../03.outputs/survey_spread.csv")) {
+  sf_use_s2(FALSE)
+  pg <- st_read("../02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE,
+                query = paste("SELECT SURVEY_YEAR, ACRES, Shape FROM",
+                              "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10",
+                              "WHERE DCA_COMMON_NAME LIKE '%spruce beetle%'"))
+  ll <- st_coordinates(st_transform(suppressWarnings(st_centroid(st_geometry(pg))), 4326))
+  sp <- data.frame(year = pg$SURVEY_YEAR, acres = pg$ACRES, lat = ll[, 2], lon = ll[, 1])
+  sp <- sp[complete.cases(sp) & sp$acres > 0, ]
   sp$hectares <- sp$acres * 0.40468564
-  write.csv(sp, spread_f, row.names = FALSE)
+  write.csv(sp, "../03.outputs/survey_spread.csv", row.names = FALSE)
 }
-spread <- read.csv(spread_f)
+spread <- read.csv("../03.outputs/survey_spread.csv")
 spread_yr <- do.call(rbind, lapply(split(spread, spread$year), function(d)
-  data.frame(year = d$year[1],
-             lat = sum(d$lat * d$hectares) / sum(d$hectares),
+  data.frame(year = d$year[1], lat = sum(d$lat * d$hectares) / sum(d$hectares),
              kha = sum(d$hectares) / 1000)))
 spread_fit <- lm(lat ~ year, spread_yr)
+spread_cap <- paste0(
+  "Spruce beetle damage recorded by the Alaska aerial detection survey, ",
+  min(spread$year), " to ", max(spread$year), ", from all ",
+  format(nrow(spread), big.mark = ","), " polygons the survey attributes to the ",
+  "agent with a recorded area. (a) Damage area by quarter-degree latitude band ",
+  "and survey year, on a square-root colour scale so the smaller years remain ",
+  "visible. (b) The area-weighted mean latitude of damage in each year, sized by ",
+  "the area recorded that year, with a least-squares line and its interval. The ",
+  "survey records where observers flew, so the recorded centre reflects survey ",
+  "effort as well as beetle activity."
+)
 ```
 
-Across `r nrow(spread_yr)` survey years the area-weighted mean latitude of recorded damage moved north by `r sprintf("%.2f", coef(spread_fit)[2] * diff(range(spread_yr$year)))` degrees, about `r sprintf("%.0f", coef(spread_fit)[2] * diff(range(spread_yr$year)) * 111)` km \[F(1, `r spread_fit$df.residual`) = `r sprintf("%.2f", summary(spread_fit)$fstatistic[1])`, p = `r sprintf("%.3f", summary(spread_fit)$coefficients[2, 4])`, R² = `r sprintf("%.3f", summary(spread_fit)$r.squared)`\]. Three things bound that number. The trend explains under a quarter of the year-to-year variance, so it describes a drift rather than a march. The survey records where observers flew, so a shift in the recorded centre is partly a shift in effort. And the mass at the start of the record is the Kenai Peninsula outbreak while the mass at the end is the Susitna lowlands, so this is the centre of recorded damage moving between two events rather than one population tracked as it moves.
+The aerial detection survey has recorded spruce beetle damage in Alaska since 1997, and @fig-spread draws its whole span. Across `r nrow(spread_yr)` survey years the area-weighted mean latitude of recorded damage moved north by `r sprintf("%.2f", coef(spread_fit)[2] * diff(range(spread_yr$year)))` degrees, about `r sprintf("%.0f", coef(spread_fit)[2] * diff(range(spread_yr$year)) * 111)` km \[F(1, `r spread_fit$df.residual`) = `r sprintf("%.2f", summary(spread_fit)$fstatistic[1])`, p = `r sprintf("%.3f", summary(spread_fit)$coefficients[2, 4])`, R² = `r sprintf("%.3f", summary(spread_fit)$r.squared)`\], a drift rather than a march, since the trend explained under a quarter of the year-to-year variance, the survey records where observers flew, and the mass at the start of the record is the Kenai Peninsula outbreak while the mass at the end is the Susitna lowlands, so the centre of recorded damage moved between two events rather than one population tracked as it moved. @fig-survey-map draws the same record on the ground.
+
 
 ```{r}
 #| label: fig-spread
 #| echo: true
-#| fig-cap: "Spruce beetle damage recorded by the Alaska aerial detection survey, 1997 to 2025, from all 33,015 polygons the survey attributes to the agent. (a) Damage area by quarter-degree latitude band and survey year, on a square-root colour scale so the smaller years remain visible. (b) The area-weighted mean latitude of damage in each year, sized by the area recorded that year, with a least-squares line and its interval. The survey records where observers flew, so the recorded centre reflects survey effort as well as beetle activity."
+#| fig-cap: !expr spread_cap
 #| fig-width: 7
 #| fig-height: 5.4
 spread$band <- floor(spread$lat * 4) / 4
 sp_grid <- aggregate(hectares ~ band + year, spread, sum)
 ps_a <- ggplot(sp_grid, aes(year, band, fill = hectares / 1000)) +
   geom_tile() +
-  scale_fill_viridis_c(option = "inferno", direction = -1, trans = "sqrt",
-                       name = "kha") +
+  scale_fill_viridis_c(option = "inferno", direction = -1, trans = "sqrt", name = "kha") +
   labs(title = "(a) Recorded damage by latitude", x = NULL,
        y = "Latitude (degrees north)") + th
 ps_b <- ggplot(spread_yr, aes(year, lat)) +
@@ -611,8 +498,6 @@ ps_b <- ggplot(spread_yr, aes(year, lat)) +
        y = "Latitude (degrees north)") + th
 ps_a / ps_b
 ```
-
-@fig-survey-map draws the same record on the ground, the Kenai Peninsula outbreak of the record's first years against the Susitna lowlands of its last.
 
 ```{r}
 #| label: survey-map-data
@@ -675,56 +560,60 @@ tm_shape(ak, bbox = sb_frame) +
 
 ## Input datasets
 
-The study draws on nine input datasets in four roles (@tbl-inputs). Reference data were what the models learned from and were judged against, namely the crown delineations digitised for this study on the two State of Alaska Maxar mosaic epochs, seeded by the released labels and network of @Zwieback_2024, and the independent severity rasters of the same study. Predictor data were what the models saw, the annual Sentinel-2 and Landsat composites. Terrain and conifer fraction [@Macander_2022] conditioned sampling and interpretation. The aerial detection survey polygons and their flown-area footprints gave weak spatial context, stratifying the sample and separating surveyed absence from non-survey. The downloadable reference and context datasets are checksum-verified at retrieval; predictor assembly precedes no outcome analysis, which waits behind pre-registration.
+```{r}
+#| label: inputs-data
+#| echo: true
+#| output: false
+inp <- data.frame(
+  Dataset = c(
+    "Severity rasters (Zwieback)", "Crown labels (Zwieback)",
+    "Trained CNN (Zwieback)", "Maxar mosaics (AK Geoportal)",
+    "IDS damage polygons", "Sentinel-1 RTC", "Sentinel-2 L2A",
+    "Landsat Collection 2", "IFSAR DEM", "Conifer fraction (Macander)"),
+  Role = c(
+    "Independent severity reference", "Seed labels for digitisation",
+    "Pre-labelling model", "Label imagery (crown digitisation)",
+    "Sample stratification; surveyed-absence masks",
+    "Predictor time series", "Optical record, built first and set aside",
+    "Optical record, pre-outbreak baseline, set aside",
+    "Static covariate", "Static covariate"),
+  Resolution = c("30 / 90 / 250 m", "vector", "n.a.", "0.5 m (2020); 0.3 m (2023)",
+                 "polygon", "10 m, held at 30 m", "10-20 m", "30 m", "5 m", "30 m"),
+  Epoch = c("2021", "c. 2021", "n.a.", "2020; 2023", "1997-2025",
+            "2017-present", "2016-present", "1984-present", "static", "2020"),
+  Source = c(
+    "Zenodo 10.5281/zenodo.8423568", "Zenodo 10.5281/zenodo.10569990",
+    "Zenodo 10.5281/zenodo.10569975", "gis.data.alaska.gov (streaming)",
+    "USFS FHP, Region 10 geodatabase", "Planetary Computer", "Copernicus / GEE",
+    "USGS / GEE", "elevation.alaska.gov", "ORNL DAAC / GEE"),
+  Licence = c(
+    "None declared; clarification pending", "CC-BY 4.0", "CC-BY 4.0",
+    "Non-commercial streaming, no redistribution", "Public domain",
+    "Open (Copernicus)", "Open (Copernicus)", "Public domain", "Public domain", "Open"))
+```
+
+The study drew on `r nrow(inp)` input datasets in four roles (@tbl-inputs). Reference data, the crown delineations digitised on the two State of Alaska mosaic epochs, seeded by the released labels and network of @Zwieback_2024, and that study's independent severity rasters, were what the models learned from and were judged against. Predictor data were the Sentinel-1 radar series, with the annual Sentinel-2 and Landsat composites built first and set aside. Terrain and conifer fraction [@Macander_2022] conditioned sampling, and the aerial detection survey polygons and their flown-area footprints stratified the sample and separated surveyed absence from non-survey.
 
 ```{r}
 #| label: tbl-inputs
 #| echo: true
 #| tbl-cap: "Input datasets, their roles, and access terms."
-inp <- data.frame(
-  Dataset = c(
-    "Severity rasters (Zwieback)", "Crown labels (Zwieback)",
-    "Trained CNN (Zwieback)", "Maxar mosaics (AK Geoportal)",
-    "IDS damage polygons", "Sentinel-2 L2A", "Landsat Collection 2",
-    "IFSAR DEM", "Conifer fraction (Macander)"),
-  Role = c(
-    "Independent severity reference", "Seed labels for digitisation",
-    "Pre-labelling model", "Label imagery (crown digitisation)",
-    "Sample stratification; surveyed-absence masks",
-    "Predictor time series", "Predictor time series; pre-outbreak baseline",
-    "Static covariate", "Static covariate"),
-  Resolution = c("30 / 90 / 250 m", "vector", "n.a.", "0.5 m (2020); 0.3 m (2023)",
-                 "polygon", "10-20 m", "30 m", "5 m", "30 m"),
-  Epoch = c("2021", "c. 2021", "n.a.", "2020; 2023", "1997-2025",
-            "2016-present", "1984-present", "static", "2020"),
-  Source = c(
-    "Zenodo 10.5281/zenodo.8423568", "Zenodo 10.5281/zenodo.10569990",
-    "Zenodo 10.5281/zenodo.10569975", "gis.data.alaska.gov (streaming)",
-    "USFS FHP, Region 10 geodatabase", "Copernicus / GEE", "USGS / GEE",
-    "elevation.alaska.gov", "ORNL DAAC / GEE"),
-  Licence = c(
-    "None declared; clarification pending", "CC-BY 4.0", "CC-BY 4.0",
-    "Non-commercial streaming, no redistribution", "Public domain",
-    "Open (Copernicus)", "Public domain", "Public domain", "Open"))
-names(inp) <- c("Dataset", "Role", "Resolution", "Epoch", "Source", "Licence")
 fmt_tbl(inp)
 ```
 
 ## Training data
 
-Stand-scale areal severity of beetle-associated dead spruce for the Talkeetna to Byers Lake area in 2021, derived by @Zwieback_2024 from a convolutional network applied to WorldView-2 imagery, and therefore a model product with its own documented error structure rather than ground truth, so agreement with it bounds map accuracy rather than establishing it, was used at three released stand scales solely for independent evaluation. Metadata were inspected here; values are neither summarised nor plotted before pre-registration.
+Stand-scale areal severity of beetle-associated dead spruce for the Talkeetna to Byers Lake area in 2021, derived by @Zwieback_2024 from a convolutional network applied to WorldView-2 imagery and therefore a model product with its own documented error rather than ground truth, was used at its three released stand scales solely for independent evaluation, and its metadata alone were inspected before pre-registration.
 
 ```{r}
 #| label: severity-metadata
 #| echo: true
-sev <- lapply(c("merged_ref_h_c30c.tif", "merged_ref_h_c90c.tif",
-                "merged_ref_h_c250c.tif"),
-              function(f) rast(file.path(inputs, "zwieback-severity", f)))
+sev <- lapply(sprintf("../02.inputs/zwieback-severity/merged_ref_h_c%sc.tif", c(30, 90, 250)), rast)
 data.frame(
-  file       = vapply(sev, function(r) basename(sources(r)), ""),
+  file = vapply(sev, function(r) basename(sources(r)), ""),
   resolution = vapply(sev, function(r) paste(round(res(r)), collapse = " x "), ""),
-  ncell      = vapply(sev, ncell, numeric(1)),
-  crs        = vapply(sev, function(r) st_crs(crs(r))$Name, "")
+  ncell = vapply(sev, ncell, numeric(1)),
+  crs = vapply(sev, function(r) st_crs(crs(r))$Name, "")
 )
 ```
 
@@ -741,22 +630,20 @@ op <- read.csv("../03.outputs/crown_operating_point.csv")
 tq <- read.csv("../03.outputs/triage_queue.csv")
 ```
 
-Reference labels were dead spruce crowns digitised over the 160 sampled blocks on the State of Alaska mosaics of 2020, at 0.5 m, and 2023, at 0.3 m, at which a single crown is many pixels wide. The mosaics are licensed Maxar imagery reached through the USDA NRCS image services, so the pixels were processed locally and never redistributed, and what the study publishes from them is the derived crowns and severity fractions, on the same footing as the delineations of @Zwieback_2024. Labelling ran in four stages, adapted from @Zwieback_2024 for the pre-labelling and from @Khatri_Chhetri_2024 for the triage. The released dead-spruce network of @Zwieback_2024 was adapted from the seven bands of its WorldView-2 training imagery to the four the mosaics carry and fine-tuned on that study's published crown delineations, `r format(sum(pairs$crowns), big.mark = ",")` crowns over `r nrow(pairs)` delineation areas, keeping the epoch that validated best on held-out areas, at a pixel recall of `r sprintf("%.2f", best$val_recall)` and precision of `r sprintf("%.2f", best$val_precision)`. Its candidates were refined into crown polygons with DeepForest [@Weinstein_2019] and the Segment Anything Model through segment-geospatial [@Wu_2023], and written per block and epoch at a probability threshold of 0.5 as `r format(sum(tq$candidates), big.mark = ",")` candidate polygons, a median of `r median(tq$candidates)` per block, for two annotators to accept, edit or reject in QGIS with a third adjudicating. Accepted crowns were rasterised to the fraction of each 30 m and 90 m stand cell they cover, which is the areal severity, and classified at the pre-registered breaks. Comparing the two epochs then gave each crown a state, dead by 2020, died between 2020 and 2023, or alive through 2023, which supplied the interval-censored onset labels and returned to triage any crown dead in 2020 and alive in 2023. The published labels of @Zwieback_2024 joined the training pool within their own delineation areas with cuts at 2018 and 2021, so four cuts stand in the Talkeetna to Byers Lake area, while that study's severity rasters took no part in labelling. Mortality agent was inferred from context, and dead spruce fully hidden under closed deciduous canopy are absent from the labels [@Zwieback_2024]. Separability of dead, live and background samples in the mosaic bands is to be tested by Jeffries-Matusita distance before any label enters training. The tuning pairs, the network and its operating point, the queue and the separability test are in the supplement under Crown labels, Crown network, Triage queue and Spectral separability.
+Reference labels were dead spruce crowns digitised over the 160 sampled blocks on the State of Alaska mosaics of 2020, at 0.5 m, and 2023, at 0.3 m, at which a single crown is many pixels wide. The mosaics are licensed Maxar imagery reached through the USDA NRCS image services, so the pixels were processed locally and never redistributed, and what the study publishes from them is the derived crowns and severity fractions, on the same footing as the delineations of @Zwieback_2024. Labelling ran in four stages, adapted from @Zwieback_2024 for the pre-labelling and from @Khatri_Chhetri_2024 for the triage. The released dead-spruce network of @Zwieback_2024 was adapted from the seven bands of its WorldView-2 training imagery to the four the mosaics carry and fine-tuned on that study's published crown delineations, `r format(sum(pairs$crowns), big.mark = ",")` crowns over `r nrow(pairs)` delineation areas, keeping the epoch that validated best on held-out areas, at a pixel recall of `r sprintf("%.2f", best$val_recall)` and precision of `r sprintf("%.2f", best$val_precision)`. Its candidates were refined into crown polygons with DeepForest [@Weinstein_2019] and the Segment Anything Model through segment-geospatial [@Wu_2023] and written per block and epoch at a probability threshold of 0.5, `r format(sum(tq$candidates), big.mark = ",")` candidate polygons at a median of `r median(tq$candidates)` per block, for two annotators to accept, edit or reject in QGIS with a third adjudicating. Accepted crowns were rasterised to the fraction of each 30 m and 90 m stand cell they cover, which is the areal severity, and classified at the pre-registered breaks. Comparing the two epochs then gave each crown a state, dead by 2020, died between 2020 and 2023, or alive through 2023, which supplied the interval-censored onset labels and returned to triage any crown dead in 2020 and alive in 2023. The published labels of @Zwieback_2024 joined the training pool within their own delineation areas with cuts at 2018 and 2021, so four cuts stand in the Talkeetna to Byers Lake area, while that study's severity rasters took no part in labelling. Mortality agent was inferred from context, and dead spruce fully hidden under closed deciduous canopy are absent from the labels [@Zwieback_2024]. Separability of dead, live and background samples in the mosaic bands is to be tested by Jeffries-Matusita distance before any label enters training. The tuning pairs, the network and its operating point, the queue and the separability test are in the supplement under Crown labels, Crown network, Triage queue and Spectral separability.
+
 
 ## Survey polygons
 
-Sketch-mapped damage polygons for Alaska, all survey years, US public domain. These were not used as labels, because positional accuracy was coarse, low-severity damage was under-recorded, and the intensity attribute counted faded trees per treed area, which was not commensurable with pixel-fraction severity [@Zwieback_2024]. They served two supporting roles, stratifying the label-block sample by recorded damage history, and, through the flown-area footprints, distinguishing surveyed absence from non-survey. Annual spruce beetle extent was tabulated here as published descriptive context, not as an outcome.
+Sketch-mapped damage polygons for Alaska, all survey years, were not used as labels, because positional accuracy is coarse, low-severity damage is under-recorded, and the intensity attribute counts faded trees per treed area, which is not commensurable with pixel-fraction severity [@Zwieback_2024]. They stratified the block sample by recorded damage history and, through the flown-area footprints, distinguished surveyed absence from non-survey; annual extent is tabulated below as descriptive context.
 
 ```{r}
 #| label: ids-context
 #| echo: true
-gdb <- file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb")
-st_layers(gdb)
-# The OGR SQL dialect has no GROUP BY; aggregate through GDAL's SQLite dialect
-# instead, which also avoids loading 151k polygon geometries on this machine.
+st_layers("../02.inputs/ids-region10/AK_Region10_AllYears.gdb")
 ids_sql <- function(sql) {
   tmp <- tempfile(fileext = ".csv")
-  gdal_utils("vectortranslate", gdb, tmp,
+  gdal_utils("vectortranslate", "../02.inputs/ids-region10/AK_Region10_AllYears.gdb", tmp,
              options = c("-dialect", "SQLite", "-sql", sql))
   read.csv(tmp)
 }
@@ -766,8 +653,7 @@ sb <- ids_sql('
   FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10
   WHERE DCA_COMMON_NAME LIKE "%spruce beetle%"
   GROUP BY SURVEY_YEAR, DCA_CODE')
-aggregate(cbind(n_polygons = sb$n_polygons,
-                hectares = round(sb$acres * 0.40468564)),
+aggregate(cbind(n_polygons = sb$n_polygons, hectares = round(sb$acres * 0.40468564)),
           by = list(agent = sb$DCA_COMMON_NAME), FUN = sum)
 data.frame(year = sb$SURVEY_YEAR[sb$DCA_CODE == 11009],
            n_polygons = sb$n_polygons[sb$DCA_CODE == 11009],
@@ -804,13 +690,13 @@ s1_cube_dates <- as.Date(unique(regmatches(
   s1_cube_files, regexpr("[0-9]{4}-[0-9]{2}-[0-9]{2}", s1_cube_files))))
 ```
 
-The predictor record was Sentinel-1 C-band radar over the 160 sampled blocks of the Susitna lowlands from June 2017 onward, in the satellite's interferometric wide swath mode with two polarisations, VV, the pulse sent and received vertically, and VH, received horizontally, which returns more from the canopy than from the ground. Radar passes through cloud, which is what limits optical observation in Southcentral Alaska, so a monthly step was available where the optical record supported only an annual one. The decision to build on radar rather than on the optical composites was taken on 2026-09-09 and the amendment to the pre-registration that carries it stands unsigned until the author approves it. Scenes were drawn from the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, in which the return is corrected for the slope and aspect of the ground by the flattening gamma method of @Small_2011, so that terrain does not read as forest, and delivered as gamma nought, the corrected backscatter, in linear power at 10 m sampling. The first extraction had been made from Earth Engine's uncorrected collection on the assumption that it held more scenes, and the comparison of the two archives that reversed that choice is in the supplement under Radar record.
+The predictor record was Sentinel-1 C-band radar over the 160 sampled blocks of the Susitna lowlands from June 2017 onward, in the satellite's interferometric wide swath mode with two polarisations, VV, the pulse sent and received vertically, and VH, received horizontally, which returns more from the canopy than from the ground. Radar passes through cloud, which is what limits optical observation in Southcentral Alaska, so a monthly step was available where the optical record supported only an annual one. Scenes were drawn from the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, in which the return is corrected for the slope and aspect of the ground by the flattening gamma method of @Small_2011, so that terrain does not read as forest, and delivered as gamma nought, the corrected backscatter, in linear power at 10 m sampling. The first extraction had been made from Earth Engine's uncorrected collection on the assumption that it held more scenes, and the comparison of the two archives that reversed that choice is in the supplement under Radar record.
 
 Two descending orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it saw every block, `r s1_blocks[["only_131"]]` of them alone and `r s1_blocks[["both"]]` together with orbit 160, which saw `r s1_blocks[["only_160"]]` alone. On the terrain corrected record the two orbits agreed over the blocks both saw, which is measured in the supplement, and orbit 160 was kept aside as a repeatability check. The record began on `r format(s1_first, "%d %B %Y")`, because earlier scenes over this frame carry VV alone, from which the polarisation pair cannot be formed, and the extraction holds `r s1_nscene[["131"]]` scenes on orbit 131 and `r s1_nscene[["160"]]` on orbit 160.
 
-Each scene was held on a 30 m grid snapped to the 90 m optical grid, so that three cells nested exactly inside each 90 m stand cell and the severity labels joined both records without resampling. Ten metres is the product's sampling and not the instrument's resolution, which is coarser in both range and azimuth, so 30 m was the finest grid that did not oversample the instrument, and it is the floor below which Landsat is the sensible instrument. The area straddles the boundary between UTM zones 5 and 6 at 150 degrees west, so scenes arrive in both zones and the zone 6 scenes were reprojected window by window onto the zone 5 grid. Only the blocks were stored, 17 by 17 cells each. No layover and shadow mask was applied, since the blocks lie on the low relief of the Susitna lowlands, and the omission is recorded in the Limitations.
+Each scene was held on a 30 m grid snapped to the 90 m optical grid, so that three cells nested exactly inside each 90 m stand cell and the severity labels joined both records without resampling. Ten metres is the product's sampling and not the instrument's resolution, which is coarser in both range and azimuth, so 30 m was the finest grid that did not oversample the instrument. Only the blocks were stored, 17 by 17 cells each. No layover and shadow mask was applied, since the blocks lie on the low relief of the Susitna lowlands, and the omission is recorded in the Limitations.
 
-Every date was kept rather than composited, because the multi-temporal speckle filter takes its noise reduction from the length of the series rather than from averaging neighbouring cells; speckle is the grainy noise of a radar image. The filter was implemented in `05.scripts/15_mt_speckle_filter.py` from the operator source of the Sentinel-1 Toolbox, which cites @Quegan_2000. Each date keeps its own local mean over a 3 by 3 window, the ratios of every image to its own local mean are averaged across all dates, and each date's local mean is multiplied back, so the filter is unbiased per date and leaves real change between dates in place while the speckle cancels across the stack. The stack was filtered whole, every scene on orbit 131 from June 2017 at every block, and written to `02.inputs/derived/s1_block_stack_30m_mtfiltered.npz`. @fig-filter shows what the filter does to one block on one date.
+Every date was kept rather than composited, because the multi-temporal speckle filter takes its noise reduction from the length of the series rather than from averaging neighbouring cells; speckle is the grainy noise of a radar image. The filter was implemented in `05.scripts/15_mt_speckle_filter.py` from the operator source of the Sentinel-1 Toolbox, which cites @Quegan_2000. Each date keeps its own local mean over a 3 by 3 window, the ratios of every image to its own local mean are averaged across all dates, and each date's local mean is multiplied back, so the filter is unbiased per date and leaves real change between dates in place while the speckle cancels across the stack. The stack was filtered whole, every scene on orbit 131 from June 2017 at every block. @fig-filter shows what the filter does to one block on one date.
 
 ```{python}
 #| label: filter-data
@@ -900,9 +786,9 @@ tmap_arrange(
 
 The chain was checked against the Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021, the mean C-band backscatter of 2016 and 2017 built by a different processor over the same ground, and across the `r s1val$n_blocks[1]` blocks the two records agreed in pattern at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH. Their levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, and the decomposition of that offset into the conversion between the two backscatter conventions and the summer weighting of the sample is in the supplement under Radar record.
 
-The noise floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. The year-to-year spread of one cell's monthly mean for the same calendar month, which is what a multi-year change has to clear, fell with the filter from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, so the filter removed `r sprintf("%.0f", removed("VV"))` and `r sprintf("%.0f", removed("VH"))` per cent of it, and the repeatability between scenes inside one calendar month, where nothing in the forest can have changed, fell from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. Two things keep that from being the model's floor, which has not been measured, in that a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here.
+The noise floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. The year-to-year spread of one cell's monthly mean for the same calendar month, which is what a multi-year change has to clear, fell with the filter from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, so the filter removed `r sprintf("%.0f", removed("VV"))` and `r sprintf("%.0f", removed("VH"))` per cent of it, and the repeatability between scenes inside one calendar month, where nothing in the forest can have changed, fell from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. Two things keep that from being the model's floor, which has not been measured, in that a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure.
 
-From the filtered stack the series was composited to calendar month and written as a local cube for the sits package, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, which sits loads as one regular tile. The two channels the models receive are the Kennaugh elements K0 and K1, the sum and the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, formed inside sits and converted to decibels only afterwards, because the decibel of a sum is not the sum of decibels. K1 is the axis sensitive to the storey the return comes from, and @Hechtl_2025 ranked K0 and K1 first and second in every epoch of their own importance analysis; the two remaining elements of the dual polarised Kennaugh matrix need phase that a Ground Range Detected product has discarded. @fig-season draws the cube's July and November of one year block by block, the seasonal cycle the Limitations return to.
+From the filtered stack the series was composited to calendar month and written as a local cube for the sits package, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, which sits loads as one regular tile. The two channels the models receive are the Kennaugh elements K0 and K1, the sum and the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, formed inside sits and converted to decibels only afterwards, because the decibel of a sum is not the sum of decibels. K1 is the axis sensitive to the storey the return comes from, and @Hechtl_2025 ranked K0 and K1 first and second in every epoch of their own importance analysis. @fig-season draws the cube's July and November of one year block by block, the seasonal cycle the Limitations return to.
 
 ```{r}
 #| label: season-data
@@ -954,6 +840,7 @@ tmap_arrange(
   ncol = 2, outer.margins = 0.01
 )
 ```
+
 
 ## Satellite composites
 
@@ -1012,13 +899,12 @@ step_test <- do.call(rbind, lapply(split(step_blk, step_blk$band), function(d) {
 }))
 ```
 
-The record was set aside because of the join between its two sensors. The step between 2018, the last Landsat year, and 2019, the first Sentinel-2 year, was the largest single year-to-year change in the twelve-year record in both shortwave infrared bands, the bands in which dead spruce are brightest, `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B12"])` times the median step in shortwave infrared 2 and `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B11"])` times in shortwave infrared 1, and it did not differ between the `r step_test$n_damage[1]` blocks in which the aerial survey recorded damage and the `r step_test$n_none[1]` in which it recorded none, `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B12"])` against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B12"])` reflectance \[W = `r sprintf("%.0f", step_test$W[step_test$band == "B12"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B12"])`\], so the step was the instrument and not the outbreak. The pre-registered baseline differenced 2019 to 2021 against 2014 to 2016 and therefore straddled that step, in the direction mortality moves reflectance, and the published cross-sensor corrections [@Zhang_2018; @Chastain_2019; @Claverie_2018; @Ju_2025] had not been applied to the cube; the amendment of 2026-09-09 answered it by moving the predictor record to radar rather than by correcting the join.
+The record was set aside because of the join between its two sensors. The step between 2018, the last Landsat year, and 2019, the first Sentinel-2 year, was the largest single year-to-year change in the twelve-year record in both shortwave infrared bands, the bands in which dead spruce are brightest, `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B12"])` times the median step in shortwave infrared 2 and `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B11"])` times in shortwave infrared 1, and it did not differ between the `r step_test$n_damage[1]` blocks in which the aerial survey recorded damage and the `r step_test$n_none[1]` in which it recorded none, `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B12"])` against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B12"])` reflectance \[W = `r sprintf("%.0f", step_test$W[step_test$band == "B12"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B12"])`\], so the step was the instrument and not the outbreak. The pre-registered baseline differenced 2019 to 2021 against 2014 to 2016 and therefore straddled that step in the direction mortality moves reflectance, and the published cross-sensor corrections [@Zhang_2018; @Chastain_2019; @Claverie_2018; @Ju_2025] had not been applied to the cube, so the amendment of 2026-09-09 moved the predictor record to radar rather than correcting the join.
+
 
 ## Subsequence sampling
 
-Following @Perbet_2024, the record is cut into fixed-length subsequences rather than modelled as one full series, and on the monthly radar record a subsequence spans months rather than years. The pre-registration fixed subsequences of seven to ten years on an annual record, and the span on the monthly record is fixed by the amendment of 2026-09-09 rather than here. For labelled stands the mortality-onset date is placed at a randomized position within the window (never the first step) as augmentation, so models learn the trajectory shape rather than a calendar position, a positional augmentation of the kind surveyed for time series classification by @Iwana_2021. Subsequences are drawn so that every labelled stand is observed from the June 2017 start of the radar record through the present. There is no pre-outbreak radar state, because the outbreak began about 2016 and the dual-polarisation record in 2017, so the models recognise the trajectory of a stand rather than its change from a baseline, which is what a temporal convolutional network is for and what @Hechtl_2025 did. Each labelled stand cell contributes its severity fraction, its onset interval from cross-epoch triangulation, and the climate values fitted at the same monthly step. Onset supervision is interval-censored, so the dating loss credits any predicted onset falling within a stand's bracket rather than forcing an arbitrary point label. Undisturbed stands, drawn from surveyed-absence areas outside recorded damage, complete the training set.
-
-@fig-design draws the sampling scheme and the two-head design together, as pre-registered on the annual record, since neither is legible from prose alone; the monthly record changes the step and not the scheme.
+Following @Perbet_2024, the record is cut into fixed-length subsequences rather than modelled as one series; the pre-registration fixed seven to ten years on an annual record, and the span on the monthly record is fixed by the amendment of 2026-09-09. For labelled stands the onset date sits at a randomised position within the window, never the first step, so the models learn the trajectory shape rather than a calendar position [@Iwana_2021]. Every labelled stand is observed from the June 2017 start of the radar record through the present, so the models recognise the trajectory of a stand rather than its change from a pre-outbreak state, as @Hechtl_2025 did, because the outbreak began about 2016 and the dual-polarisation record in 2017. Each labelled stand cell contributes its severity fraction, its onset interval and the climate values fitted at the same monthly step, and the dating loss credits any onset within the bracket rather than forcing a point label. Undisturbed stands drawn from surveyed-absence areas complete the training set. @fig-design draws the sampling scheme and the two-head design as pre-registered on the annual record; the monthly record changes the step and not the scheme.
 
 ```{r}
 #| label: fig-design
@@ -1073,15 +959,15 @@ pa / pb + patchwork::plot_layout(heights = c(1, 1.15))
 
 ## Architectures
 
-Two deep learning networks are applied to the time series, following the comparative design of @Perbet_2024. Both take the same input series, the monthly K0 and K1 elements of the radar record with the climate values fitted at the same step. TempCNN applies one-dimensional convolutions along the temporal axis of a satellite time series, learning discriminative temporal features without handcrafted metrics; convolutional layers are applied to the temporal sequence without pooling, which degrades performance in this setting [@Pelletier_2019], followed by fully connected layers and task heads. The Transformer encoder classifies sequences through self-attention, weighting every observation of the series against every other and thereby capturing long-range temporal dependencies without recurrence [@Ru_wurm_2020]; for sequence-to-label tasks only the encoder stack is required, multi-head attention blocks followed by feed-forward layers. In boreal disturbance classification TempCNN matched or exceeded a LandTrendr-plus-random-forest workflow, with its largest margins on partial disturbance classes, and the Transformer performed within two accuracy points of it [@Perbet_2024]; both architectures are retained because their attention patterns differ instructively on gradual disturbances. Transformers over Sentinel-2 have since been applied to forest disturbance in Central Europe [@Schiller_2024], and the deep learning literature on satellite image time series has accumulated recurrent detectors [@Kong_2018], attention over a convolutional trunk [@Tang_2022] and self-supervised pretraining against label scarcity [@Yuan_2021], reviewed by @Miller_2024.
+Two networks are applied on identical inputs, the monthly K0 and K1 series with the climate values fitted at the same step, following @Perbet_2024. TempCNN applies one-dimensional convolutions along the temporal axis without pooling, which degrades performance in this setting [@Pelletier_2019], followed by fully connected layers and task heads, and the Transformer encoder weights every observation of the series against every other by self-attention [@Ru_wurm_2020], with only the encoder stack required for a sequence-to-label task. In boreal disturbance classification TempCNN matched or exceeded a LandTrendr and random forest workflow, with its largest margins on partial disturbance, and the Transformer performed within two accuracy points of it [@Perbet_2024]; both are retained because their attention patterns differ on gradual disturbances.
 
 ## Baseline model
 
-The comparator for the first hypothesis was restated by the amendment of 2026-09-09, which stands unsigned. The pre-registered null model reproduced the stand-scale change analysis that defines the current detection floor [@Zwieback_2024], a difference of pre-outbreak and post-outbreak summer mean reflectance per stand cell in the SWIR band, with the normalized burn ratio family it anchors [@Kennedy_2010; @Cohen_2017], fitted as a calibrated univariate model on training folds only. That difference cannot be formed on a record that begins after the outbreak did, since there is no pre-outbreak radar state and there cannot be one. The comparator therefore becomes the published floor itself, the severity of 0.1 above which @Zwieback_2024 found stand-scale SWIR change related clearly to severity, which is the quantity the study's title claims to lower and the quantity the field currently accepts, rather than a reimplementation of the change analysis on a contaminated optical record. Two alternatives were weighed and rejected, a radar change baseline, which needs a pre-outbreak radar state that does not exist, and a single-date radar classifier, which would test the value of the time series rather than the floor. SWIR change is the strongest single-band signal for beetle-killed spruce at Landsat scale but relates clearly to severity only above 0.1 [@Zwieback_2024], and index-based methods generally weaken on partial and gradual disturbance [@Cohen_2017; @Senf_2017]. The published state of the art for the same task is the annual random forest mapping of @Bright_2020, which trains on high-resolution crowns aggregated to percent-dead at 30 m and enters here as a comparator rather than the method, and dense-time-series work has recovered subtle change in both mountain pine beetle and spruce beetle systems [@Ye_2021].
+The comparator for the first hypothesis was restated by the amendment of 2026-09-09, which stands unsigned. The pre-registered null model reproduced the stand-scale change analysis that defines the current detection floor [@Zwieback_2024], the difference of pre-outbreak and post-outbreak summer mean reflectance per stand cell in the shortwave infrared, fitted as a calibrated univariate model on training folds only, and that difference cannot be formed on a record that begins after the outbreak did. The comparator is therefore the published floor itself, the severity of 0.1 above which @Zwieback_2024 found stand-scale shortwave-infrared change related clearly to severity, which is the quantity the title claims to lower. A radar change baseline, which needs a pre-outbreak radar state, and a single-date radar classifier, which would test the time series rather than the floor, were weighed and rejected. The published state of the art for the same task is the annual random forest mapping of @Bright_2020, trained on high-resolution crowns aggregated to percent dead at 30 m, which enters as a comparator rather than the method, and dense time series have recovered subtle change in mountain pine beetle and spruce beetle systems before [@Ye_2021].
 
 ## Model training
 
-TempCNN and the Transformer encoder are trained on identical inputs, the monthly K0 and K1 series with the climate values fitted at the same step, with two heads, a severity output, classified at the pre-registered breaks with the continuous fraction retained for regression reporting, and a relative onset output. Both networks are implemented through the sits package [@Simoes_2021] on its torch backend, which also supplies the tuning, validation and uncertainty tools applied below. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The onset head is a discrete-time formulation over the censoring bracket, following the neural discrete-time survival model of @Gensheimer_2019, which is what allows an interval label to be scored without inventing a point within it; on the monthly record the bracket is finer and the loss is unchanged. Ablation variants for the second and third hypotheses retrain the identical architecture with, respectively, point onset labels in place of intervals, and the climate values removed. Exact architecture depths, loss weights and schedules are fixed at pre-registration and the subsequence span on the monthly record by its amendment; training runs on cloud graphics hardware with configurations and logs archived alongside the analysis code.
+TempCNN and the Transformer encoder are trained on identical inputs with two heads, a severity output classified at the pre-registered breaks with the continuous fraction retained for regression, and a relative onset output, through the sits package [@Simoes_2021] on its torch backend, which also supplies the tuning, validation and uncertainty tools. Architectures follow @Pelletier_2019 and @Perbet_2024; optimisation uses Adam with cross-entropy losses, dropout and weight decay, with hyperparameters tuned on a validation split held apart from all test blocks. The onset head is a discrete-time formulation over the censoring bracket after the neural survival model of @Gensheimer_2019, which scores an interval label without inventing a point within it. Ablations for the second and third hypotheses retrain the identical architecture with point onset labels in place of intervals and with the climate values removed. Depths, loss weights and schedules are fixed at pre-registration and the subsequence span by its amendment, training runs on cloud graphics hardware, and configurations and logs are archived with the code.
 
 ## Pipeline validation
 
@@ -1095,11 +981,12 @@ syn_recall <- read.csv("../03.outputs/synthetic_severity_recall.csv")
 rec_m <- syn_recall[syn_recall$endmember == "measured", ]
 ```
 
-Before any label was scored, the optical pipeline was tested end to end, between 2026-08-12 and 2026-09-08, on mortality injected into real trajectories of the analysis cube as a severity-weighted mix of each cell's own live spectrum and a dead-crown endmember, faded in over two years after @Hicke_2024. The endmember, the change in reflectance between a fully live and a fully dead stand, was measured from the published crown delineations of @Zwieback_2024 rather than assumed, by regressing each cell's change from its pre-outbreak state on the fraction of the cell the delineated crowns cover, `r sprintf("%+.3f", em_sw$endmember)` in the 1.6 µm shortwave infrared (95 per cent confidence interval `r sprintf("%+.3f", em_sw$ci_low)` to `r sprintf("%+.3f", em_sw$ci_high)`, `r em_sw$n_cells` cells). A temporal convolutional network tested on `r format(sum(rec_m$n), big.mark = ",")` held-out synthetic samples recovered the injected decline only above a severity of 0.1, at a recall of `r sprintf("%.2f", rec_m$recall[rec_m$stratum == "(0.1,0.2]"])` in the 0.1 to 0.2 stratum and no more than `r sprintf("%.2f", max(rec_m$recall[rec_m$stratum %in% c("[0,0.01]", "(0.01,0.03]", "(0.03,0.05]", "(0.05,0.1]")]))` below it, on a seven-way severity assignment that does not estimate the fixed-precision detection H1 is scored by. The calibration and the test are in the supplement under Endmember calibration and Pipeline validation.
+Before any label was scored, the optical pipeline was tested end to end on mortality injected into real trajectories of the analysis cube as a severity-weighted mix of each cell's own live spectrum and a dead-crown endmember, faded in over two years after @Hicke_2024. The endmember, the change in reflectance between a fully live and a fully dead stand, was measured from the published crown delineations of @Zwieback_2024 rather than assumed, by regressing each cell's change from its pre-outbreak state on the fraction of the cell the delineated crowns cover, `r sprintf("%+.3f", em_sw$endmember)` in the 1.6 µm shortwave infrared (95 per cent confidence interval `r sprintf("%+.3f", em_sw$ci_low)` to `r sprintf("%+.3f", em_sw$ci_high)`, `r format(em_sw$n_cells, big.mark = ",")` cells). A temporal convolutional network tested on `r format(sum(rec_m$n), big.mark = ",")` held-out synthetic samples recovered the injected decline only above a severity of 0.1, at a recall of `r sprintf("%.2f", rec_m$recall[rec_m$stratum == "(0.1,0.2]"])` in the 0.1 to 0.2 stratum and no more than `r sprintf("%.2f", max(rec_m$recall[rec_m$stratum %in% c("[0,0.01]", "(0.01,0.03]", "(0.03,0.05]", "(0.05,0.1]")]))` below it, on a seven-way severity assignment that does not estimate the fixed-precision detection H1 is scored by. The calibration and the test are in the supplement under Endmember calibration and Pipeline validation.
+
 
 ## Model evaluation
 
-Evaluation uses block spatial cross-validation, with the study area tessellated into large contiguous blocks assigned wholly to folds to limit spatial autocorrelation leakage [@Perbet_2024], the design @Roberts_2017 set out for data with spatial structure and whose absence @Karasiak_2021 showed inflates reported accuracy in remote sensing. Skill is reported per severity stratum. Detection is summarised by full confusion matrices with user's and producer's accuracy per class, following the good practice of @Olofsson_2014 and the issues @Stehman_2019 sets out, with the spatial unit of assessment stated because it changes the estimate [@Stehman_2011]. The kappa coefficient is not reported, on the grounds @Foody_2020 gives for abandoning it and the earlier objections of @Foody_2004 and @Foody_2008 to comparing thematic maps by a single agreement statistic. The primary metric is recall at a fixed precision of 0.90 in the 0.01 to 0.10 stratum, because precision and recall describe a rare positive class where a receiver operating characteristic does not [@Saito_2015; @Sofaer_2019]. Severity regression is summarised by root-mean-square error, relative RMSE normalised by the stratum mean of the reference severity, mean absolute error, and Theil's U inequality coefficient with its bias, variance and covariance decomposition, matching and extending the error reporting of @Zwieback_2024; the decomposition separates systematic under- or over-prediction from unexplained scatter, on the same reasoning that recommends decomposing mean squared error rather than reporting it whole [@Gupta_2009; @Hodson_2021]. Onset dating is summarised by mean absolute error in years. All metrics are reported with fold-wise dispersion. Hypothesis tests are paired and fold-wise, a one-sided Wilcoxon signed-rank on the primary metric difference with a block-bootstrap confidence interval, the non-parametric paired comparison @Demsar_2006 recommends for classifiers evaluated over a common set of partitions, supported by McNemar's test on paired cell-level detections, which @Dietterich_1998 found to hold its size where resampled t-tests do not. The detectability floor of each method is the lowest severity stratum in which detection skill exceeds the pre-registered threshold, and H1 is tested by paired comparison of deep and baseline skill across folds within the 0.01 to 0.10 stratum. H2 is tested by an ablation in which the same architectures are retrained with single-epoch labels in place of triangulated onset intervals, compared fold-wise on onset mean absolute error. H3 is tested by the equivalent ablation on inputs, climate-augmented against spectral-only models, compared fold-wise on the primary detection metric. The three confirmatory tests form one Holm-corrected family. The severity product of @Zwieback_2024 provides a fully independent evaluation in the Talkeetna to Byers Lake footprint. Because the published crown labels of that study now participate in training, this evaluation uses only fold models whose training blocks exclude the footprint entirely. The reconstructed annual outbreak progression is evaluated separately by areal correspondence with annual aerial survey extent, following the map-scale comparison of @Perbet_2024 and the historical disturbance record its authors subsequently released [@Perbet_2025], and is reported as descriptive rather than confirmatory. Confusion matrices, class balances and validation support are reported in full [after @Hicke_2024].
+Evaluation uses block spatial cross-validation, the 160 blocks assigned wholly to eight folds, to limit leakage through spatial autocorrelation [@Perbet_2024; @Roberts_2017], whose absence inflates reported accuracy in remote sensing [@Karasiak_2021], and skill is reported per severity stratum. Detection is summarised by full confusion matrices with user's and producer's accuracy per class [@Olofsson_2014; @Stehman_2019], with the spatial unit of assessment stated because it changes the estimate [@Stehman_2011], and the kappa coefficient is not reported [@Foody_2020]. The primary metric is recall at a fixed precision of 0.90 in the 0.01 to 0.10 stratum, because precision and recall describe a rare positive class where a receiver operating characteristic does not [@Saito_2015; @Sofaer_2019]. Severity regression is summarised by root-mean-square error, relative RMSE normalised by the stratum mean of the reference severity, mean absolute error, and Theil's U inequality coefficient with its bias, variance and covariance decomposition [@Gupta_2009; @Hodson_2021], extending the error reporting of @Zwieback_2024, and onset dating by mean absolute error in years, all with fold-wise dispersion. Hypothesis tests are paired and fold-wise, a one-sided Wilcoxon signed-rank on the primary metric difference with a block-bootstrap confidence interval [@Demsar_2006], supported by McNemar's test on paired cell-level detections [@Dietterich_1998]. The detectability floor of each method is the lowest severity stratum in which detection skill exceeds the pre-registered threshold. H1 is tested by paired comparison of deep and baseline skill across folds within the 0.01 to 0.10 stratum, H2 by an ablation retraining the same architectures with single-epoch labels in place of triangulated onset intervals, compared on onset mean absolute error, and H3 by the equivalent ablation on inputs, climate-augmented against spectral-only models, on the primary detection metric, and the three form one Holm-corrected family. The severity product of @Zwieback_2024 provides a fully independent evaluation in the Talkeetna to Byers Lake footprint, using only fold models whose training blocks exclude it, because that study's crown labels participate in training. The reconstructed annual outbreak progression is evaluated by areal correspondence with annual aerial survey extent [@Perbet_2024; @Perbet_2025] and reported as descriptive rather than confirmatory.
 
 ```{r}
 #| label: planned-severity-strata
@@ -1111,7 +998,7 @@ strata <- c(0, 0.01, 0.03, 0.05, 0.10, 0.20, 1)
 
 ### Evaluation harness
 
-Every metric and test named above was implemented below, before any label exists, so that when labels arrive the confirmatory analysis runs rather than being written. Nothing here reads outcome data; the functions take vectors and return numbers, and the chunk that follows exercises each one on inputs whose answers are known by construction.
+Every metric and test above is implemented below, before any label exists, and exercised on constructed inputs whose answers follow from their construction, with the chunk stopping if any disagrees.
 
 ```{r}
 #| label: eval-harness
@@ -1207,8 +1094,6 @@ holm_family <- function(p, labels) {
 }
 ```
 
-The harness was exercised on constructed inputs whose correct answers follow from their construction rather than from running the code. A check that cannot fail proves nothing, so each case below has a determinate expected value and the chunk stops if any disagrees.
-
 ```{r}
 #| label: eval-checks-data
 #| echo: true
@@ -1279,7 +1164,7 @@ checks <- rbind(
 stopifnot(all(checks$passes))
 ```
 
-All `r nrow(checks)` checks pass and are listed in Table S9, which is the only reason the document renders past this point. Two of them are worth naming because they encode decisions rather than arithmetic. The second case builds scores in which no threshold reaches the required precision, and requires the harness to return zero recall rather than silently reporting the recall of whatever threshold came closest, which is how a fixed-precision metric is most easily misreported. The bootstrap case resamples folds rather than cells, so spatial dependence stays inside the resampling unit; resampling cells would treat neighbouring stands as independent and return an interval far too narrow.
+All `r nrow(checks)` checks listed in Table S9 pass, which is the only reason the document renders past this point. Two of them encode decisions rather than arithmetic, that the harness returns zero recall when no threshold reaches the required precision rather than the recall of whatever threshold came closest, and that the bootstrap resamples folds rather than cells, so spatial dependence stays inside the resampling unit.
 
 ```{r}
 #| label: planned-baseline
@@ -1288,6 +1173,9 @@ All `r nrow(checks)` checks pass and are listed in Table S9, which is the only r
 # Activated after pre-registration. SWIR change baseline: pre (2014-2016) minus
 # post (2019-2021) summer means per stand cell, per Zwieback et al. (2024).
 ```
+
+## Generative artificial intelligence
+
 
 # Results
 
@@ -1405,12 +1293,64 @@ Not yet declared by the author.
 
 Not yet declared. The manuscript is drafted single-authored pending that declaration, and no co-author is listed on the strength of an assumption.
 
-## Generative artificial intelligence
-
-
 # Supplementary material
 
-The sections below record how the label pipeline and the optical record were built and checked, each with the tables and figures it produced, numbered S1 onward in order of appearance. They document that the pipeline works, which is a reproducibility claim rather than a result, and the main text draws on them without reproducing them.
+The sections below record how the climate channels, the label pipeline, the radar record and the optical record were built and checked, each with the tables and figures it produced, numbered S1 onward in order of appearance. They document that the pipeline works, which is a reproducibility claim rather than a result, and the main text draws on them without reproducing them.
+
+## Climate variables
+
+Figure S1 shows the summer warmth index over the sampled blocks in the warmest and the coolest year of the raster record, which is what a timing channel looks like on the ground.
+
+```{r}
+#| label: warmth-map-data
+#| echo: true
+#| output: false
+clim_raster_years <- subset(clim, year %in% 2012:2023)
+warm_cool <- clim_raster_years$year[c(which.max(clim_raster_years$warmth),
+                                      which.min(clim_raster_years$warmth))]
+warmth <- rast(sprintf("../02.inputs/climate/clim_%d.tif", warm_cool), lyrs = c(1, 4)) |>
+  crop(st_buffer(st_as_sfc(st_bbox(blocks)), 5000))
+names(warmth) <- warm_cool
+warmth_lim <- range(values(warmth), na.rm = TRUE)
+warmth_map_cap <- paste0(
+  "Figure S1. Summer warmth index, the cumulative degree-hours above 17 °C from ",
+  "June to September, from the Daymet version 4 rasters at ", res(warmth)[1] / 1000,
+  " km over the sampled blocks, in (a) ", warm_cool[1], ", the warmest year of ",
+  "the raster record, and (b) ", warm_cool[2], ", the coolest, on one colour ",
+  "range from ", round(warmth_lim[1]), " to ", format(round(warmth_lim[2]), big.mark = ","),
+  " degree-hours. The regional mean was ",
+  format(round(clim$warmth[clim$year == warm_cool[1]]), big.mark = ","),
+  " degree-hours in the warm year and ",
+  round(clim$warmth[clim$year == warm_cool[2]]), " in the cool one, so the cool ",
+  "year is nearly blank on a scale that the warm year fills, which is the ",
+  "sense in which the channel carries timing rather than place. Grey points ",
+  "are the ", nrow(blocks), " sampled blocks. WGS 84 UTM zone 5N (EPSG:32605), ",
+  "graticule in km."
+)
+```
+
+```{r}
+#| label: supp-fig-warmth-map
+#| echo: true
+#| fig-cap: !expr warmth_map_cap
+#| fig-width: 7
+#| fig-height: 4.2
+warmth_panel <- function(lyr, title, legend) {
+  tm_shape(in_km(warmth[[lyr]])) +
+    tm_raster(col.scale = tm_scale_continuous(values = "-brewer.yl_or_rd",
+                                              limits = warmth_lim),
+              col.legend = legend) +
+    tm_shape(in_km(blocks)) + tm_borders(col = "grey15", lwd = 0.5) +
+    map_frame(title, legend = tm_pos_in("right", "bottom"))
+}
+tmap_arrange(
+  warmth_panel(1, sprintf("(a) %d, warmest year", warm_cool[1]), tm_legend_hide()),
+  warmth_panel(2, sprintf("(b) %d, coolest year", warm_cool[2]),
+               tm_legend(title = "Degree-hours", reverse = TRUE, height = 8,
+                         width = 7)),
+  ncol = 2, outer.margins = 0.01
+)
+```
 
 ## Literature search
 
@@ -1686,7 +1626,7 @@ The operating point was chosen on polygon counts after the minimum-area filter, 
 blk_km2 <- sum(as.numeric(st_area(blocks))) / 1e6
 ```
 
-The full sweep is in Table S3. The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the `r nrow(blocks)` blocks cover `r sprintf("%.1f", blk_km2)` km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * blk_km2), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator. Figure S1 draws both, since the tuning trajectory and the operating point are the two things the annotation plan rests on.
+The full sweep is in Table S3. The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the `r nrow(blocks)` blocks cover `r sprintf("%.1f", blk_km2)` km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * blk_km2), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator. Figure S2 draws both, since the tuning trajectory and the operating point are the two things the annotation plan rests on.
 
 ```{r}
 #| label: supp-crownnet
@@ -1708,7 +1648,7 @@ fmt_tbl(op, right = names(op),
 ```{r}
 #| label: supp-fig-crownnet
 #| echo: true
-#| fig-cap: "Figure S1. The crown network as tuned and as operated. (a) Precision, recall and intersection over union on held-out delineation areas after each epoch, with the retained epoch marked; the network is kept on intersection over union rather than on either half of it, because recall alone is maximised by flagging everything. (b) The operating-point sweep, showing the share of delineated crowns reached by at least one candidate against the number of crowns each candidate holds. A candidate an annotator accepts or rejects in one action has to be about one crown, so the usable range is bounded on the left by candidates that merge many crowns and on the right by crowns that are never proposed."
+#| fig-cap: "Figure S2. The crown network as tuned and as operated. (a) Precision, recall and intersection over union on held-out delineation areas after each epoch, with the retained epoch marked; the network is kept on intersection over union rather than on either half of it, because recall alone is maximised by flagging everything. (b) The operating-point sweep, showing the share of delineated crowns reached by at least one candidate against the number of crowns each candidate holds. A candidate an annotator accepts or rejects in one action has to be about one crown, so the usable range is bounded on the left by candidates that merge many crowns and on the right by crowns that are never proposed."
 #| fig-width: 7
 #| fig-height: 3.9
 cm <- data.frame(
@@ -1841,7 +1781,7 @@ if (os.path.exists("../02.inputs/crown_net_4band.pt")
             w.writeheader(); w.writerows(rows)
 ```
 
-The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on. Figure S2 places that queue in the study area as one panel, the candidates per block summed over both epochs, so where the pre-labeller found most to review can be read against the blocks and folds of the study area map, and Figure S3 separates the two epochs.
+The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on. Figure S3 places that queue in the study area as one panel, the candidates per block summed over both epochs, so where the pre-labeller found most to review can be read against the blocks and folds of the study area map, and Figure S4 separates the two epochs.
 
 ```{r}
 #| label: supp-triage
@@ -1863,7 +1803,7 @@ fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
 #| output: false
 blocks$candidates <- tapply(tq$candidates, tq$block, sum)[as.character(blocks$block)]
 candidates_cap <- paste0(
-  "Figure S2. Candidate dead-spruce crowns per sampled block, summed over the ",
+  "Figure S3. Candidate dead-spruce crowns per sampled block, summed over the ",
   "2020 and 2023 mosaic epochs from the triage queue as generated, ",
   format(sum(tq$candidates), big.mark = ","), " candidates over ", nrow(blocks),
   " blocks. Each square is one block, drawn larger than the block and shaded ",
@@ -1892,7 +1832,7 @@ tm_shape(in_km(blocks), bbox = st_bbox(in_km(win_rect))) +
 ```{r}
 #| label: supp-fig-triage
 #| echo: true
-#| fig-cap: "Figure S3. Candidate dead-spruce crowns per sampled block, over the 2020 and 2023 statewide mosaic epochs, from the triage queue as generated. Each point is one of the 160 blocks at its centroid on the WGS 84 UTM zone 5N working grid, sized and shaded by the number of candidates the pre-labeller proposed in it. The fold each block belongs to is not drawn, because eight categories on an outline at this size cannot be told apart."
+#| fig-cap: "Figure S4. Candidate dead-spruce crowns per sampled block, over the 2020 and 2023 statewide mosaic epochs, from the triage queue as generated. Each point is one of the 160 blocks at its centroid on the WGS 84 UTM zone 5N working grid, sized and shaded by the number of candidates the pre-labeller proposed in it. The fold each block belongs to is not drawn, because eight categories on an outline at this size cannot be told apart."
 #| fig-width: 7
 #| fig-height: 4.4
 xy <- st_coordinates(st_centroid(st_geometry(blocks)))
@@ -1968,7 +1908,7 @@ floor90 <- function(b, m = 7)
 
 The archive was the Planetary Computer's radiometrically terrain corrected collection, `sentinel-1-rtc`, rather than Earth Engine's `COPERNICUS/S1_GRD`, where the first extraction had been made. The collection's own description recorded its processing, the Ground Range Detected product converted to calibrated intensity by the European Space Agency's algorithm, then radiometrically terrain corrected by the flattening gamma method of @Small_2011 with PlanetDEM as the elevation source, and it is delivered as gamma nought in linear power at 10 m sampling. The Earth Engine collection was sigma nought with no terrain flattening. Compared on one acquisition over the blocks both hold, the flattened product ran above the unflattened one in both polarisations by an offset that was constant across most blocks and varied with the terrain across the rest, so the part that does not cancel between blocks follows the ground rather than the forest, which is what the correction exists to remove. The Planetary Computer had been assumed to hold fewer scenes than Earth Engine over this site, which was the reason the first extraction was built there, and the assumption was wrong. Counted through the archive's own catalogue by `05.scripts/09_mpc_sentinel1_inventory.py`, the descending record over the bounding box of the blocks held `r format(s1_archive[["sentinel-1-grd"]], big.mark = ",")` Ground Range Detected scenes and `r format(s1_archive[["sentinel-1-rtc"]], big.mark = ",")` terrain corrected ones from 2017 to 2026, so the terrain correction cost `r sprintf("%.1f", s1_rtc_cost)` per cent of the scenes.
 
-Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product. Figure S4 draws the two footprints over the blocks, which is the whole case for one track.
+Two descending relative orbits, 131 and 160, crossed the blocks, and only orbit 131 entered the series, because it covered every block. Of the 160 blocks, `r s1_blocks[["only_131"]]` were seen by orbit 131 alone, `r s1_blocks[["both"]]` by both orbits and `r s1_blocks[["only_160"]]` by orbit 160 alone, so one track covered the whole sample and holding to it cost no block, where a series pooled across both would have given the `r s1_blocks[["both"]]` shared blocks a second viewing geometry the other `r s1_blocks[["only_131"]]` did not have. The two tracks view the same forest at different incidence angles, and on Earth Engine's unflattened sigma nought they had disagreed by about a decibel in K0 over the shared blocks, which is why the first design treated the track as a defect to be managed. The flattening removed it. On the terrain corrected record, over the `r s1_track[["n"]]` block-months both tracks observed, K0 on orbit 131 sat `r sprintf("%+.2f", s1_track[["mean"]])` dB from orbit 160 with a standard deviation of `r sprintf("%.2f", s1_track[["sd"]])` dB, so the offset between tracks was an artefact of the terrain and not of the forest, and orbit 160 was kept aside as an independent repeatability check on the blocks it shares. The published alternative was to normalise every observation to one fixed incidence angle, as the Sentinel-1 Global Backscatter Model does [@Bauer_Marschallinger_2021], which would admit the second track; it was not done because the collection's items carry no incidence angle field, so the angle would have to be rebuilt from the orbit geometry and the elevation model rather than read from the product. Figure S5 draws the two footprints over the blocks, which is the whole case for one track.
 
 ```{r}
 #| label: tracks-data
@@ -1996,7 +1936,7 @@ tracks <- aggregate(fp["id"], list(track = factor(fp$sat.relative_orbit)),
 blocks$seen_by <- ifelse(sprintf("block_%03d", blocks$block) %in% seen[["160"]],
                          "Both tracks", "Track 131 only")
 tracks_cap <- paste0(
-  "Figure S4. Footprints of the two descending Sentinel-1 relative orbits that ",
+  "Figure S5. Footprints of the two descending Sentinel-1 relative orbits that ",
   "cross the sampled blocks, 131 in green and 160 in violet, dissolved from the ",
   "scene outlines the Planetary Computer catalogue holds for ",
   format(as.Date(paste0(fp_month, "-01")), "%B %Y"), ", the first month both ",
@@ -2133,7 +2073,7 @@ s1gbm_disp <- list(
 ```{r}
 #| label: supp-fig-s1gbm
 #| echo: true
-#| fig-cap: "Figure S5. The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Graticule in Equi7 eastings and northings, km. Cook Inlet is the dark water at the lower left."
+#| fig-cap: "Figure S6. The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Graticule in Equi7 eastings and northings, km. Cook Inlet is the dark water at the lower left."
 #| fig-width: 7
 #| fig-height: 3.3
 s1gbm_crs_km <- sub("+units=m", "+units=km", st_crs(s1gbm_epsg)$proj4string, fixed = TRUE)
@@ -2161,7 +2101,7 @@ tmap_arrange(s1gbm_panel("VV", "a"), s1gbm_panel("VH", "b"), ncol = 2,
              asp = 1, outer.margins = 0.01)
 ```
 
-The mosaic sat on `r s1gbm_crs_name` (EPSG:`r sprintf("%d", s1gbm_epsg)`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. Figure S5 draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement; the sample behind this study's medians is weighted to the summer months, which sit above the annual mean in a record whose seasonal swing is larger than any canopy signal, and the remainder of the offset has not been decomposed between those two causes and is not quoted as if it had.
+The mosaic sat on `r s1gbm_crs_name` (EPSG:`r sprintf("%d", s1gbm_epsg)`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. Figure S6 draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement; the sample behind this study's medians is weighted to the summer months, which sit above the annual mean in a record whose seasonal swing is larger than any canopy signal, and the remainder of the offset has not been decomposed between those two causes and is not quoted as if it had.
 
 ## Composite assembly
 
@@ -2227,7 +2167,7 @@ if (length(todo)) {
 }
 ```
 
-Figure S6 shows one of those composites over the confirmatory study window, the 2023 season in false colour, with the sampled blocks and the severity reference footprint on it.
+Figure S7 shows one of those composites over the confirmatory study window, the 2023 season in false colour, with the sampled blocks and the severity reference footprint on it.
 
 ```{r}
 #| label: composite-map-data
@@ -2237,7 +2177,7 @@ s2_map <- rast("../02.inputs/composites/s2_2023.tif")[[c("swir16", "nir", "red")
   aggregate(2, mean, na.rm = TRUE) |>
   stretch(minq = 0.02, maxq = 0.98)
 composite_cap <- paste0(
-  "Figure S6. The 2023 Sentinel-2 annual composite over the confirmatory study ",
+  "Figure S7. The 2023 Sentinel-2 annual composite over the confirmatory study ",
   "window in false colour, shortwave infrared (1.6 µm) as red, near infrared as ",
   "green and red as blue, each band stretched between its second and ",
   "ninety-eighth percentile and drawn at ", res(s2_map)[1], " m from the ",
@@ -2362,12 +2302,12 @@ clear_sum <- do.call(rbind, lapply(
     share_under_3 = sum(d$cells[d$n_clear < 3]) / sum(d$cells))))
 ```
 
-The pre-outbreak window the optical baseline rested on was thin. Across the Landsat years 2014 to 2018 the median cell carried `r min(clear_sum$med[clear_sum$sensor == "Landsat 8"])` to `r max(clear_sum$med[clear_sum$sensor == "Landsat 8"])` clear observations, and between `r sprintf("%.0f", 100 * min(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` and `r sprintf("%.0f", 100 * max(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` per cent of cells carried fewer than three, against a median of `r clear_sum$med[clear_sum$sensor == "Sentinel-2" & clear_sum$year == 2019]` in 2019. A summer mean built on two looks is close to a single date, and the pre-outbreak window of the baseline is built from exactly those years, which is the second reason after the sensor boundary to treat that window with care. Figure S7 shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
+The pre-outbreak window the optical baseline rested on was thin. Across the Landsat years 2014 to 2018 the median cell carried `r min(clear_sum$med[clear_sum$sensor == "Landsat 8"])` to `r max(clear_sum$med[clear_sum$sensor == "Landsat 8"])` clear observations, and between `r sprintf("%.0f", 100 * min(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` and `r sprintf("%.0f", 100 * max(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` per cent of cells carried fewer than three, against a median of `r clear_sum$med[clear_sum$sensor == "Sentinel-2" & clear_sum$year == 2019]` in 2019. A summer mean built on two looks is close to a single date, and the pre-outbreak window of the baseline is built from exactly those years, which is the second reason after the sensor boundary to treat that window with care. Figure S8 shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
 
 ```{r}
 #| label: supp-fig-clearobs
 #| echo: true
-#| fig-cap: "Figure S7. Per-cell clear observations entering each annual composite on the 90 m reference grid, from a frequency table of the count band rather than a sample. The point is the median cell and the bar spans the tenth to ninetieth percentile. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 composites built for 2016 to 2018 are drawn alongside to show why they cannot carry those years. The dashed line marks three observations, below which a cell rests on so few looks that the composite is close to a single date."
+#| fig-cap: "Figure S8. Per-cell clear observations entering each annual composite on the 90 m reference grid, from a frequency table of the count band rather than a sample. The point is the median cell and the bar spans the tenth to ninetieth percentile. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 composites built for 2016 to 2018 are drawn alongside to show why they cannot carry those years. The dashed line marks three observations, below which a cell rests on so few looks that the composite is close to a single date."
 #| fig-width: 7
 #| fig-height: 3.8
 ggplot(clear_sum, aes(year, med, colour = sensor)) +
@@ -2458,12 +2398,12 @@ fmt_tbl(cube_checks,
         caption = "Table S6. Analysis cube as loaded by sits, with the checks each property must pass. The timeline must be gapless and annual, every date must carry all four bands with no stray files, and the cube geometry must equal that of the composite it was split from.")
 ```
 
-Figure S8 shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline the optical design differenced them from, and it shows the discontinuity at the sensor boundary that the main text quantifies and that set the record aside.
+Figure S9 shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline the optical design differenced them from, and it shows the discontinuity at the sensor boundary that the main text quantifies and that set the record aside.
 
 ```{r}
 #| label: supp-fig-trajectory
 #| echo: true
-#| fig-cap: "Figure S8. Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the main text quantifies. The dashed line marks the 2016 outbreak onset."
+#| fig-cap: "Figure S9. Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the main text quantifies. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
 band_lab <- c(B04 = "B04, red", B08 = "B08, near infrared",
