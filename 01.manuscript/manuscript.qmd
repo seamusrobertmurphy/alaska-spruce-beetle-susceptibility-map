@@ -9,8 +9,12 @@ abstract: |
   Alaska since about 2016, yet roughly ninety percent of the mortality sits in
   stands of areal severity below 0.05, beneath the detection floor of conventional
   Landsat change analysis, and the aerial survey record understates exactly this
-  dispersed, low-severity damage. We test whether temporal deep learning on freely
-  available satellite time series lowers that floor. Annual Sentinel-2 composites,
+  dispersed, low-severity damage. Few studies have asked whether the
+  temporal dimension of freely available satellite data reaches below that
+  floor, and none has asked it of a spruce beetle outbreak in Alaska. This
+  study tests whether temporal deep learning on open satellite time series
+  lowers it, across 160 stand blocks sampled over the Southcentral outbreak
+  region and assigned wholly to eight spatial cross-validation folds. Annual Sentinel-2 composites,
   cloud-screened with Cloud Score+ quality mosaics on a 90 m stand grid, feed
   subsequence models, a temporal convolutional network and a Transformer encoder,
   augmented with annual climate variables that govern spruce beetle development
@@ -1441,7 +1445,7 @@ ggplot(clim_m, aes(x = month)) +
 ```{r}
 #| label: fig-climate
 #| echo: true
-#| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index: cumulative degree-hours above 17 °C, June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
+#| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index, the cumulative degree-hours above 17 °C from June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
 library(patchwork)
@@ -1976,7 +1980,7 @@ fmt_tbl(sev_shell, right = c("RMSE","rRMSE","MAE","U_Theil","U_bias","U_var","U_
 ```{r}
 #| label: tbl-detection
 #| echo: true
-#| tbl-cap: "Detection skill per severity stratum and model: user's accuracy (UA), producer's accuracy (PA), and recall at 0.90 precision (R90, the pre-registered primary metric), with fold-wise standard deviation. Values pending execution of the pre-registered analysis."
+#| tbl-cap: "Detection skill per severity stratum and model, giving user's accuracy (UA), producer's accuracy (PA), and recall at 0.90 precision (R90, the pre-registered primary metric), with fold-wise standard deviation. Values pending execution of the pre-registered analysis."
 det_shell <- expand.grid(Stratum = strata_lab, Model = models,
                          KEEP.OUT.ATTRS = FALSE)
 det_shell[c("UA", "PA", "R90", "R90_sd")] <- "pending"
@@ -2006,7 +2010,7 @@ fmt_tbl(onset_shell, right = c("MAE_yr","RMSE_yr","In_bracket","Delta_MAE","Wilc
 ```{r}
 #| label: tbl-climate
 #| echo: true
-#| tbl-cap: "Test of H3: climate-augmented against spectral-only models, fold-wise paired differences with Holm-corrected one-sided Wilcoxon tests. Values pending execution of the pre-registered analysis."
+#| tbl-cap: "Test of H3, climate-augmented against spectral-only models, fold-wise paired differences with Holm-corrected one-sided Wilcoxon tests. Values pending execution of the pre-registered analysis."
 h3_shell <- data.frame(Model = c("TempCNN", "Transformer"),
                        Delta_R90 = "pending", Delta_MAE_yr = "pending",
                        CI95 = "pending", Wilcoxon_p = "pending")
@@ -2067,7 +2071,7 @@ fmt_tbl(rbind(head(pairs[order(-pairs$crowns), ], 8),
                          crown_area_m2 = sum(pairs$crown_area_m2),
                          pct_crown = round(mean(pairs$pct_crown), 2))),
         right = c("crowns", "bands", "crown_area_m2", "pct_crown"),
-        caption = "Table S1. Tuning pairs assembled from the published crown delineations: four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with.")
+        caption = "Table S1. Tuning pairs assembled from the published crown delineations, four-band mosaic imagery at 0.5 m with the crown mask rasterised to the same grid, one pair per delineation area holding crowns. Percent crown is the share of chip pixels falling inside a delineated dead crown, which is the class balance the fine-tuning must contend with.")
 ```
 
 ```{r}
@@ -2077,7 +2081,7 @@ fmt_tbl(crown_m[, c("epoch", "train_loss", "val_precision", "val_recall",
                     "val_iou", "checkpointed")],
         right = c("epoch", "train_loss", "val_precision", "val_recall",
                   "val_iou"),
-        caption = "Table S2. Fine-tuning of the four-band crown network, evaluated per epoch on held-out delineation areas. Precision, recall and intersection over union are pixel-wise against the published delineations, which are themselves imperfect targets over 2020 imagery: a crown that died between the mosaic and the 2021 delineation is marked dead over imagery in which it was still living, so measured precision is a lower bound.")
+        caption = "Table S2. Fine-tuning of the four-band crown network, evaluated per epoch on held-out delineation areas. Precision, recall and intersection over union are pixel-wise against the published delineations, which are themselves imperfect targets over 2020 imagery, since a crown that died between the mosaic and the 2021 delineation is marked dead over imagery in which it was still living, so measured precision is a lower bound.")
 ```
 
 ```{r}
@@ -2098,7 +2102,7 @@ fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
              median_area_m2 = round(median(d$median_area_m2), 1)))),
   right = c("blocks", "candidates", "per_block_median", "median_p",
             "median_area_m2"),
-        caption = "Table S4. Triage queue as generated, summarised by mosaic epoch: blocks written, candidate crowns to review, and the median candidate probability and area. Each block is a GeoPackage layer opening directly in QGIS.")
+        caption = "Table S4. Triage queue as generated, summarised by mosaic epoch, giving blocks written, candidate crowns to review, and the median candidate probability and area. Each block is a GeoPackage layer opening directly in QGIS.")
 ```
 
 ```{r}
@@ -2113,7 +2117,7 @@ fmt_tbl(do.call(rbind, lapply(built, function(f) {
              mean_clear_obs = round(global(r$n_clear, "mean",
                                            na.rm = TRUE)[1, 1], 1))
 })), right = "year",
-        caption = "Table S5. Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed: their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019.")
+        caption = "Table S5. Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed, and their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019.")
 ```
 
 ```{r}
@@ -2135,7 +2139,7 @@ fmt_tbl(endmember_tbl, right = c("intercept", "endmember", "ci_low",
 #| label: supp-synthetic
 #| echo: true
 fmt_tbl(syn_recall, right = c("n", "recall", "overall_accuracy"),
-        caption = "Table S8. Recovery of an injected signal by severity stratum, on held-out synthetic samples, under two dead-crown endmembers: the value assumed before measurement and the value regressed from the crown delineations. Recall states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable.")
+        caption = "Table S8. Recovery of an injected signal by severity stratum, on held-out synthetic samples, under two dead-crown endmembers, the value assumed before measurement and the value regressed from the crown delineations. Recall states whether the pipeline recovers a decline of that size, not whether spruce beetle mortality of that severity is detectable.")
 ```
 
 ```{r}
@@ -2152,7 +2156,7 @@ h1_shell <- data.frame(Model = c("TempCNN", "Transformer"),
                        Delta_R90 = ".", CI95 = ".", Wilcoxon_p = ".",
                        McNemar_chisq = ".", Floor = ".")
 fmt_tbl(h1_shell, right = c("Delta_R90","CI95","Wilcoxon_p","McNemar_chisq","Floor"),
-        caption = "Table S10. Test of H1 in the 0.01 to 0.10 severity stratum: fold-wise paired difference in recall at 0.90 precision against the SWIR baseline, block-bootstrap 95% confidence interval, one-sided Wilcoxon signed-rank p-value, and McNemar chi-squared on paired cell-level detections. Values pending execution of the pre-registered analysis.")
+        caption = "Table S10. Test of H1 in the 0.01 to 0.10 severity stratum, the fold-wise paired difference in recall at 0.90 precision against the SWIR baseline, block-bootstrap 95% confidence interval, one-sided Wilcoxon signed-rank p-value, and McNemar chi-squared on paired cell-level detections. Values pending execution of the pre-registered analysis.")
 ```
 
 ```{r}

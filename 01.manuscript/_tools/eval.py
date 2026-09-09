@@ -685,7 +685,12 @@ def check_no_first_person(base):
     prose = prose_of(open(QMD).read())
     # Case-sensitive on "us", because "US public domain" is the country and
     # not the first person, and a check that counts it is counting noise.
-    hits = re.findall(r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b", prose)
+    # The abstract lives in the YAML header, which prose_of strips, and it
+    # carried a "We test whether" this check reported as zero for a whole
+    # night, the same hole the placeholder check had.
+    _head = YAML_BLOCK.search(open(QMD).read())
+    hits = re.findall(r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b",
+                      prose + (_head.group(0) if _head else ""))
     prev = base.get("first_person")
     measured = f"{len(hits)} first-person words"
     if prev is not None and len(hits) > prev:
@@ -818,7 +823,8 @@ def record_baseline(rows, manuscript_only=False):
              and ('"pending"' in body or "_shell" in body
                   or re.search(r'=\s*"\."', body))])
         base["first_person"] = len(re.findall(
-            r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b", prose))
+            r"\b(?:[Ww]e|[Oo]ur|[Oo]urs|us)\b",
+            prose + (head.group(0) if head else "")))
         base["severity_readers"] = sorted(
             lab for lab, body in chunks(open(QMD).read())
             if SEVERITY_DIR in body)
