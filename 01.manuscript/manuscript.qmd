@@ -122,7 +122,7 @@ The winter sets the last threshold, and it is a depth rather than a temperature.
 
 # Materials and methods
 
-The Introduction closed on the snow line because that is where the biology stops describing the insect and starts describing the climate of a stand, and every climate variable the models received was defined from that biology, the warmth index from the univoltinism threshold, the winter minimum from the cold to which brood above the snow is exposed, and the lagged summer mean from the delay between a warm summer and the population it produces. The climate description was therefore placed first, before the literature, the study area and the imagery, so that the quantities the biology named are seen measured, and at what distance from the phloem temperature and the snow depth the biology turned on, before any other input is introduced. All inputs were open source, and scripted retrieval, integrity checksums and a provenance manifest accompanied the analysis code.
+The Introduction closed on the snow line because that is where the biology stops describing the insect and starts describing the climate of a stand, and every climate variable defined for the models was defined from that biology, the warmth index from the univoltinism threshold, the winter minimum from the cold to which brood above the snow is exposed, and the lagged summer mean from the delay between a warm summer and the population it produces. The climate description was therefore placed first, before the literature, the study area and the imagery, so that the quantities the biology named are seen measured, and at what distance from the phloem temperature and the snow depth the biology turned on, before any other input is introduced. All inputs were open source, and scripted retrieval, integrity checksums and a provenance manifest accompanied the analysis code.
 
 The sections that follow ran in the order the analysis was assembled. Climate variables defined the three channels and measured whether each varied by year or by place. Literature search recorded how the corpus was built and screened. Study area and Outbreak history placed the outbreak in its region and in the full span of the aerial survey record. Input datasets listed every source with its role and access terms, and Training data, Crown labels, Crown network and Triage queue described how reference labels were made from the two mosaic epochs. Spectral separability, Survey polygons and Radar record built the predictor record, and Satellite composites, Composite assembly and Analysis cube record the optical record that was built first and set aside, with the measurements that set it aside. Subsequence sampling, Architectures, Baseline model and Model training defined what was fitted, Endmember calibration and Pipeline validation tested the pipeline on synthetic stands before any label was scored, and Model evaluation set out the cross-validation and the tests of the three hypotheses.
 
@@ -166,7 +166,7 @@ if (!file.exists(clim_f)) {
 clim <- read.csv(clim_f)
 ```
 
-Per-cell channel rasters were exported at Daymet's native 1 km resolution for each year and resampled to the stand grid when subsequences were assembled.
+Per-cell channel rasters were exported at Daymet's native 1 km resolution for each year, for resampling to the stand grid when subsequences are assembled.
 
 ```{r}
 #| label: climate-rasters
@@ -206,7 +206,7 @@ if (length(todo_c)) {
 }
 ```
 
-@fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion.
+@fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion, and it is reduced from the same daily Daymet forcings from which climate values are to be fitted at the radar's monthly step.
 
 ```{r}
 #| label: climograph-build
@@ -316,7 +316,7 @@ pb <- ggplot(clim, aes(year)) +
 pa / pb
 ```
 
-These entered the model inputs as additional per-year channels beside the spectral bands, within the subsequences described below; Daymet extended through 2023 when the analysis was run, and later years carried an availability flag in place of measured values until the forcing series updates.
+The three annual channels were defined and computed as above, and they are what the third hypothesis names in the pre-registration. The design of 2026-09-09 fits temporally corresponding climate values to the model at the radar's monthly step, before classification, from the same daily Daymet forcings the climograph is reduced from; that fit is the design and has not been built, so what stands is the annual channels and the monthly record they will be fitted from. Daymet extended through 2023 when the analysis was run, and later years carry an availability flag in place of measured values until the forcing series updates.
 
 ```{r}
 #| label: climate-variance
