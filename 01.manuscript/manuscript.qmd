@@ -1186,10 +1186,7 @@ c(label_areas = length(labs), extent_files = length(exts))
 
 Sketch-mapped damage polygons for Alaska, all survey years, US public domain. These were not used as labels, because positional accuracy was coarse, low-severity damage was under-recorded, and the intensity attribute counted faded trees per treed area, which was not commensurable with pixel-fraction severity [@Zwieback_2024]. They served two supporting roles, stratifying the label-block sample by recorded damage history, and, through the flown-area footprints, distinguishing surveyed absence from non-survey. Annual spruce beetle extent was tabulated here as published descriptive context, not as an outcome.
 
-```{python}
-#| eval: false
-
-
+```javascript
 var table = ee.FeatureCollection("FAO/GAUL/2015/level0"),
     VH = ee.ImageCollection("projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH"),
     VV = ee.ImageCollection("projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV");
@@ -1575,42 +1572,165 @@ Two Kennaugh elements enter as channels, following equations 1 and 2 of @Hechtl_
 
 Earth Engine's collection arrives radiometrically calibrated and terrain corrected through the Sentinel-1 toolbox, but it does not apply the DEM-based calibration to flattening gamma that ends the processing chain of @Hechtl_2025. Whether that omission matters over the Susitna lowlands, which are flat by comparison with the Bavarian slopes that motivated it, is measured below rather than assumed either way.
 
-The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017 at ten metre sampling, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries.
+The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries.
 
 ```{r}
 #| label: s1gbm-reference
 #| echo: true
 #| output: false
+s1gbm_ids <- paste0("projects/sat-io/open-datasets/S1GBM/",
+                    "normalized_s1_backscatter_", c("VV", "VH"))
 s1gbm_f <- file.path(root, "03.outputs", "s1gbm_blocks.csv")
-if (!file.exists(s1gbm_f)) {
+s1gbm_grid_f <- file.path(root, "03.outputs", "s1gbm_grid.csv")
+s1gbm_wkt_f <- file.path(root, "03.outputs", "s1gbm_crs.wkt")
+s1gbm_tif <- file.path(inputs, "s1gbm", "s1gbm_window_200m.tif")
+# The grid the mosaic is asserted to sit on. Earth Engine cannot resolve this
+# code by name, so the grid is read from the asset as WKT, every request below
+# is placed in that WKT, and sf certifies the WKT as the code afterwards.
+s1gbm_epsg <- 27705
+if (!all(file.exists(c(s1gbm_f, s1gbm_grid_f, s1gbm_wkt_f, s1gbm_tif)))) {
   library(rgee)
   ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  blk_g <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE)
-  blk_g$block <- sprintf("block_%03d", seq_len(nrow(blk_g)))
-  blk_ee <- sf_as_ee(st_transform(blk_g[, c("block", "geom")], 4326))
-  s1gbm <- ee$ImageCollection(
-      "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV")$
-    mosaic()$rename("VV")$addBands(
-      ee$ImageCollection(
-        "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH")$
-      mosaic()$rename("VH"))
-  g <- ee_as_sf(s1gbm$reduceRegions(collection = blk_ee,
-                                    reducer = ee$Reducer$mean(),
-                                    scale = 10L, tileScale = 4L),
-                via = "getInfo", quiet = TRUE)
-  # Stored as decibels times ten, so the tenth is not cosmetic.
-  write.csv(data.frame(block = g$block,
-                       s1gbm_vv_db = g$VV / 10,
-                       s1gbm_vh_db = g$VH / 10),
-            s1gbm_f, row.names = FALSE)
+  # No date filter anywhere. These assets carry a negative system:time_start,
+  # and filterDate on the collection returns nothing without an error.
+  s1gbm_vv <- ee$ImageCollection(s1gbm_ids[1])
+  s1gbm_vh <- ee$ImageCollection(s1gbm_ids[2])
+  s1gbm_img <- s1gbm_vv$first()
+  s1gbm_wkt <- s1gbm_img$projection()$wkt()$getInfo()
+  # mosaic() drops the tiles' projection for WGS 84 at one degree, so the
+  # projection is passed explicitly to every reducer and download below, or
+  # the pixels are resampled onto a latitude-longitude grid before they are
+  # averaged. The first build of this table left it implicit and was
+  # resampled that way; the block means moved by under 0.005 dB when it was
+  # rebuilt on the native grid.
+  s1gbm_mos <- s1gbm_vv$mosaic()$rename("VV")$addBands(
+    s1gbm_vh$mosaic()$rename("VH"))
+  if (!file.exists(s1gbm_grid_f)) {
+    writeLines(s1gbm_wkt, s1gbm_wkt_f)
+    # The instrument's resolution, as distinct from the product's sampling,
+    # read from one scene of the archive the radar record itself is built on.
+    blk_bb <- st_bbox(st_transform(st_read(
+      file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE), 4326))
+    pc <- jsonlite::fromJSON(paste0(
+      "https://planetarycomputer.microsoft.com/api/stac/v1/search?",
+      "collections=sentinel-1-rtc&limit=1&bbox=",
+      paste(round(blk_bb, 4), collapse = ","),
+      "&datetime=2019-07-01T00:00:00Z/2019-07-31T23:59:59Z"),
+      simplifyVector = FALSE)$features[[1]]
+    write.csv(data.frame(
+      collection_vv = s1gbm_ids[1], collection_vh = s1gbm_ids[2],
+      n_tiles_vv = s1gbm_vv$size()$getInfo(),
+      n_tiles_vh = s1gbm_vh$size()$getInfo(),
+      band = s1gbm_img$bandNames()$getInfo()[1],
+      agg_stat_param = s1gbm_img$get("agg_stat_param")$getInfo(),
+      nominal_scale_m = s1gbm_img$projection()$nominalScale()$getInfo(),
+      transform = paste(s1gbm_img$projection()$getInfo()$transform,
+                        collapse = " "),
+      pc_item = pc$id,
+      sar_resolution_range_m = pc$properties[["sar:resolution_range"]],
+      sar_resolution_azimuth_m = pc$properties[["sar:resolution_azimuth"]],
+      sar_pixel_spacing_range_m = pc$properties[["sar:pixel_spacing_range"]],
+      sar_pixel_spacing_azimuth_m =
+        pc$properties[["sar:pixel_spacing_azimuth"]]),
+      s1gbm_grid_f, row.names = FALSE)
+  }
+  if (!file.exists(s1gbm_f)) {
+    blk_g <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                     quiet = TRUE)
+    blk_g$block <- sprintf("block_%03d", seq_len(nrow(blk_g)))
+    blk_ee <- sf_as_ee(st_transform(blk_g[, c("block", "geom")], 4326))
+    g <- ee_as_sf(s1gbm_mos$reduceRegions(collection = blk_ee,
+                                          reducer = ee$Reducer$mean(),
+                                          scale = 10L, crs = s1gbm_wkt,
+                                          tileScale = 4L),
+                  via = "getInfo", quiet = TRUE)
+    # Stored as decibels times ten, so the tenth is not cosmetic.
+    write.csv(data.frame(block = g$block,
+                         s1gbm_vv_db = g$VV / 10,
+                         s1gbm_vh_db = g$VH / 10),
+              s1gbm_f, row.names = FALSE)
+  }
+  if (!file.exists(s1gbm_tif)) {
+    # Both polarisations over the confirmatory study window drawn in
+    # fig-studyarea, on the native grid thinned to 200 m, which is finer than
+    # the printed figure resolves.
+    dir.create(dirname(s1gbm_tif), showWarnings = FALSE)
+    win7 <- st_bbox(st_transform(win_rect, s1gbm_epsg))
+    sc <- 200
+    x0 <- floor(win7["xmin"] / sc) * sc; x1 <- ceiling(win7["xmax"] / sc) * sc
+    y0 <- floor(win7["ymin"] / sc) * sc; y1 <- ceiling(win7["ymax"] / sc) * sc
+    url <- s1gbm_mos$getDownloadURL(list(
+      region = ee$Geometry$Rectangle(c(x0, y0, x1, y1), s1gbm_wkt, FALSE),
+      crs = s1gbm_wkt, crs_transform = c(sc, 0, x0, 0, -sc, y1),
+      format = "GEO_TIFF"))
+    old_to <- options(timeout = 600)
+    download.file(url, s1gbm_tif, mode = "wb", quiet = TRUE)
+    options(old_to)
+  }
 }
 s1gbm <- read.csv(s1gbm_f)
+s1grid <- read.csv(s1gbm_grid_f)
 s1val <- read.csv(file.path(root, "03.outputs", "s1gbm_validation.csv"))
+# The projection is read back from the asset's WKT and checked against the
+# code asserted above, because a silent mismatch here would put every block
+# on the wrong ground. sf holds the EPSG registry entry the asset's WKT lacks.
+s1gbm_crs <- st_crs(paste(readLines(s1gbm_wkt_f), collapse = "\n"))
+stopifnot(s1gbm_crs == st_crs(s1gbm_epsg))
+s1gbm_crs_name <- st_crs(s1gbm_epsg)$Name
+# The cell size is measured twice, from the nominal scale and from the affine
+# transform, and every reading must be 10 before the prose may say so.
+s1gbm_cell <- c(nominal = s1grid$nominal_scale_m,
+                abs(as.numeric(strsplit(s1grid$transform, " ")[[1]])[c(1, 5)]))
+stopifnot(all(s1gbm_cell == 10))
+s1gbm_cell_m <- unname(s1gbm_cell[1])
+# The window raster must sit on the same grid as the block means.
+s1gbm_r <- rast(s1gbm_tif)
+names(s1gbm_r) <- c("VV", "VH")
+stopifnot(st_crs(crs(s1gbm_r)) == st_crs(s1gbm_epsg))
 # Sigma nought to gamma nought at their fixed 38 degrees.
 sig2gam <- -10 * log10(cos(38 * pi / 180))
+# The catalogue's own example displays VV over -200 to -60 and VH over -237
+# to -70 in the stored units, on these two palettes. The figure applies them
+# as shipped, converted to decibels, rather than a stretch chosen by eye.
+s1gbm_disp <- list(
+  VV = list(range = c(-200, -60) / 10,
+            palette = c("#081d58", "#253494", "#225ea8", "#1d91c0", "#41b6c4",
+                        "#7fcdbb", "#c7e9b4", "#edf8b1", "#ffffd9")),
+  VH = list(range = c(-237, -70) / 10,
+            palette = c("#f7fcf5", "#e5f5e0", "#c7e9c0", "#a1d99b", "#74c476",
+                        "#41ab5d", "#238b45", "#006d2c", "#00441b")))
 ```
 
-Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
+```{r}
+#| label: fig-s1gbm
+#| echo: true
+#| fig-cap: "The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Cook Inlet is the dark water at the lower left."
+#| fig-width: 7
+#| fig-height: 3.9
+s1gbm_blk <- st_transform(st_read(file.path(inputs, "derived",
+                                            "sample_blocks.gpkg"),
+                                  quiet = TRUE), s1gbm_epsg)
+st_geometry(s1gbm_blk) <- st_geometry(s1gbm_blk) / 1000
+s1gbm_df <- as.data.frame(s1gbm_r / 10, xy = TRUE)
+s1gbm_df$x <- s1gbm_df$x / 1000
+s1gbm_df$y <- s1gbm_df$y / 1000
+s1gbm_panel <- function(pol, tag) {
+  d <- s1gbm_disp[[pol]]
+  ggplot() +
+    geom_raster(data = s1gbm_df, aes(x, y, fill = .data[[pol]])) +
+    geom_sf(data = s1gbm_blk, fill = NA, colour = "red", linewidth = .25) +
+    scale_fill_gradientn(colours = d$palette, limits = d$range,
+                         oob = scales::squish, name = "dB") +
+    coord_sf(expand = FALSE) +
+    labs(title = paste0("(", tag, ") ", pol),
+         x = "Equi7 easting (km)", y = "Equi7 northing (km)") +
+    th + theme(legend.key.height = unit(.6, "cm"),
+               legend.key.width = unit(.25, "cm"))
+}
+s1gbm_panel("VV", "a") + s1gbm_panel("VH", "b")
+```
+
+The mosaic sat on `r s1gbm_crs_name` (EPSG:`r s1gbm_epsg`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. @fig-s1gbm draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
 
 ```{r}
 #| label: fig-s1gbm
