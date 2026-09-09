@@ -1322,6 +1322,59 @@ These enter the subsequences as additional per-year channels; Daymet currently e
 
 Following @Perbet_2024, the composite record is cut into fixed-length subsequences rather than modelled as one full series. Subsequences span seven to ten years, and for labelled stands the mortality-onset year is placed at a randomized position within the window (never the first year) as augmentation, so models learn the trajectory shape rather than a calendar position, a positional augmentation of the kind surveyed for time series classification by @Iwana_2021. Subsequences are drawn so that every labelled stand is observed from pre-outbreak baseline years through the present, covering the complete outbreak trajectory from its 2016 onset. Each labelled stand cell contributes its severity fraction and its onset interval from cross-epoch triangulation. Onset supervision is interval-censored, so the dating loss credits any predicted onset falling within a stand's bracket rather than forcing an arbitrary point label. Undisturbed stands, drawn from surveyed-absence areas outside recorded damage, complete the training set.
 
+@fig-design draws the sampling scheme and the two-head design together, since neither is legible from prose alone and both are fixed by the pre-registration.
+
+```{r}
+#| label: fig-design
+#| echo: true
+#| fig-cap: "The subsequence sampling scheme and the two-head design, both as pre-registered. (a) The annual record 2014 to 2025 is cut into fixed-length subsequences of seven to ten years, four of which are drawn as examples; the onset year sits at a randomised position inside each window and never at its first year, so the network learns the shape of the trajectory rather than a calendar position. The shaded band is the censoring interval for a stand alive at the 2020 label epoch and dead by the 2023 one; a stand already dead in 2020 carries an open bracket before that epoch instead, which is the case for the first and third subsequences drawn. (b) One convolutional trunk over the temporal axis feeds two heads, severity and relative onset year, and the onset head is scored against the bracket rather than a point, which is the loss H2 is defined by."
+#| fig-width: 7
+#| fig-height: 5.2
+yrs <- 2014:2025
+win <- data.frame(id = factor(1:4), start = c(2014, 2016, 2015, 2018),
+                  len = c(8, 10, 7, 8), onset = c(2018, 2021, 2019, 2022))
+win$end <- win$start + win$len - 1
+pa <- ggplot(win) +
+  annotate("rect", xmin = 2020, xmax = 2023, ymin = 0.4, ymax = 4.6,
+           fill = "grey88") +
+  annotate("text", x = 2021.5, y = 4.85, label = "censoring bracket",
+           size = 2.5, colour = "grey25") +
+  geom_segment(aes(x = start, xend = end, y = as.numeric(id),
+                   yend = as.numeric(id)), linewidth = 3.2,
+               colour = "steelblue4", alpha = .8, lineend = "round") +
+  geom_point(aes(x = onset, y = as.numeric(id)), size = 2.1,
+             colour = "#C0392B") +
+  scale_x_continuous(breaks = yrs, limits = c(2013.6, 2025.4)) +
+  scale_y_continuous(breaks = 1:4, labels = paste("subsequence", 1:4),
+                     limits = c(0.4, 5.1)) +
+  labs(title = "(a) Subsequence sampling", x = NULL, y = NULL) + th
+
+box <- data.frame(
+  x = c(1, 2.35, 3.7, 5.05, 5.05),
+  y = c(3, 3, 3, 3.8, 2.2),
+  lab = c("input\n7 to 10 years\nx 4 bands +\n3 climate", "temporal\nconvolutions",
+          "dense\nlayers", "severity\nhead", "onset\nhead"))
+seg <- data.frame(x = c(1.5, 2.85, 4.2, 4.2), xend = c(1.85, 3.2, 4.55, 4.55),
+                  y = c(3, 3, 3, 3), yend = c(3, 3, 3.8, 2.2))
+pb <- ggplot() +
+  geom_tile(data = box, aes(x, y), width = 1.0, height = 1.05,
+            fill = "grey95", colour = "grey45", linewidth = .3) +
+  geom_text(data = box, aes(x, y, label = lab), size = 2.4, lineheight = .95) +
+  geom_segment(data = seg, aes(x = x, xend = xend, y = y, yend = yend),
+               arrow = arrow(length = unit(.14, "cm")), linewidth = .35,
+               colour = "grey35") +
+  annotate("text", x = 5.05, y = 1.45,
+           label = "scored against the bracket, not a point",
+           size = 2.3, colour = "#C0392B") +
+  scale_x_continuous(limits = c(0.4, 5.75)) +
+  scale_y_continuous(limits = c(1.2, 4.5)) +
+  labs(title = "(b) Two-head design", x = NULL, y = NULL) +
+  th + theme(axis.text = element_blank(), axis.ticks = element_blank(),
+             panel.grid = element_blank(), panel.border = element_blank())
+
+pa / pb + patchwork::plot_layout(heights = c(1, 1.15))
+```
+
 ## Architectures
 
 Two deep learning networks are applied to the time series, following the comparative design of @Perbet_2024. TempCNN applies one-dimensional convolutions along the temporal axis of a satellite time series, learning discriminative temporal features without handcrafted metrics; convolutional layers are applied to the temporal sequence without pooling, which degrades performance in this setting [@Pelletier_2019], followed by fully connected layers and task heads. The Transformer encoder classifies sequences through self-attention, weighting every observation of the series against every other and thereby capturing long-range temporal dependencies without recurrence [@Ru_wurm_2020]; for sequence-to-label tasks only the encoder stack is required, multi-head attention blocks followed by feed-forward layers. In boreal disturbance classification TempCNN matched or exceeded a LandTrendr-plus-random-forest workflow, with its largest margins on partial disturbance classes, and the Transformer performed within two accuracy points of it [@Perbet_2024]; both architectures are retained because their attention patterns differ instructively on gradual disturbances. Transformers over Sentinel-2 have since been applied to forest disturbance in Central Europe [@Schiller_2024], and the deep learning literature on satellite image time series has accumulated recurrent detectors [@Kong_2018], attention over a convolutional trunk [@Tang_2022] and self-supervised pretraining against label scarcity [@Yuan_2021], reviewed by @Miller_2024.
