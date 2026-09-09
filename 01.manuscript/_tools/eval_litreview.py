@@ -21,7 +21,12 @@ UA = "deep-learn-alaska-spruce-beetle/1.0 (mailto:seamusrobertmurphy@gmail.com)"
 # being read. Widened 2026-09-09 after failing a sound review four ways.
 READ_STATES = ("read in full", "full text", "abstract only", "abstract",
                "title only", "metadata only", "metadata")
-FULL_STATES = ("read in full", "full text read", "full text")
+# Strict, and deliberately not the bare string "full text". A reviewer writing
+# the honest phrase "full text closed" was counted as having read the paper,
+# which let the read-in-full floor be cleared by declaring a source
+# inaccessible. Found 2026-09-09 by the agent the gate was run against, after it
+# reported 19 read in full where 6 were true.
+FULL_STATES = ("read in full", "full text read")
 INCLUDED = ("included", "include", "retained", "retain", "yes")
 
 # Minimum extent, set by Seamus on 2026-09-09 so a thin search cannot pass.
