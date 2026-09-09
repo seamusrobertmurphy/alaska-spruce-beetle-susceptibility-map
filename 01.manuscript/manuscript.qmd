@@ -1433,7 +1433,58 @@ Every date was kept rather than composited, because the multi-temporal speckle f
 
 The floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. Two quantities were taken at each cell. Repeatability, the spread between scenes inside one calendar month, where nothing in the forest can have changed, fell with the filter from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH, over `r format(floor30("repeatability_n", "VV", "unfiltered"), big.mark = ",")` cell-months before and `r format(floor30("repeatability_n", "VV", "mt_filtered"), big.mark = ",")` after. The year-to-year floor, the spread of the monthly mean at one cell across years for the same calendar month, which is what a multi-year change has to clear, fell from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, over `r format(floor30("year_to_year_n", "VV", "unfiltered"), big.mark = ",")` and `r format(floor30("year_to_year_n", "VV", "mt_filtered"), big.mark = ",")` cell-months, so the filter removed `r sprintf("%.0f", removed("VV"))` per cent of that spread in VV and `r sprintf("%.0f", removed("VH"))` per cent in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered year-to-year floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. That was the floor at one cell in one year and not the model's floor, which has not been measured, because a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here.
 
-From the filtered stack the series was composited to calendar month and written as a local cube for the sits package under the naming `SENTINEL-1_RTC_TBL01_<band>_<date>.tif`, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, on the 30 m grid nesting inside the optical cube's 90 m cells with the same bounding box. Read with `parse_info = c("X1", "X2", "tile", "band", "date")`, sits loads it as one tile and reports it regular, so no regularisation step stands between the cube and the models. The two Kennaugh elements are not written to disk but formed inside sits where the model is built, K0 as the sum and K1 as the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, and only then is the result converted to decibels, in that order, because the decibel of a sum is not the sum of decibels. K0 and K1 are an invertible transform of the pair and carry no information VV and VH do not; K1 is the axis sensitive to the storey the return comes from, and the ratio of VH to VV is the same contrast made free of scale. The remaining two elements of the dual polarised Kennaugh matrix, K5 and K8, encode phase differences that a Ground Range Detected product has discarded, so they are unavailable here, and @Hechtl_2025 report K0 first and K1 second in every epoch of their own importance analysis, so the two elements that survive the product are the two carrying their signal.
+From the filtered stack the series was composited to calendar month and written as a local cube for the sits package under the naming `SENTINEL-1_RTC_TBL01_<band>_<date>.tif`, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, on the 30 m grid nesting inside the optical cube's 90 m cells with the same bounding box. Read with `parse_info = c("X1", "X2", "tile", "band", "date")`, sits loads it as one tile and reports it regular, so no regularisation step stands between the cube and the models. The two Kennaugh elements are not written to disk but formed inside sits where the model is built, K0 as the sum and K1 as the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, and only then is the result converted to decibels, in that order, because the decibel of a sum is not the sum of decibels. K0 and K1 are an invertible transform of the pair and carry no information VV and VH do not; K1 is the axis sensitive to the storey the return comes from, and the ratio of VH to VV is the same contrast made free of scale. The remaining two elements of the dual polarised Kennaugh matrix, K5 and K8, encode phase differences that a Ground Range Detected product has discarded, so they are unavailable here, and @Hechtl_2025 report K0 first and K1 second in every epoch of their own importance analysis, so the two elements that survive the product are the two carrying their signal. @fig-season draws the cube's July and November of one year block by block, so the seasonal cycle the Limitations return to is seen rather than reported.
+
+```{r}
+#| label: season-data
+#| echo: true
+#| output: false
+k0_blocks <- function(month) {
+  r <- rast(sprintf("../02.inputs/derived/s1_cube_30m/SENTINEL-1_RTC_TBL01_%s_2020-%02d-01.tif",
+                    c("VV", "VH"), month))
+  10 * log10(rowSums(terra::extract(r, vect(blocks), fun = mean, na.rm = TRUE,
+                                    ID = FALSE)))
+}
+blocks$k0_jul <- k0_blocks(7)
+blocks$k0_nov <- k0_blocks(11)
+k0_lim <- range(c(blocks$k0_jul, blocks$k0_nov), na.rm = TRUE)
+season_cap <- paste0(
+  "K0, the sum of the VV and VH intensities in decibels, per sampled block from ",
+  "the filtered monthly cube, (a) July and (b) November 2020, on one colour ",
+  "range from ", sprintf("%.1f", k0_lim[1]), " to ", sprintf("%.1f", k0_lim[2]),
+  " dB. Each square is the mean of the 30 m cells inside one block, drawn ",
+  "larger than the block. Across the ",
+  sum(complete.cases(blocks$k0_jul, blocks$k0_nov)), " blocks holding both ",
+  "months, July sat ", sprintf("%.2f", mean(blocks$k0_jul - blocks$k0_nov,
+                                             na.rm = TRUE)),
+  " dB above November. The dashed orange rectangle is the confirmatory study ",
+  "window. WGS 84 UTM zone 5N (EPSG:32605), graticule in km."
+)
+```
+
+```{r}
+#| label: fig-season
+#| echo: true
+#| fig-cap: !expr season_cap
+#| fig-width: 7
+#| fig-height: 4.2
+k0_panel <- function(var, title, legend) {
+  tm_shape(in_km(blocks), bbox = st_bbox(in_km(win_rect))) +
+    tm_symbols(fill = var, shape = 22, size = 0.3, col = "grey15", lwd = 0.3,
+               fill.scale = tm_scale_continuous(values = "viridis",
+                                                limits = k0_lim),
+               fill.legend = legend) +
+    tm_shape(in_km(win_rect)) +
+    tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
+    map_frame(title, legend = tm_pos_in("right", "bottom"))
+}
+tmap_arrange(
+  k0_panel("k0_jul", "(a) July 2020", tm_legend_hide()),
+  k0_panel("k0_nov", "(b) November 2020",
+           tm_legend(title = "K0 (dB)", reverse = TRUE, height = 7)),
+  ncol = 2, outer.margins = 0.01
+)
+```
 
 The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries.
 
