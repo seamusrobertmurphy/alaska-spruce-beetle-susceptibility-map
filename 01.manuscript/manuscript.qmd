@@ -1083,48 +1083,7 @@ blk_km2 <- sum(as.numeric(sf::st_area(blk_area))) / 1e6
 
 The full sweep is in Table S3. The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the `r nrow(blk_area)` blocks cover `r sprintf("%.1f", blk_km2)` km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * blk_km2), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
 
-@fig-crownnet draws both, since the tuning trajectory and the operating point are the two things the annotation plan rests on and each currently lives only as a supplement table.
-
-```{r}
-#| label: fig-crownnet
-#| echo: true
-#| fig-cap: "The crown network as tuned and as operated. (a) Precision, recall and intersection over union on held-out delineation areas after each epoch, with the retained epoch marked; the network is kept on intersection over union rather than on either half of it, because recall alone is maximised by flagging everything. (b) The operating-point sweep, showing the share of delineated crowns reached by at least one candidate against the number of crowns each candidate holds. A candidate an annotator accepts or rejects in one action has to be about one crown, so the usable range is bounded on the left by candidates that merge many crowns and on the right by crowns that are never proposed."
-#| fig-width: 7
-#| fig-height: 3.9
-cm <- data.frame(
-  epoch = rep(crown_m$epoch, 3),
-  metric = rep(c("Precision", "Recall", "Intersection over union"),
-               each = nrow(crown_m)),
-  value = c(crown_m$val_precision, crown_m$val_recall, crown_m$val_iou))
-kept <- crown_m$epoch[which.max(crown_m$val_iou)]
-pa <- ggplot(cm, aes(epoch, value, colour = metric)) +
-  geom_vline(xintercept = kept, linetype = "22", colour = "grey40") +
-  geom_line(linewidth = .5) + geom_point(size = 1.2) +
-  annotate("text", x = kept, y = max(cm$value) * .98,
-           label = "retained", size = 2.4, hjust = 1.15, colour = "grey30") +
-  scale_colour_manual(NULL, values = c("Precision" = "#E67E22",
-                                       "Recall" = "steelblue4",
-                                       "Intersection over union" = "grey20")) +
-  scale_x_continuous(breaks = crown_m$epoch) +
-  labs(title = "(a) Fine-tuning", x = "Epoch", y = NULL) +
-  th + theme(legend.position = "bottom",
-             legend.key.size = unit(.3, "cm"))
-
-opp <- op[op$candidates > 0, ]
-pb <- ggplot(opp, aes(crowns_per_candidate, crown_recall)) +
-  geom_vline(xintercept = 1, linetype = "22", colour = "grey40") +
-  geom_path(linewidth = .5, colour = "steelblue4") +
-  geom_point(size = 1.6, colour = "steelblue4") +
-  ggrepel::geom_text_repel(aes(label = sprintf("%.1f", threshold)),
-                           size = 2.4, colour = "grey25", seed = 1) +
-  annotate("text", x = 1, y = max(opp$crown_recall) * .5,
-           label = "one crown per candidate", size = 2.4, angle = 90,
-           vjust = -0.5, colour = "grey30") +
-  scale_x_continuous(expand = expansion(mult = c(.12, .10))) +
-  labs(title = "(b) Operating point", x = "Crowns per candidate",
-       y = "Share of crowns reached") + th
-pa + pb
-```
+Figure S1 draws both, since the tuning trajectory and the operating point are the two things the annotation plan rests on.
 
 ## Triage queue
 
@@ -1241,38 +1200,40 @@ tq <- read.csv(file.path(dirname(inputs), "03.outputs", "triage_queue.csv"))
 
 The queue holds `r format(sum(tq$candidates), big.mark = ",")` candidates across both epochs, a median of `r median(tq$candidates)` per block. That figure, not the crown-density extrapolation used for planning, is what the annotation scope decision should rest on.
 
-@fig-triage-map places that queue in the study area, so the blocks carrying the most candidate crowns can be read against the fold they sit in rather than against a block number.
+@fig-candidates places that queue in the study area as one panel, the candidates per block summed over both epochs, so where the pre-labeller found most to review can be read against the blocks and folds of the study area map; Figure S2 separates the two epochs.
 
 ```{r}
-#| label: fig-triage-map
+#| label: candidates-data
 #| echo: true
-#| fig-cap: "Candidate dead-spruce crowns per sampled block, over the 2020 and 2023 statewide mosaic epochs, from the triage queue as generated. Each point is one of the 160 blocks at its centroid on the WGS 84 UTM zone 5N working grid, sized and shaded by the number of candidates the pre-labeller proposed in it. The fold each block belongs to is not drawn, because eight categories on an outline at this size cannot be told apart."
-#| fig-width: 7
-#| fig-height: 4.4
-blk <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
-                   quiet = TRUE)
-# The sampling script wrote block_id as seq_len(nrow(samp)) from the same
-# object it wrote the GeoPackage from, so row order is the identifier and the
-# join needs no key column.
-blk$block <- seq_len(nrow(blk))
-ctr <- sf::st_centroid(sf::st_geometry(blk))
-xy <- sf::st_coordinates(ctr)
-blk_df <- data.frame(block = blk$block, fold = factor(blk$fold),
-                     x = xy[, 1] / 1000, y = xy[, 2] / 1000)
-tq_map <- merge(blk_df, tq[, c("epoch", "block", "candidates")], by = "block")
-tq_map$epoch <- factor(tq_map$epoch, labels = c("2020 mosaic", "2023 mosaic"))
-
-ggplot(tq_map, aes(x, y)) +
-  geom_point(aes(size = candidates, fill = candidates),
-             shape = 21, stroke = .3, colour = "grey30", alpha = .9) +
-  scale_fill_viridis_c(option = "inferno", direction = -1,
-                       name = "Candidates") +
-  scale_size_continuous(range = c(1, 5.5), guide = "none") +
-  coord_equal() +
-  facet_wrap(~ epoch) +
-  labs(x = "Easting (km)", y = "Northing (km)") +
-  th + theme(legend.position = "right", legend.key.size = unit(.3, "cm"))
+#| output: false
+blocks$candidates <- tapply(tq$candidates, tq$block, sum)[as.character(blocks$block)]
+candidates_cap <- paste0(
+  "Candidate dead-spruce crowns per sampled block, summed over the 2020 and ",
+  "2023 mosaic epochs from the triage queue as generated, ",
+  format(sum(tq$candidates), big.mark = ","), " candidates over ", nrow(blocks),
+  " blocks. Each square is one block, drawn larger than the block and shaded ",
+  "by its count. The dashed orange rectangle is the confirmatory study window. ",
+  "WGS 84 UTM zone 5N (EPSG:32605), graticule in km."
+)
 ```
+
+```{r}
+#| label: fig-candidates
+#| echo: true
+#| fig-cap: !expr candidates_cap
+#| fig-width: 4.5
+#| fig-height: 4.8
+tm_shape(in_km(blocks), bbox = st_bbox(in_km(win_rect))) +
+  tm_symbols(fill = "candidates", shape = 22, size = 0.3, col = "grey15", lwd = 0.3,
+             fill.scale = tm_scale_continuous(values = "-inferno"),
+             fill.legend = tm_legend(title = "Candidates", reverse = TRUE,
+                                     height = 8, width = 6)) +
+  tm_shape(in_km(win_rect)) +
+  tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
+  map_frame("Crown candidates per block, UTM zone 5N (EPSG:32605)",
+            legend = tm_pos_in("right", "bottom"))
+```
+
 
 ## Spectral separability
 
@@ -2946,4 +2907,78 @@ prog_shell <- data.frame(Year = 2016:2025)
 prog_shell[c("Mapped_kha", "Surveyed_kha", "Ratio", "IoU")] <- "pending"
 fmt_tbl(prog_shell, right = c("Mapped_kha","Surveyed_kha","Ratio","IoU"),
         caption = "Table S12. Reconstructed annual outbreak area against aerial survey extent, 2016 to 2025, descriptive. Values pending execution of the pre-registered analysis.")
+```
+
+The two figures below record the pre-labeller as tuned and the queue it produced by epoch.
+
+```{r}
+#| label: supp-fig-crownnet
+#| echo: true
+#| fig-cap: "Figure S1. The crown network as tuned and as operated. (a) Precision, recall and intersection over union on held-out delineation areas after each epoch, with the retained epoch marked; the network is kept on intersection over union rather than on either half of it, because recall alone is maximised by flagging everything. (b) The operating-point sweep, showing the share of delineated crowns reached by at least one candidate against the number of crowns each candidate holds. A candidate an annotator accepts or rejects in one action has to be about one crown, so the usable range is bounded on the left by candidates that merge many crowns and on the right by crowns that are never proposed."
+#| fig-width: 7
+#| fig-height: 3.9
+cm <- data.frame(
+  epoch = rep(crown_m$epoch, 3),
+  metric = rep(c("Precision", "Recall", "Intersection over union"),
+               each = nrow(crown_m)),
+  value = c(crown_m$val_precision, crown_m$val_recall, crown_m$val_iou))
+kept <- crown_m$epoch[which.max(crown_m$val_iou)]
+pa <- ggplot(cm, aes(epoch, value, colour = metric)) +
+  geom_vline(xintercept = kept, linetype = "22", colour = "grey40") +
+  geom_line(linewidth = .5) + geom_point(size = 1.2) +
+  annotate("text", x = kept, y = max(cm$value) * .98,
+           label = "retained", size = 2.4, hjust = 1.15, colour = "grey30") +
+  scale_colour_manual(NULL, values = c("Precision" = "#E67E22",
+                                       "Recall" = "steelblue4",
+                                       "Intersection over union" = "grey20")) +
+  scale_x_continuous(breaks = crown_m$epoch) +
+  labs(title = "(a) Fine-tuning", x = "Epoch", y = NULL) +
+  th + theme(legend.position = "bottom",
+             legend.key.size = unit(.3, "cm"))
+
+opp <- op[op$candidates > 0, ]
+pb <- ggplot(opp, aes(crowns_per_candidate, crown_recall)) +
+  geom_vline(xintercept = 1, linetype = "22", colour = "grey40") +
+  geom_path(linewidth = .5, colour = "steelblue4") +
+  geom_point(size = 1.6, colour = "steelblue4") +
+  ggrepel::geom_text_repel(aes(label = sprintf("%.1f", threshold)),
+                           size = 2.4, colour = "grey25", seed = 1) +
+  annotate("text", x = 1, y = max(opp$crown_recall) * .5,
+           label = "one crown per candidate", size = 2.4, angle = 90,
+           vjust = -0.5, colour = "grey30") +
+  scale_x_continuous(expand = expansion(mult = c(.12, .10))) +
+  labs(title = "(b) Operating point", x = "Crowns per candidate",
+       y = "Share of crowns reached") + th
+pa + pb
+```
+
+```{r}
+#| label: supp-fig-triage
+#| echo: true
+#| fig-cap: "Figure S2. Candidate dead-spruce crowns per sampled block, over the 2020 and 2023 statewide mosaic epochs, from the triage queue as generated. Each point is one of the 160 blocks at its centroid on the WGS 84 UTM zone 5N working grid, sized and shaded by the number of candidates the pre-labeller proposed in it. The fold each block belongs to is not drawn, because eight categories on an outline at this size cannot be told apart."
+#| fig-width: 7
+#| fig-height: 4.4
+blk <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                   quiet = TRUE)
+# The sampling script wrote block_id as seq_len(nrow(samp)) from the same
+# object it wrote the GeoPackage from, so row order is the identifier and the
+# join needs no key column.
+blk$block <- seq_len(nrow(blk))
+ctr <- sf::st_centroid(sf::st_geometry(blk))
+xy <- sf::st_coordinates(ctr)
+blk_df <- data.frame(block = blk$block, fold = factor(blk$fold),
+                     x = xy[, 1] / 1000, y = xy[, 2] / 1000)
+tq_map <- merge(blk_df, tq[, c("epoch", "block", "candidates")], by = "block")
+tq_map$epoch <- factor(tq_map$epoch, labels = c("2020 mosaic", "2023 mosaic"))
+
+ggplot(tq_map, aes(x, y)) +
+  geom_point(aes(size = candidates, fill = candidates),
+             shape = 21, stroke = .3, colour = "grey30", alpha = .9) +
+  scale_fill_viridis_c(option = "inferno", direction = -1,
+                       name = "Candidates") +
+  scale_size_continuous(range = c(1, 5.5), guide = "none") +
+  coord_equal() +
+  facet_wrap(~ epoch) +
+  labs(x = "Easting (km)", y = "Northing (km)") +
+  th + theme(legend.position = "right", legend.key.size = unit(.3, "cm"))
 ```
