@@ -662,6 +662,49 @@ blk_km2 <- sum(as.numeric(sf::st_area(blk_area))) / 1e6
 
 The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the `r nrow(blk_area)` blocks cover `r sprintf("%.1f", blk_km2)` km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * blk_km2), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
 
+@fig-crownnet draws both, since the tuning trajectory and the operating point are the two things the annotation plan rests on and each currently lives only as a supplement table.
+
+```{r}
+#| label: fig-crownnet
+#| echo: true
+#| fig-cap: "The crown network as tuned and as operated. (a) Precision, recall and intersection over union on held-out delineation areas after each epoch, with the retained epoch marked; the network is kept on intersection over union rather than on either half of it, because recall alone is maximised by flagging everything. (b) The operating-point sweep, showing the share of delineated crowns reached by at least one candidate against the number of crowns each candidate holds. A candidate an annotator accepts or rejects in one action has to be about one crown, so the usable range is bounded on the left by candidates that merge many crowns and on the right by crowns that are never proposed."
+#| fig-width: 7
+#| fig-height: 3.9
+cm <- data.frame(
+  epoch = rep(crown_m$epoch, 3),
+  metric = rep(c("Precision", "Recall", "Intersection over union"),
+               each = nrow(crown_m)),
+  value = c(crown_m$val_precision, crown_m$val_recall, crown_m$val_iou))
+kept <- crown_m$epoch[which.max(crown_m$val_iou)]
+pa <- ggplot(cm, aes(epoch, value, colour = metric)) +
+  geom_vline(xintercept = kept, linetype = "22", colour = "grey40") +
+  geom_line(linewidth = .5) + geom_point(size = 1.2) +
+  annotate("text", x = kept, y = max(cm$value) * .98,
+           label = "retained", size = 2.4, hjust = 1.15, colour = "grey30") +
+  scale_colour_manual(NULL, values = c("Precision" = "#E67E22",
+                                       "Recall" = "steelblue4",
+                                       "Intersection over union" = "grey20")) +
+  scale_x_continuous(breaks = crown_m$epoch) +
+  labs(title = "(a) Fine-tuning", x = "Epoch", y = NULL) +
+  th + theme(legend.position = "bottom",
+             legend.key.size = unit(.3, "cm"))
+
+opp <- op[op$candidates > 0, ]
+pb <- ggplot(opp, aes(crowns_per_candidate, crown_recall)) +
+  geom_vline(xintercept = 1, linetype = "22", colour = "grey40") +
+  geom_path(linewidth = .5, colour = "steelblue4") +
+  geom_point(size = 1.6, colour = "steelblue4") +
+  ggrepel::geom_text_repel(aes(label = sprintf("%.1f", threshold)),
+                           size = 2.4, colour = "grey25", seed = 1) +
+  annotate("text", x = 1, y = max(opp$crown_recall) * .5,
+           label = "one crown per candidate", size = 2.4, angle = 90,
+           vjust = -0.5, colour = "grey30") +
+  scale_x_continuous(expand = expansion(mult = c(.12, .10))) +
+  labs(title = "(b) Operating point", x = "Crowns per candidate",
+       y = "Share of crowns reached") + th
+pa + pb
+```
+
 ## Triage queue
 
 Candidates were written per block and per epoch as GeoPackage layers that open directly in QGIS, each polygon carrying its mean dead-spruce probability and its area, so triage can be ordered by confidence rather than by position. The 2023 mosaic was resampled to the 2020 ground sample distance before inference, because the network was tuned at 0.5 m and its filters encode that scale. Inference was resumable, in that a block already written was skipped, so an interrupted run continued rather than restarting.
