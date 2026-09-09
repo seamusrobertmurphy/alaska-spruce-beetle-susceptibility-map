@@ -653,9 +653,14 @@ Tuning used `r crown_m$n_train_tiles[1]` crops from `r crown_m$n_train_areas[1]`
 #| output: false
 op <- read.csv(file.path(dirname(inputs), "03.outputs",
                          "crown_operating_point.csv"))
+# The block count and the area they cover are read from the committed sample
+# rather than typed, so the conversion below cannot drift from the sample.
+blk_area <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                        quiet = TRUE)
+blk_km2 <- sum(as.numeric(sf::st_area(blk_area))) / 1e6
 ```
 
-The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the 160 blocks cover 41.9 km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
+The queue was generated at the threshold that keeps candidates per square kilometre within what one annotator can work through, not at the threshold that maximises any statistic. The counts above convert directly, since the `r nrow(blk_area)` blocks cover `r sprintf("%.1f", blk_km2)` km² per mosaic epoch, so a rate of `r sprintf("%.0f", op$candidates_per_km2[op$threshold == 0.5])` candidates per square kilometre at a probability threshold of 0.5 implies roughly `r format(round(op$candidates_per_km2[op$threshold == 0.5] * 41.9), big.mark = ",")` candidates per epoch to review. Polygon precision and crown recall move in opposite directions across the sweep, precision from `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.3])` at a threshold of 0.3 to `r sprintf("%.2f", op$polygon_precision[op$threshold == 0.7])` at 0.7 while the share of delineated crowns reached by any candidate falls from `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.7])`, because a higher threshold erodes one candidate covering many crowns into one candidate per crown rather than reaching crowns the lower threshold missed. Precision read alone therefore rewards the threshold that finds fewest crowns. Crown recall keeps rising as the threshold falls, to `r sprintf("%.2f", op$crown_recall[op$threshold == 0.1])` at 0.1, but a candidate stops being one crown well before that, holding `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.1])` crowns at 0.1 and `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.5])` at 0.5, and flagging `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.1])` per cent of the scored area against `r sprintf("%.0f", 100 * op$area_flagged[op$threshold == 0.5])` per cent. A candidate an annotator accepts or rejects in one action has to be one crown, so the usable range ends near 0.3, where recall is `r sprintf("%.2f", op$crown_recall[op$threshold == 0.3])` and each candidate holds `r sprintf("%.1f", op$crowns_per_candidate[op$threshold == 0.3])` crowns. At that point four crowns in ten are never proposed for review, which is a limit of the network rather than of the threshold, and it bounds what the pre-labeller can save an annotator.
 
 ## Triage queue
 
@@ -969,6 +974,66 @@ for (y in 2014:2018) {
   n_clear <- ls$select("SR_B4")$count()$rename("n_clear")
   fetch_grid(comp$addBands(n_clear)$toFloat(), f, tpl)
 }
+```
+
+@fig-clearobs shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
+
+```{r}
+#| label: clearobs-build
+#| echo: true
+#| output: false
+# The exact distribution of the per-cell clear-observation count, taken from a
+# frequency table of the n_clear band rather than from a sample, so no
+# quantile below depends on a random draw. Written once and read thereafter.
+clear_f <- file.path(root, "03.outputs", "clear_observations.csv")
+if (!file.exists(clear_f)) {
+  comps <- list.files(comp_dir, pattern = "^(s2|ls)_\\d{4}\\.tif$",
+                      full.names = TRUE)
+  rows <- do.call(rbind, lapply(comps, function(f) {
+    fr <- terra::freq(terra::rast(f)$n_clear)
+    fr <- fr[!is.na(fr$value), ]
+    data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
+                               "Sentinel-2", "Landsat 8"),
+               year = as.integer(sub("^\\w+_(\\d{4})\\.tif$", "\\1",
+                                     basename(f))),
+               n_clear = fr$value, cells = fr$count)
+  }))
+  write.csv(rows, clear_f, row.names = FALSE)
+}
+clear_obs <- read.csv(clear_f)
+
+wq <- function(v, w, p) {
+  o <- order(v); v <- v[o]; w <- w[o]
+  v[which(cumsum(w) / sum(w) >= p)[1]]
+}
+clear_sum <- do.call(rbind, lapply(
+  split(clear_obs, list(clear_obs$sensor, clear_obs$year), drop = TRUE),
+  function(d) data.frame(
+    sensor = d$sensor[1], year = d$year[1],
+    p10 = wq(d$n_clear, d$cells, .10),
+    med = wq(d$n_clear, d$cells, .50),
+    p90 = wq(d$n_clear, d$cells, .90),
+    share_under_3 = sum(d$cells[d$n_clear < 3]) / sum(d$cells))))
+```
+
+The baseline the whole comparison rests on is thin. Across the Landsat years 2014 to 2018 the median cell carried `r min(clear_sum$med[clear_sum$sensor == "Landsat 8"])` to `r max(clear_sum$med[clear_sum$sensor == "Landsat 8"])` clear observations, and between `r sprintf("%.0f", 100 * min(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` and `r sprintf("%.0f", 100 * max(clear_sum$share_under_3[clear_sum$sensor == "Landsat 8"]))` per cent of cells carried fewer than three, against a median of `r clear_sum$med[clear_sum$sensor == "Sentinel-2" & clear_sum$year == 2019]` in 2019. A summer mean built on two looks is close to a single date, and the pre-outbreak window of the baseline is built from exactly those years, which is the second reason after the sensor boundary to treat that window with care.
+
+```{r}
+#| label: fig-clearobs
+#| echo: true
+#| fig-cap: "Per-cell clear observations entering each annual composite on the 90 m reference grid, from a frequency table of the count band rather than a sample. The point is the median cell and the bar spans the tenth to ninetieth percentile. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 composites built for 2016 to 2018 are drawn alongside to show why they cannot carry those years. The dashed line marks three observations, below which a cell rests on so few looks that the composite is close to a single date."
+#| fig-width: 7
+#| fig-height: 3.8
+ggplot(clear_sum, aes(year, med, colour = sensor)) +
+  geom_hline(yintercept = 3, linetype = "22", colour = "grey45") +
+  geom_linerange(aes(ymin = p10, ymax = p90),
+                 position = position_dodge(width = .45), linewidth = .5) +
+  geom_point(position = position_dodge(width = .45), size = 1.5) +
+  scale_colour_manual(NULL, values = c("Landsat 8" = "#C0392B",
+                                       "Sentinel-2" = "steelblue4")) +
+  scale_x_continuous(breaks = 2014:2025) +
+  labs(x = NULL, y = "Clear observations per cell") +
+  th + theme(legend.position = "bottom")
 ```
 
 ```{r}
@@ -1499,7 +1564,7 @@ emv <- function(est, b, col = "endmember")
   endmember_tbl[[col]][endmember_tbl$estimator == est & endmember_tbl$band == b]
 ```
 
-The estimate covers `r endmember_tbl$n_cells[1]` stand cells reaching a maximum observed dead-crown fraction of `r endmember_tbl$max_sev[1]`. The two estimators answer different questions and only the second answers the one that matters. Regressing levels asks whether cells holding more dead crowns look different from cells holding none, a comparison that stand composition, slope and canopy shadow dominate; it returns an R² of `r sprintf("%.3f", emv("level", "swir16", "r2"))` in the shortwave infrared and a slope of the wrong sign, which is a statement about between-cell confounding rather than about mortality. Differencing each cell against its own pre-outbreak state removes those stable differences and estimates the quantity the mixing model actually defines. The change estimator puts the shortwave-infrared endmember at `r sprintf("%+.3f", emv("change", "swir16"))` with a 95 percent interval of `r sprintf("%+.3f to %+.3f", emv("change", "swir16", "ci_low"), emv("change", "swir16", "ci_high"))`, against the `r sprintf("%+.3f", 0.055)` assumed before measurement. The synthetic test below was run at both values so the consequence of the assumption is visible rather than asserted.
+The estimate covers `r endmember_tbl$n_cells[1]` stand cells reaching a maximum observed dead-crown fraction of `r endmember_tbl$max_sev[1]`. The two estimators answer different questions and only the second answers the one that matters. Regressing levels asks whether cells holding more dead crowns look different from cells holding none, a comparison that stand composition, slope and canopy shadow dominate; it returns an R² of `r sprintf("%.3f", emv("level", "swir16", "r2"))` in the shortwave infrared and a slope of the wrong sign, which is a statement about between-cell confounding rather than about mortality. Differencing each cell against its own pre-outbreak state removes those stable differences and estimates the quantity the mixing model actually defines. The change estimator puts the shortwave-infrared endmember at `r sprintf("%+.3f", emv("change", "swir16"))` with a 95 percent interval of `r sprintf("%+.3f to %+.3f", emv("change", "swir16", "ci_low"), emv("change", "swir16", "ci_high"))`, against the `r sprintf("%+.3f", EM_ASSUMED[["swir16"]])` assumed before measurement. The synthetic test below was run at both values so the consequence of the assumption is visible rather than asserted.
 
 Three properties of this estimate constrain how far it can be pushed. The measured shortwave-infrared contrast is roughly two and a half times the assumed one, so the assumption was conservative and the detectability question is correspondingly more open than the first synthetic run implied. Severity nonetheless explains very little of the variance, with R² between `r sprintf("%.3f", min(endmember_tbl$r2[endmember_tbl$estimator == "change"]))` and `r sprintf("%.3f", max(endmember_tbl$r2[endmember_tbl$estimator == "change"]))`, so these are weak slopes estimated over many cells rather than a tight relationship; all four intervals nonetheless exclude zero. And the near-infrared slope is positive, at `r sprintf("%+.3f", emv("change", "nir"))`, where dead foliage at crown scale lowers near-infrared reflectance [@Zwieback_2024]. Two readings are available and this design cannot separate them, since canopy loss over a five-year window admits understory response that raises stand near-infrared even as individual crowns darken, or the Landsat baseline and Sentinel-2 post state differ in near-infrared band pass in a way that a common intercept does not absorb. The synthetic test uses the measured vector as estimated, sign included, because substituting the expected sign would reintroduce exactly the assumption this section exists to remove.
 
@@ -1507,7 +1572,17 @@ Three properties of this estimate constrain how far it can be pushed. The measur
 
 Before any labelled data reach the models, the pipeline was tested against a signal whose truth is known because this manuscript injects it. Real trajectories were drawn from the analysis cube, so phenology, atmosphere and sensor noise are those of the study area; only the disturbance is synthetic. Mortality was added as linear areal mixing, the observed spectrum becoming the severity-weighted mix of that cell's own live spectrum and a dead-crown endmember, applied from a known onset year and ramped over two years after @Hicke_2024, whose Alaskan *Dendroctonus* fade runs from green through red to gray rather than completing within a season. Two single-band-head models stand in for the pre-registered two-head design until the interval-censored head exists, one classifying the severity stratum and the other the onset year.
 
-Everything the test reports is conditional on the dead-crown endmember, which is an assumption, not a measurement, and is the quantity that decides whether low severities are recoverable at all. At the value used here a severity of 0.05 shifts shortwave-infrared reflectance by under 0.003, which is smaller than the between-year scatter of the composites themselves. The test therefore measures whether the pipeline can recover a signal of a stated size; it is not evidence about spruce beetle detectability, and no result below bears on H1.
+Everything the test reports is conditional on the dead-crown endmember, which is an assumption, not a measurement, and is the quantity that decides whether low severities are recoverable at all. At the value used here a severity of 0.05 shifts shortwave-infrared reflectance by `r sprintf("%.4f", 0.05 * EM_ASSUMED[["swir16"]])`, which is smaller than the between-year scatter of the composites themselves. The test therefore measures whether the pipeline can recover a signal of a stated size; it is not evidence about spruce beetle detectability, and no result below bears on H1.
+
+```{r}
+#| label: endmember-assumed
+#| echo: true
+#| output: false
+# The endmember assumed before anything was measured, defined here rather than
+# inside the guarded block below so the prose can read it instead of repeating
+# the number. A figure typed twice is a figure that drifts once.
+EM_ASSUMED <- c(red = 0.040, nir = -0.060, swir16 = 0.055, swir22 = 0.045)
+```
 
 ```{r}
 #| label: synthetic-validation
@@ -1531,7 +1606,7 @@ if (!all(file.exists(syn_f))) {
   emc <- endmember_tbl[endmember_tbl$estimator == "change", ]
   em_m <- setNames(emc$endmember, emc$band)
   ENDMEMBERS <- list(
-    assumed = c(red = 0.040, nir = -0.060, swir16 = 0.055, swir22 = 0.045),
+    assumed = EM_ASSUMED,
     measured = em_m[c("red", "nir", "swir16", "swir22")])
 
   cf <- function(b, y) file.path(cube_dir,
