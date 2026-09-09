@@ -98,6 +98,29 @@ library(patchwork)
 th <- theme_bw(base_size = 8) +
   theme(panel.grid.minor = element_blank(),
         plot.title = element_text(face = "bold", size = 8.5))
+
+library(tmap)
+tmap_mode("plot")
+blocks <- st_read("../02.inputs/derived/sample_blocks.gpkg", quiet = TRUE) |>
+  transform(block = seq_along(fold), fold = factor(fold))
+in_km <- function(x) {
+  km <- "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs"
+  if (!inherits(x, "SpatRaster")) return(st_transform(x, km))
+  ext(x) <- as.vector(ext(x)) / 1000
+  crs(x) <- km
+  x
+}
+map_frame <- function(title, legend = tm_pos_out("right", "center")) {
+  tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70") +
+    tm_scalebar(position = c("left", "bottom"), text.size = 0.5) +
+    tm_compass(position = c("right", "top"), size = 1.2, text.size = 0.5) +
+    tm_title(title, size = 0.8, fontface = "bold") +
+    tm_layout(
+      frame = TRUE, inner.margins = 0, outer.margins = c(0.08, 0.08, 0.01, 0.01),
+      legend.position = legend, legend.text.size = 0.55,
+      legend.title.size = 0.65, component.autoscale = FALSE
+    )
+}
 ```
 
 # Introduction
@@ -370,126 +393,116 @@ The search returned `r n_screened` unique records across `r n_strands` strands a
 
 The study area is the Southcentral Alaska outbreak region, centred on the Susitna lowlands and Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range, in the NAD83 Alaska Albers projection. Forests are boreal mosaics of white spruce (*Picea glauca* (Moench) Voss), black spruce (*P. mariana* (Mill.) Britton et al.), Alaska birch (*Betula neoalaskana* Sarg.) and trembling aspen (*Populus tremuloides* Michx.), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate [@Zwieback_2024]. The ongoing outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The nearest precedent for what follows such an outbreak is the Kenai Peninsula, where the 1987 to 2000 event was tracked through its vegetation change and forest regeneration [@Boucher_2006] and where stand susceptibility in Lutz and Sitka spruce had already been classified from stand structure [@Roynolds_1996]. The temporal window of the study spans the full history of this outbreak, from its onset around 2016 through the most recent survey year, observed by annual Sentinel-2 and Landsat composites; earlier Landsat years enter only as the undisturbed pre-outbreak baseline against which the outbreak trajectory was measured. Model training and cross-validation blocks span the confirmatory study window, a 39,050 km2 frame around the reference footprint; the Talkeetna to Byers Lake footprint of the independent severity reference serves as the held-out evaluation area for the severity product. A larger application extent, the Matanuska-Susitna Borough, receives the trained model's wall-to-wall severity and progression maps for management use; predictions outside the confirmatory window are application products whose transfer was not confirmed by the cross-validation, and were labelled accordingly. One limit follows from that choice of extent and is stated here rather than deferred. The design samples one outbreak in one region, so nothing in it estimates how the models would transfer to the Kenai Peninsula, to Interior Alaska or to another *Dendroctonus* system, and the cross-validation bounds error within this region alone. Severity summaries are additionally reported per stand of the state Mat-Su Borough forest inventory for use by forest managers.
 
-All spatial figures shared one cartographic standard. The working grid was WGS 84 UTM zone 5N, matching the severity reference grid, graticules were drawn in the same projected grid, and every map declared its coordinate reference system and representative fraction. @fig-studyarea locates the study area and the recorded outbreak footprint.
+All spatial figures shared one cartographic standard. The working grid was WGS 84 UTM zone 5N, matching the severity reference grid, graticules were drawn in the same projected grid in kilometres, and every map carried its coordinate reference system, a scale bar and a north arrow. @fig-studyarea locates the sampled blocks and their folds over the terrain, with the recorded outbreak footprint and the boundary between UTM zones 5 and 6, which crosses the study window.
+
+```{r}
+#| label: studyarea-data
+#| echo: true
+#| output: false
+ctx <- "../02.inputs/context/naturalearth.gpkg"
+matsu <- st_read(ctx, "matsu_borough", quiet = TRUE) |> st_transform(32605)
+ev <- st_bbox(st_buffer(matsu, 15000))
+within_ev <- function(layer, crs) {
+  st_read(ctx, layer, quiet = TRUE,
+          wkt_filter = st_as_text(st_transform(st_as_sfc(ev), crs))) |>
+    st_transform(32605)
+}
+riv <- within_ev("rivers", 4326)
+rds <- within_ev("roads", 4326)
+plc <- within_ev("places_census", 4269) |>
+  subset(name %in% c("Cantwell", "Talkeetna", "Petersville", "Skwentna",
+                     "Willow", "Sutton-Alpine", "Wasilla", "Palmer"))
+ids_map <- st_read(
+  "../02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE,
+  query = paste("SELECT SURVEY_YEAR, Shape FROM",
+                "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10",
+                "WHERE SURVEY_YEAR >= 2016 AND DCA_CODE IN (11009,80007)"),
+  wkt_filter = st_as_text(st_transform(st_as_sfc(ev), 3338))
+) |>
+  st_transform(32605)
+meridian <- st_sfc(st_linestring(cbind(-150, seq(58, 66, 0.1))), crs = 4326) |>
+  st_transform(32605)
+if (!file.exists("../02.inputs/covariates/dem_3dep_200m.tif")) {
+  download.file(
+    paste0("https://elevation.nationalmap.gov/arcgis/rest/services/",
+           "3DEPElevation/ImageServer/exportImage?bbox=",
+           paste(ev[c("xmin", "ymin", "xmax", "ymax")], collapse = ","),
+           "&bboxSR=32605&imageSR=32605&size=",
+           paste(round(c(ev["xmax"] - ev["xmin"], ev["ymax"] - ev["ymin"]) / 200),
+                 collapse = ","),
+           "&format=tiff&pixelType=F32&interpolation=RS_BilinearInterpolation",
+           "&f=image"),
+    "../02.inputs/covariates/dem_3dep_200m.tif", mode = "wb", quiet = TRUE
+  )
+}
+dem <- rast("../02.inputs/covariates/dem_3dep_200m.tif")
+hill <- shade(terrain(dem, "slope", unit = "radians"),
+              terrain(dem, "aspect", unit = "radians"), angle = 40, direction = 315)
+studyarea_cap <- paste0(
+  "Study area in Southcentral Alaska on a hillshade of the 5 m interferometric ",
+  "radar digital terrain model the United States Geological Survey 3D Elevation ",
+  "Program serves for Alaska, exported at ", round(res(dem)[1]), " m. Squares are ",
+  "the ", nrow(blocks), " sampled blocks, filled by cross-validation fold and ",
+  "drawn larger than their ", round(sqrt(as.numeric(st_area(blocks[1, ])))),
+  " m footprint. The thin black outline is the application extent, the ",
+  "Matanuska-Susitna Borough; the dashed orange rectangle is the confirmatory ",
+  "study window holding every block and fold; the heavy black rectangle is the ",
+  "footprint of the independent severity reference. Red polygons are aerial ",
+  "detection survey records of spruce beetle damage, ", min(ids_map$SURVEY_YEAR),
+  " to ", max(ids_map$SURVEY_YEAR), ". The dotted line is the 150 degrees west ",
+  "meridian, where UTM zones 5 and 6 meet. Blue lines are rivers, dark grey lines ",
+  "are highways and labelled points are settlements (United States Census Bureau ",
+  "TIGER places; rivers and highways from Natural Earth 10 m). WGS 84 UTM zone 5N ",
+  "(EPSG:32605), graticule in km."
+)
+```
 
 ```{r}
 #| label: fig-studyarea
 #| echo: true
-#| fig-cap: "Analysis extents in Southcentral Alaska. The black outline is the application extent, the Matanuska-Susitna Borough (United States Census Bureau boundary); the dashed orange rectangle is the confirmatory study window holding all training blocks and cross-validation folds; the red rectangle is the footprint of the independent severity reference. Grey polygons are aerial detection survey records of spruce beetle damage, 2016 to 2025. Blue lines are rivers, dark grey lines are highways, and labelled points are settlements (United States Census Bureau TIGER places; rivers and highways from Natural Earth 10 m). Representative fraction and coordinate reference system as titled; graticule in UTM zone 5N eastings and northings."
-#| fig-width: 6.8
-#| fig-height: 7.9
-#| fig-dpi: 400
-library(ggplot2); library(ggspatial)
-tpl_map <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
-foot <- st_as_sf(as.polygons(ext(tpl_map), crs = crs(tpl_map)))
-ctx <- file.path(inputs, "context", "naturalearth.gpkg")
-matsu38 <- st_transform(st_read(ctx, "matsu_borough", quiet = TRUE), 3338)
-bb3338 <- ext(vect(matsu38)) + 20000
-tmp <- tempfile(fileext = ".gpkg")
-gdal_utils("vectortranslate",
-           file.path(inputs, "ids-region10", "AK_Region10_AllYears.gdb"), tmp,
-           options = c("-where",
-                       "SURVEY_YEAR >= 2016 AND DCA_CODE IN (11009,80007)",
-                       "-spat", bb3338[1], bb3338[3], bb3338[2], bb3338[4],
-                       "DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10"))
-ids_map <- st_transform(st_read(tmp, quiet = TRUE), st_crs(foot))
-matsu <- st_transform(st_read(ctx, "matsu_borough", quiet = TRUE), 32605)
+#| fig-cap: !expr studyarea_cap
+#| fig-width: 7
+#| fig-height: 5.6
+foot <- rast("../02.inputs/zwieback-severity/merged_ref_h_c90c.tif") |>
+  ext() |>
+  as.polygons(crs = "EPSG:32605") |>
+  st_as_sf()
 win_rect <- st_as_sfc(st_bbox(st_buffer(foot, 50000)))
-if (!file.exists(ctx)) {
-  dir.create(dirname(ctx), showWarnings = FALSE)
-  grab <- function(type, cat) {
-    x <- rnaturalearth::ne_download(10, type, cat, returnclass = "sf")
-    x$name <- x[[intersect(c("name", "NAME"), names(x))[1]]]
-    x["name"]
-  }
-  st_write(grab("rivers_lake_centerlines", "physical"), ctx, "rivers",
-           quiet = TRUE, delete_dsn = TRUE)
-  st_write(grab("roads", "cultural"), ctx, "roads", quiet = TRUE,
-           append = TRUE)
-  st_write(grab("populated_places", "cultural"), ctx, "places",
-           quiet = TRUE, append = TRUE)
-}
-if (!"places_census" %in% st_layers(ctx)$name) {
-  pl <- tigris::places(state = "AK", year = 2023, progress_bar = FALSE)
-  pl$name <- pl$NAME
-  st_write(st_centroid(pl["name"]), ctx, "places_census", quiet = TRUE,
-           append = TRUE)
-}
-ev <- st_bbox(st_buffer(matsu, 15000))
-clipctx <- function(layer) {
-  x <- st_read(ctx, layer, quiet = TRUE)
-  x <- x[st_transform(st_as_sfc(ev), st_crs(x)), ]
-  suppressWarnings(st_crop(st_transform(x, 32605), ev))
-}
-riv <- clipctx("rivers"); rds <- clipctx("roads")
-plc <- clipctx("places_census")
-plc <- plc[plc$name %in% c("Cantwell", "Talkeetna", "Trapper Creek",
-                           "Petersville", "Skwentna", "Willow", "Houston",
-                           "Big Lake", "Sutton-Alpine", "Wasilla", "Palmer"), ]
-plc <- st_sf(st_drop_geometry(plc), geometry = st_geometry(plc))
-gw <- ev["xmax"] - ev["xmin"]; gh <- ev["ymax"] - ev["ymin"]
-sub_utm <- sprintf("1:%s  ·  UTM zone 5N (EPSG:32605)",
-                   format(round(as.numeric(gw) / 0.170, -5), big.mark = " "))
-
-map_theme <- theme_bw(base_size = 8) +
-  theme(panel.grid = element_line(colour = "grey70", linewidth = .25,
-                                  linetype = "dotted"),
-        axis.title = element_blank(),
-        axis.text = element_text(size = 6, colour = "grey25"),
-        plot.title = element_text(face = "bold", size = 8.5,
-                                  margin = margin(b = 1)),
-        plot.subtitle = element_text(size = 6, colour = "grey35",
-                                     margin = margin(b = 3)),
-        legend.position = "bottom",
-        legend.title = element_text(size = 6.5),
-        legend.text = element_text(size = 6))
-north <- annotation_north_arrow(location = "tr", which_north = "true",
-  height = unit(6, "mm"), width = unit(5, "mm"),
-  pad_x = unit(1.2, "mm"), pad_y = unit(1.2, "mm"),
-  style = north_arrow_orienteering(text_size = 5, line_width = .6,
-    fill = c("white", "grey20"), text_col = "grey20"))
-plate <- annotate("rect", xmin = ev["xmin"] + .885 * gw, xmax = ev["xmax"],
-                  ymin = ev["ymax"] - .115 * gh, ymax = ev["ymax"],
-                  fill = "white", alpha = .72, colour = NA)
-
-fig_study <- ggplot() +
-  geom_sf(data = ids_map, aes(fill = "Aerial survey spruce beetle damage"),
-          colour = NA) +
-  geom_sf(data = riv, aes(colour = "River"), linewidth = .4) +
-  geom_sf(data = rds, aes(colour = "Highway"), linewidth = .45) +
-  geom_sf(data = matsu, aes(colour = "Application extent, Mat-Su Borough"),
-          fill = NA, linewidth = .5) +
-  geom_sf(data = win_rect, aes(colour = "Confirmatory study window"),
-          fill = NA, linewidth = .5, linetype = "22") +
-  geom_sf(data = foot, aes(colour = "Severity reference footprint"),
-          fill = NA, linewidth = .6) +
-  geom_sf(data = plc, aes(shape = "Settlement"), colour = "grey15",
-          size = .9) +
-  ggrepel::geom_text_repel(
-    data = plc, aes(label = name, geometry = geometry),
-    stat = "sf_coordinates", size = 2.3, colour = "grey15",
-    fontface = "italic", seed = 7, box.padding = .25,
-    bg.color = "white", bg.r = .12) +
-  scale_fill_manual(NULL, values = c("Aerial survey spruce beetle damage" =
-                                       "grey82")) +
-  scale_colour_manual(NULL, values = c(
-    "Application extent, Mat-Su Borough" = "grey10",
-    "Confirmatory study window" = "#E67E22",
-    "Severity reference footprint" = "#C0392B",
-    "River" = "steelblue3", "Highway" = "grey35")) +
-  scale_shape_manual(NULL, values = c("Settlement" = 16)) +
-  guides(colour = guide_legend(order = 2, nrow = 3),
-         fill = guide_legend(order = 1, nrow = 3),
-         shape = guide_legend(order = 3, nrow = 3)) +
-  coord_sf(crs = 32605, datum = st_crs(32605), expand = FALSE,
-           xlim = ev[c("xmin", "xmax")], ylim = ev[c("ymin", "ymax")]) +
-  plate + north + map_theme +
-  labs(title = "Analysis extents", subtitle = sub_utm)
+fig_study <-
+  tm_shape(in_km(hill), bbox = st_bbox(in_km(st_as_sfc(ev)))) +
+  tm_raster(col.scale = tm_scale_continuous(values = c("grey35", "white")),
+            col.legend = tm_legend_hide()) +
+  tm_shape(in_km(ids_map)) + tm_fill(fill = "#C0392B", fill_alpha = 0.6) +
+  tm_shape(in_km(riv)) + tm_lines(col = "steelblue3", lwd = 0.4) +
+  tm_shape(in_km(rds)) + tm_lines(col = "grey30", lwd = 0.5) +
+  tm_shape(in_km(matsu)) + tm_borders(col = "grey10", lwd = 0.6) +
+  tm_shape(in_km(win_rect)) + tm_borders(col = "#E67E22", lwd = 0.7, lty = "dashed") +
+  tm_shape(in_km(foot)) + tm_borders(col = "black", lwd = 0.9) +
+  tm_shape(in_km(meridian)) + tm_lines(col = "grey10", lwd = 0.5, lty = "dotted") +
+  tm_shape(in_km(blocks)) +
+  tm_symbols(fill = "fold", shape = 22, size = 0.35, col = "grey15", lwd = 0.3,
+             fill.scale = tm_scale_categorical(values = "brewer.dark2"),
+             fill.legend = tm_legend(title = "Fold")) +
+  tm_shape(in_km(plc)) +
+  tm_symbols(shape = 16, size = 0.15, col = "grey15") +
+  tm_text("name", size = 0.5, fontface = "italic", xmod = 0.3, ymod = 0.35,
+          col = "grey15", bgcol = "white", bgcol_alpha = 0.6) +
+  tm_add_legend(type = "polygons", labels = "Aerial survey spruce beetle damage",
+                fill = "#C0392B", fill_alpha = 0.6, col = NA) +
+  tm_add_legend(
+    type = "lines",
+    labels = c("Application extent, Mat-Su Borough", "Confirmatory study window",
+               "Severity reference footprint", "150 degrees west", "Highway",
+               "River"),
+    col = c("grey10", "#E67E22", "black", "grey10", "grey30", "steelblue3"),
+    lty = c("solid", "dashed", "solid", "dotted", "solid", "solid"),
+    lwd = c(0.6, 0.7, 0.9, 0.5, 0.5, 0.4)
+  ) +
+  map_frame("Analysis extents, UTM zone 5N (EPSG:32605)")
 fig_study
-dir.create(file.path(root, "03.outputs", "figures"), showWarnings = FALSE)
-ggsave(file.path(root, "03.outputs", "figures", "fig-studyarea.png"),
-       fig_study, width = 170, height = 195, units = "mm", dpi = 500,
-       bg = "white")
+tmap_save(fig_study, "../03.outputs/figures/fig-studyarea.png", width = 7,
+          height = 5.6, units = "in", dpi = 400,
+          outer.margins = c(0.08, 0.08, 0.01, 0.01))
 ```
 
 ## Outbreak history
