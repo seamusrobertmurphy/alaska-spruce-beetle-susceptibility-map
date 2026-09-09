@@ -66,13 +66,25 @@ the reading found. That is the same standard the seed corpus was held to and the
 | `Morris_2016` | Journal of Applied Ecology, priority questions on bark beetle impacts | Abstract only, 2026-09-08 |
 | `Dalponte_2022` | Remote Sensing, Sentinel-2 outbreak mapping at crown level in the Italian Alps | Abstract only, 2026-09-08 |
 | `Candotti_2022` | Remote Sensing, multi-temporal Sentinel-2 framework for wind and bark beetle damage | Abstract only, 2026-09-08 |
-| `Yuan_2021` | IEEE JSTARS, self-supervised transformer pretraining for satellite image time series | Abstract only, 2026-09-08 |
+| `Yuan_2021` | IEEE JSTARS, self-supervised transformer pretraining for satellite image time series | **Read in full 2026-09-08**, 14 pages. Cited for label scarcity, and the paper states it verbatim: "deep learning methods suffer from overfitting when labeled data are scarce". |
 | `Kong_2018` | Remote Sensing, recurrent networks for online disturbance detection in image time series | Abstract only, 2026-09-08 |
 | `Tang_2022` | IEEE GRSL, channel attention over a temporal convolutional network | Abstract only, 2026-09-08 |
-| `Miller_2024` | IEEE GRSM, review of deep learning for satellite image time series | Abstract only, 2026-09-08 |
-| `Hall_2016` | The Canadian Entomologist, review of remote sensing of forest pest damage | Abstract only, 2026-09-08 |
+| `Miller_2024` | IEEE GRSM, review of deep learning for satellite image time series | **Read in full 2026-09-08**, 38 pages, retrieved from arXiv. Cited only as the survey of the field, which is what it is. |
+| `Hall_2016` | The Canadian Entomologist, review of remote sensing of forest pest damage | **Read in full 2026-09-08**, 61 pages. The claim it carries is on its first page: "aerial survey consistency and spatial coverage may be insufficient for detailed monitoring across Canada's vast forest-land base. Remote sensing can augment these methods". The manuscript sentence was tightened to keep the hedge "may be", which the first draft had dropped. |
 | `Hart_2017` | Ecology, summer and winter drought driving *Dendroctonus rufipennis* outbreak | Abstract only, 2026-09-08 |
 | `DeRose_2012` | Forest Science, spatial and temporal dynamics of Engelmann spruce mortality | Title only, no abstract available |
 | `DeRose_2011` | Remote Sensing of Environment, dendrochronology with a disturbance index | Title only, no abstract available |
 | `Housman_2018` | Remote Sensing, insect and disease survey data against satellite products. The search resolved a preprints.org record first; the peer-reviewed version at doi 10.3390/rs10081184 is what entered the bibliography | Abstract only, 2026-09-08 |
 | `Marvasti_Zadeh_2023` | ACM Computing Surveys, review of early bark beetle detection by remote sensing and machine learning | Abstract only, 2026-09-08 |
+
+### Retrieval attempt, 2026-09-08
+
+Fifteen of the twenty are open access by Unpaywall, but only three could be retrieved by
+script. Wiley, ScienceDirect, MDPI, Oxford University Press and the ACM Digital Library all
+returned an HTML bot challenge in place of the PDF, and every one of those was caught by
+checking that the file begins with `%PDF` rather than by trusting the file extension, which
+is the same guard the chip fetcher needed. The five with no open version at all remain
+`Meigs_2011`, `Meddens_2013`, `Senf_2015`, `DeRose_2011` and `DeRose_2012`, all paywalled.
+
+Retrieving the remaining seventeen needs either institutional access or a browser session,
+so it is not something a script can finish. Until then their rows above stand as written.
