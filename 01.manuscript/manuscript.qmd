@@ -109,8 +109,8 @@ in_km <- function(x, km = "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs") {
   crs(x) <- km
   x
 }
-map_frame <- function(title, legend = tm_pos_out("right", "center")) {
-  tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70") +
+map_frame <- function(title, legend = tm_pos_out("right", "center"), ...) {
+  tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70", ...) +
     tm_scalebar(position = c("left", "bottom"), text.size = 0.5) +
     tm_compass(position = c("right", "top"), size = 1.2, text.size = 0.5) +
     tm_title(title, size = 0.8, fontface = "bold") +
@@ -1431,7 +1431,93 @@ The cell was 30 m and not the 90 m of the optical grid. Ten metres is the produc
 
 Every date was kept rather than composited, because the multi-temporal speckle filter takes its noise reduction from the length of the series rather than from averaging neighbouring pixels together. The filter was implemented in `05.scripts/15_mt_speckle_filter.py` from the operator source in the Sentinel-1 Toolbox and its successor the Microwave Toolbox, `MultiTemporalSpeckleFilterOp`, which cite @Quegan_2000 as their reference; the two versions differ in 48 lines and change the algorithm in none, and the description here is of the operator rather than of the paper, which was not read. Each date keeps its own local mean over a 3 by 3 window, the ratios of every image to its own local mean are averaged across all dates, and each date's local mean is multiplied back, so the filter is unbiased per date and leaves real change between dates in place while the speckle cancels across the stack. The stack was filtered whole, every scene on orbit 131 from June 2017 at every block, and the filtered stack was written to `02.inputs/derived/s1_block_stack_30m_mtfiltered.npz`. The first extraction had omitted this step and suppressed speckle with a 7 by 7 focal mean on each date, which is why it kept arriving at coarse cells and a discouraging noise floor, and a monthly composite built that way on the 90 m grid is retained as the measure of what the filter had to remove. On that unfiltered composite, across `r unique(s1_floor90$n_years)` years and `r format(unique(s1_floor90$n_cells), big.mark = ",")` cells, the year-to-year standard deviation of one 90 m cell had a median of `r sprintf("%.2f", floor90("VV"))` dB in July VV, `r sprintf("%.2f", floor90("VH"))` dB in July VH, `r sprintf("%.2f", floor90("VV", 8))` dB in August VV and `r sprintf("%.2f", floor90("VH", 8))` dB in August VH. Those spreads were taken over all blocks, the damaged ones included, so they carry signal as well as noise and are not a floor.
 
-The floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. Two quantities were taken at each cell. Repeatability, the spread between scenes inside one calendar month, where nothing in the forest can have changed, fell with the filter from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH, over `r format(floor30("repeatability_n", "VV", "unfiltered"), big.mark = ",")` cell-months before and `r format(floor30("repeatability_n", "VV", "mt_filtered"), big.mark = ",")` after. The year-to-year floor, the spread of the monthly mean at one cell across years for the same calendar month, which is what a multi-year change has to clear, fell from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, over `r format(floor30("year_to_year_n", "VV", "unfiltered"), big.mark = ",")` and `r format(floor30("year_to_year_n", "VV", "mt_filtered"), big.mark = ",")` cell-months, so the filter removed `r sprintf("%.0f", removed("VV"))` per cent of that spread in VV and `r sprintf("%.0f", removed("VH"))` per cent in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered year-to-year floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. That was the floor at one cell in one year and not the model's floor, which has not been measured, because a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here.
+The floor was measured where nothing had happened, on the `r unique(s1_floor30$blocks)` blocks in which the aerial survey never recorded damage, at 30 m, June through September, before and after the filter, by `05.scripts/18_noise_floor_undamaged_30m.py`. Two quantities were taken at each cell. Repeatability, the spread between scenes inside one calendar month, where nothing in the forest can have changed, fell with the filter from `r sprintf("%.2f", rep_floor("VV", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VV"))` dB in VV and from `r sprintf("%.2f", rep_floor("VH", "unfiltered"))` to `r sprintf("%.2f", rep_floor("VH"))` dB in VH, over `r format(floor30("repeatability_n", "VV", "unfiltered"), big.mark = ",")` cell-months before and `r format(floor30("repeatability_n", "VV", "mt_filtered"), big.mark = ",")` after. The year-to-year floor, the spread of the monthly mean at one cell across years for the same calendar month, which is what a multi-year change has to clear, fell from `r sprintf("%.2f", yr_floor("VV", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VV"))` dB in VV and from `r sprintf("%.2f", yr_floor("VH", "unfiltered"))` to `r sprintf("%.2f", yr_floor("VH"))` dB in VH, over `r format(floor30("year_to_year_n", "VV", "unfiltered"), big.mark = ",")` and `r format(floor30("year_to_year_n", "VV", "mt_filtered"), big.mark = ",")` cell-months, so the filter removed `r sprintf("%.0f", removed("VV"))` per cent of that spread in VV and `r sprintf("%.0f", removed("VH"))` per cent in VH. Set against the total canopy removal that @R_etschi_2019 measured by windthrow, `r sprintf("%.2f", ref_db("windthrow_vv_db"))` dB in VV and `r sprintf("%.2f", ref_db("windthrow_vh_db"))` dB in VH (their page 11), the filtered year-to-year floor gave ratios of `r sprintf("%.2f", canopy_ratio[["VV"]])` and `r sprintf("%.2f", canopy_ratio[["VH"]])`, so at a single 30 m cell in a single year total canopy removal sat at the floor and the low-severity mortality this study exists to detect sat below it. That was the floor at one cell in one year and not the model's floor, which has not been measured, because a 90 m stand cell holds nine 30 m cells and the model reads a trajectory across many months and years rather than one difference; what the model can detect is what the pre-registered tests measure, and nothing is claimed for it here. @fig-filter shows what the filter does to one block on one date.
+
+```{python}
+#| label: filter-data
+#| echo: true
+#| output: false
+#| python.reticulate: false
+#| engine.path: /opt/local/bin/python3
+import os, csv, zipfile
+import numpy as np
+
+
+def block_vv(path, date, block):
+    with zipfile.ZipFile(path) as zf:
+        dates, blocks = np.load(zf.open("date.npy")), np.load(zf.open("block.npy"))
+        with zf.open("stack.npy") as f:
+            np.lib.format.read_magic(f)
+            shape = np.lib.format.read_array_header_1_0(f)[0]
+            n = shape[3] * shape[4]
+            i = np.flatnonzero(dates == date)[0] * shape[1] * shape[2]
+            i += np.flatnonzero(blocks == block)[0]
+            f.seek(f.tell() + 4 * i * n)
+            return np.frombuffer(f.read(4 * n), dtype="float32").reshape(shape[3:])
+
+
+if not os.path.exists("../03.outputs/filter_effect_block.csv"):
+    with zipfile.ZipFile("../02.inputs/derived/s1_block_stack_30m.npz") as zf:
+        dates, blocks = np.load(zf.open("date.npy")), np.load(zf.open("block.npy"))
+        x0, y1 = np.load(zf.open("x0.npy")), np.load(zf.open("y1.npy"))
+    date = next(d for d in dates if d.startswith("2019-07"))
+    k = next(i for i, b in enumerate(blocks) if not np.isnan(
+        block_vv("../02.inputs/derived/s1_block_stack_30m.npz", date, b)).any())
+    cells = zip(
+        block_vv("../02.inputs/derived/s1_block_stack_30m.npz", date, blocks[k]).ravel(),
+        block_vv("../02.inputs/derived/s1_block_stack_30m_mtfiltered.npz", date,
+                 blocks[k]).ravel())
+    with open("../03.outputs/filter_effect_block.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["block", "date", "x0", "y1", "before", "after"])
+        w.writerows([blocks[k], date, x0[k], y1[k], b, a] for b, a in cells)
+```
+
+```{r}
+#| label: filter-effect
+#| echo: true
+#| output: false
+fe <- read.csv("../03.outputs/filter_effect_block.csv")
+n <- sqrt(nrow(fe))
+fe_r <- rast(nrows = n, ncols = n, xmin = fe$x0[1], xmax = fe$x0[1] + 30 * n,
+             ymin = fe$y1[1] - 30 * n, ymax = fe$y1[1], crs = "EPSG:32605",
+             nlyrs = 2, names = c("before", "after"))
+values(fe_r) <- 10 * log10(as.matrix(fe[, c("before", "after")]))
+fe_lim <- range(values(fe_r), na.rm = TRUE)
+fe_sd <- apply(values(fe_r), 2, sd, na.rm = TRUE)
+filter_cap <- paste0(
+  "One block on one date before and after the multi-temporal speckle filter, ",
+  "VV backscatter in decibels at ", res(fe_r)[1], " m over the ", n, " by ", n,
+  " cells of block ", as.integer(sub("block_", "", fe$block[1])), " on ",
+  format(as.Date(fe$date[1]), "%d %B %Y"), ", on one colour range. The filter ",
+  "takes each date's ratio to its own local mean in a 3 by 3 window and ",
+  "averages those ratios across every date in the series, so the outer ring ",
+  "of cells, where the window has no neighbour, is left empty. The standard ",
+  "deviation across the block's cells fell from ", sprintf("%.2f", fe_sd[["before"]]),
+  " to ", sprintf("%.2f", fe_sd[["after"]]), " dB. WGS 84 UTM zone 5N ",
+  "(EPSG:32605), graticule in m."
+)
+```
+
+```{r}
+#| label: fig-filter
+#| echo: true
+#| fig-cap: !expr filter_cap
+#| fig-width: 7
+#| fig-height: 3.6
+fe_panel <- function(lyr, title, legend) {
+  tm_shape(fe_r[[lyr]]) +
+    tm_raster(col.scale = tm_scale_continuous(values = "viridis", limits = fe_lim),
+              col.legend = legend) +
+    map_frame(title, legend = tm_pos_in("right", "bottom"), n.x = 3, n.y = 3)
+}
+tmap_arrange(
+  fe_panel("before", "(a) Before the filter", tm_legend_hide()),
+  fe_panel("after", "(b) After the filter",
+           tm_legend(title = "VV (dB)", reverse = TRUE, height = 6)),
+  ncol = 2, outer.margins = 0.01
+)
+```
 
 From the filtered stack the series was composited to calendar month and written as a local cube for the sits package under the naming `SENTINEL-1_RTC_TBL01_<band>_<date>.tif`, `r length(s1_cube_files)` rasters holding VV and VH in linear power, one per band per month over `r length(s1_cube_dates)` months from `r format(min(s1_cube_dates), "%B %Y")` to `r format(max(s1_cube_dates), "%B %Y")`, on the 30 m grid nesting inside the optical cube's 90 m cells with the same bounding box. Read with `parse_info = c("X1", "X2", "tile", "band", "date")`, sits loads it as one tile and reports it regular, so no regularisation step stands between the cube and the models. The two Kennaugh elements are not written to disk but formed inside sits where the model is built, K0 as the sum and K1 as the difference of the VV and VH intensities after equations 1 and 2 of @Hechtl_2025, and only then is the result converted to decibels, in that order, because the decibel of a sum is not the sum of decibels. K0 and K1 are an invertible transform of the pair and carry no information VV and VH do not; K1 is the axis sensitive to the storey the return comes from, and the ratio of VH to VV is the same contrast made free of scale. The remaining two elements of the dual polarised Kennaugh matrix, K5 and K8, encode phase differences that a Ground Range Detected product has discarded, so they are unavailable here, and @Hechtl_2025 report K0 first and K1 second in every epoch of their own importance analysis, so the two elements that survive the product are the two carrying their signal. @fig-season draws the cube's July and November of one year block by block, so the seasonal cycle the Limitations return to is seen rather than reported.
 
