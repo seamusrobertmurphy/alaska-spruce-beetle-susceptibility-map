@@ -370,7 +370,59 @@ climvar <- read.csv(climvar_f)
 cvr <- function(ch) climvar$ratio[climvar$channel == ch]
 ```
 
-Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks of the cross-validation design described below rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand.
+Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks of the cross-validation design described below rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand. @fig-warmth-map shows the summer warmth index over the blocks in the warmest and the coolest year of the raster record, which is what a timing channel looks like on the ground.
+
+```{r}
+#| label: warmth-map-data
+#| echo: true
+#| output: false
+clim_raster_years <- subset(clim, year %in% 2012:2023)
+warm_cool <- clim_raster_years$year[c(which.max(clim_raster_years$warmth),
+                                      which.min(clim_raster_years$warmth))]
+warmth <- rast(sprintf("../02.inputs/climate/clim_%d.tif", warm_cool),
+               lyrs = c(1, 4)) |>
+  crop(st_buffer(st_as_sfc(st_bbox(blocks)), 5000))
+names(warmth) <- warm_cool
+warmth_lim <- range(values(warmth), na.rm = TRUE)
+warmth_map_cap <- paste0(
+  "Summer warmth index, the cumulative degree-hours above 17 °C from June to ",
+  "September, from the Daymet version 4 rasters at ", res(warmth)[1] / 1000,
+  " km over the sampled blocks, in (a) ", warm_cool[1], ", the warmest year of ",
+  "the raster record, and (b) ", warm_cool[2], ", the coolest, on one colour ",
+  "range from ", round(warmth_lim[1]), " to ", format(round(warmth_lim[2]), big.mark = ","),
+  " degree-hours. The regional mean was ",
+  format(round(clim$warmth[clim$year == warm_cool[1]]), big.mark = ","),
+  " degree-hours in the warm year and ",
+  round(clim$warmth[clim$year == warm_cool[2]]), " in the cool one, so the cool ",
+  "year is nearly blank on a scale that the warm year fills, which is the ",
+  "sense in which the channel carries timing rather than place. Grey points ",
+  "are the ", nrow(blocks), " sampled blocks. WGS 84 UTM zone 5N (EPSG:32605), ",
+  "graticule in km."
+)
+```
+
+```{r}
+#| label: fig-warmth-map
+#| echo: true
+#| fig-cap: !expr warmth_map_cap
+#| fig-width: 7
+#| fig-height: 4.2
+warmth_panel <- function(lyr, title, legend) {
+  tm_shape(in_km(warmth[[lyr]])) +
+    tm_raster(col.scale = tm_scale_continuous(values = "-brewer.yl_or_rd",
+                                              limits = warmth_lim),
+              col.legend = legend) +
+    tm_shape(in_km(blocks)) + tm_borders(col = "grey15", lwd = 0.5) +
+    map_frame(title, legend = tm_pos_in("right", "bottom"))
+}
+tmap_arrange(
+  warmth_panel(1, sprintf("(a) %d, warmest year", warm_cool[1]), tm_legend_hide()),
+  warmth_panel(2, sprintf("(b) %d, coolest year", warm_cool[2]),
+               tm_legend(title = "Degree-hours", reverse = TRUE, height = 8,
+                         width = 7)),
+  ncol = 2, outer.margins = 0.01
+)
+```
 
 ## Literature search
 
@@ -1528,8 +1580,8 @@ From the filtered stack the series was composited to calendar month and written 
 k0_blocks <- function(month) {
   r <- rast(sprintf("../02.inputs/derived/s1_cube_30m/SENTINEL-1_RTC_TBL01_%s_2020-%02d-01.tif",
                     c("VV", "VH"), month))
-  10 * log10(rowSums(terra::extract(r, vect(blocks), fun = mean, na.rm = TRUE,
-                                    ID = FALSE)))
+  sapply(seq_len(nrow(blocks)), function(i)
+    10 * log10(sum(global(crop(r, vect(blocks[i, ])), "mean", na.rm = TRUE)$mean)))
 }
 blocks$k0_jul <- k0_blocks(7)
 blocks$k0_nov <- k0_blocks(11)
