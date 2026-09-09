@@ -718,6 +718,7 @@ def check_venue_requirements_on_file(base):
         "a dated record", art
 
 
+
 def check_restore_point(base):
     """A restore point exists for the current session."""
     d = os.path.expanduser(

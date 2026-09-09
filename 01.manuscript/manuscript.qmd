@@ -85,6 +85,14 @@ fmt_tbl <- function(df, right = NULL, caption = NULL) {
   if (!is.null(caption)) ft <- flextable::set_caption(ft, caption)
   flextable::set_table_properties(ft, layout = "autofit", width = 1)
 }
+
+# House figure theme, defined here beside the table format because several
+# figures use it and a theme defined inside one of them is not available to the
+# figures above it. That ordering cost a render on 2026-09-08.
+library(ggplot2)
+th <- theme_bw(base_size = 8) +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold", size = 8.5))
 ```
 
 # Introduction
@@ -1121,14 +1129,6 @@ if (length(todo_c)) {
 
 @fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion.
 
-```{r}
-#| label: climograph-numbers
-#| echo: true
-#| output: false
-warm_m <- clim_m[which.max(clim_m$tmax), ]
-```
-
-The threshold sits above the season rather than inside it. The warmest month is `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 is `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature does not reach the 17 °C univoltinism threshold at all and degree-hours accrue only on the warmer days within the window. That is why the warmth index varies so strongly between years, and it is the reason a summer that runs a degree above normal changes the generation time of a population that an average summer leaves on a two-year cycle [@Hansen_2001].
 
 ```{r}
 #| label: climograph-build
@@ -1168,6 +1168,15 @@ if (!file.exists(mon_f)) {
 clim_m <- read.csv(mon_f)
 clim_m$month_name <- month.abb[clim_m$month]
 ```
+
+```{r}
+#| label: climograph-numbers
+#| echo: true
+#| output: false
+warm_m <- clim_m[which.max(clim_m$tmax), ]
+```
+
+The threshold sits above the season rather than inside it. The warmest month is `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 is `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature does not reach the 17 °C univoltinism threshold at all and degree-hours accrue only on the warmer days within the window. That is why the warmth index varies so strongly between years, and it is the reason a summer that runs a degree above normal changes the generation time of a population that an average summer leaves on a two-year cycle [@Hansen_2001].
 
 ```{r}
 #| label: fig-climograph
@@ -1211,10 +1220,7 @@ ggplot(clim_m, aes(x = month)) +
 #| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index: cumulative degree-hours above 17 °C, June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
-library(ggplot2); library(patchwork)
-th <- theme_bw(base_size = 8) +
-  theme(panel.grid.minor = element_blank(),
-        plot.title = element_text(face = "bold", size = 8.5))
+library(patchwork)
 pa <- ggplot(clim, aes(year, warmth)) +
   geom_col(fill = "#C0392B", width = .75) +
   geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
