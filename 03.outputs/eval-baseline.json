@@ -15,7 +15,7 @@
     "H1 is disconfirmed by a fold-wise difference distribution centred at or below zero; concretely, if the baseline matches the deep model's low-severity recall (as it would if SWIR change carries more low-severity signal than Zwieback's single-epoch analysis could see), H1 fails. H2 is disconfirmed if bracket supervision adds nothing over midpoints, which is plausible if the true onset distribution is tight within brackets.",
     "2. **H3 (directional, added to the Holm family, now three tests):** TempCNN with"
   ],
-  "main_figure_count": 4,
+  "main_figure_count": 5,
   "main_table_count": 5,
   "pending_markers": 9,
   "prose_colons": 4,
@@ -1915,7 +1915,7 @@
   },
   "raster_unreadable_at_baseline": [],
   "recorded": "2026-09-08T21:36:21Z",
-  "recorded_manuscript": "2026-09-09T00:38:46Z",
+  "recorded_manuscript": "2026-09-09T00:50:01Z",
   "results_shells": 4,
   "severity_readers": [
     "climate-build",
