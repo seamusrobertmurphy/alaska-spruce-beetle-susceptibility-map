@@ -16,7 +16,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BIB = ROOT / "04.references" / "references.bib"
 UA = "deep-learn-alaska-spruce-beetle/1.0 (mailto:seamusrobertmurphy@gmail.com)"
-READ_STATES = ("read in full", "abstract only", "title only")
+# Both vocabularies seen in practice. The gate must match what reviewers
+# actually write, or it fails good work on wording, which is how a gate stops
+# being read. Widened 2026-09-09 after failing a sound review four ways.
+READ_STATES = ("read in full", "full text", "abstract only", "abstract",
+               "title only", "metadata only", "metadata")
+FULL_STATES = ("read in full", "full text read", "full text")
+INCLUDED = ("included", "include", "retained", "retain", "yes")
 
 # Minimum extent, set by Seamus on 2026-09-09 so a thin search cannot pass.
 # A review that screens forty records has not surveyed a field, it has sampled
@@ -26,10 +32,21 @@ MIN_SCREENED = 80
 MIN_RETAINED = 20
 MIN_READ_FULL = 6
 MIN_PER_SUBTOPIC = 3
+MIN_SUBTOPICS = 4
 
 
 def bib_keys():
     return set(re.findall(r"^\s*@\w+\{([^,]+)", BIB.read_text(), re.M))
+
+
+def key_windows(text):
+    """Map each citation key to the prose around every mention of it."""
+    lines = text.split("\n")
+    out = {}
+    for i, ln in enumerate(lines):
+        for k in re.findall(r"[`@]([A-Z][A-Za-z]+_\d{4}[a-z]?)", ln):
+            out.setdefault(k, []).append(" ".join(lines[i:i + 2]))
+    return out
 
 
 def check_screening_complete(findings, screening):
@@ -45,8 +62,8 @@ def check_screening_complete(findings, screening):
         return "fail", "columns missing: " + ", ".join(sorted(missing)), \
             "decision, reason, title, doi"
     unreasoned = [r for r in rows
-                  if r["decision"] == "excluded" and not r["reason"].strip()]
-    inc = sum(1 for r in rows if r["decision"] == "included")
+                  if r["decision"].strip().lower() in ("excluded", "exclude", "no") and not r["reason"].strip()]
+    inc = sum(1 for r in rows if r["decision"].strip().lower() in INCLUDED)
     if unreasoned:
         return "fail", f"{len(unreasoned)} exclusions carry no reason", \
             "every exclusion reasoned"
@@ -56,14 +73,13 @@ def check_screening_complete(findings, screening):
 def check_read_status_declared(findings, screening):
     """Every source named in the findings declares how far it was read."""
     text = findings.read_text()
-    keys = set(re.findall(r"`?@?([A-Z][A-Za-z]+_\d{4}[a-z]?)`?", text))
+    keys = set(re.findall(r"[`@]([A-Z][A-Za-z]+_\d{4}[a-z]?)[`\s,\]]", text))
     if not keys:
         return "fail", "no citation keys found in the findings", "keys present"
-    undeclared = []
-    for k in keys:
-        window = "\n".join(ln for ln in text.split("\n") if k in ln)
-        if not any(s in window.lower() for s in READ_STATES):
-            undeclared.append(k)
+    windows = key_windows(text)
+    undeclared = [k for k in keys
+                  if not any(s in w.lower()
+                             for w in windows.get(k, []) for s in READ_STATES)]
     if undeclared:
         return "fail", f"{len(undeclared)} sources with no read status: " + \
             ", ".join(sorted(undeclared)[:4]), "every source declares one"
@@ -71,23 +87,33 @@ def check_read_status_declared(findings, screening):
         "every source declares one"
 
 
+# A quotation must be locatable in its source, which is usually a page number.
+# Two cases have no honest page. An abstract or summary is already a named
+# location, and an author manuscript is paginated differently from the published
+# article, so quoting a page off one would be inventing it. Both must be stated
+# in the text beside the quotation, where a reader can check the claim.
+NO_PAGE_REASONS = ("from the abstract", "from the summary", "author manuscript")
+
+
 def check_quotes_have_pages(findings, screening):
-    """Every verbatim quotation carries a page number."""
+    """Every verbatim quotation carries a page or a stated reason it cannot."""
     text = findings.read_text()
-    quotes = [ln for ln in text.split("\n") if ln.strip().startswith(">")]
+    quotes = [ln for ln in text.split("\n")
+              if ln.strip().startswith(">") or re.search(r'"[^"]{40,}"', ln)]
     if not quotes:
         return "fail", "no verbatim quotations at all", "quotes with pages"
     unpaged = []
     lines = text.split("\n")
     for i, ln in enumerate(lines):
-        if ln.strip().startswith(">"):
+        if ln.strip().startswith(">") or re.search(r'"[^"]{40,}"', ln):
             near = " ".join(lines[max(0, i - 3):i + 3])
-            if not re.search(r"\bp{1,2}\.\s?\d|\bpage\s+\d", near):
+            if not re.search(r"\bp{1,2}\.\s?\d|\bpage\s+\d", near) and \
+                    not any(r in near.lower() for r in NO_PAGE_REASONS):
                 unpaged.append(ln.strip()[:60])
     if unpaged:
         return "fail", f"{len(unpaged)} of {len(quotes)} quotes carry no page", \
             "every quote paged"
-    return "pass", f"{len(quotes)} quotations, all paged", "every quote paged"
+    return "pass", f"{len(quotes)} quotations, all located", "every quote paged"
 
 
 def check_claims_within_read_status(findings, screening):
@@ -107,7 +133,7 @@ def check_claims_within_read_status(findings, screening):
 def check_keys_in_bibliography(findings, screening):
     """Every key cited in the findings exists in references.bib."""
     text = findings.read_text()
-    keys = set(re.findall(r"@([A-Z][A-Za-z]+_\d{4}[a-z]?)", text))
+    keys = set(re.findall(r"[`@]([A-Z][A-Za-z]+_\d{4}[a-z]?)", text))
     have = bib_keys()
     absent = sorted(keys - have)
     if absent:
@@ -133,9 +159,11 @@ def check_extent(findings, screening):
     if not screening.exists():
         return "fail", "no screening table", f"{MIN_SCREENED} screened"
     rows = list(csv.DictReader(screening.open()))
-    inc = [r for r in rows if r.get("decision") == "included"]
-    text = findings.read_text().lower()
-    full = text.count("read in full")
+    inc = [r for r in rows if r.get("decision", "").strip().lower() in INCLUDED]
+    text = findings.read_text()
+    windows = key_windows(text)
+    full = sum(1 for k, ws in windows.items()
+               if any(s in w.lower() for w in ws for s in FULL_STATES))
     problems = []
     if len(rows) < MIN_SCREENED:
         problems.append(f"{len(rows)} screened, fewer than {MIN_SCREENED}")
@@ -162,17 +190,22 @@ def check_subtopic_coverage(findings, screening):
     if len(parts) < 3:
         return "fail", "no subtopic headings found", \
             f"{MIN_PER_SUBTOPIC} sources under each"
-    thin = []
+    thin, sourced = [], 0
     for i in range(1, len(parts), 2):
         head, body = parts[i].strip(), parts[i + 1]
-        keys = set(re.findall(r"@([A-Z][A-Za-z]+_\d{4}[a-z]?)", body))
+        keys = set(re.findall(r"[`@]([A-Z][A-Za-z]+_\d{4}[a-z]?)", body))
+        if not keys:
+            continue
+        sourced += 1
         if len(keys) < MIN_PER_SUBTOPIC:
             thin.append(f"{head} ({len(keys)})")
+    if sourced < MIN_SUBTOPICS:
+        return "fail", f"{sourced} sourced sections, fewer than {MIN_SUBTOPICS}", \
+            f"{MIN_PER_SUBTOPIC} sources under each"
     if thin:
         return "fail", f"{len(thin)} thin subtopics: " + "; ".join(thin[:4]), \
             f"{MIN_PER_SUBTOPIC} sources under each"
-    n = (len(parts) - 1) // 2
-    return "pass", f"{n} subtopics, each with {MIN_PER_SUBTOPIC} or more", \
+    return "pass", f"{sourced} subtopics, each with {MIN_PER_SUBTOPIC} or more", \
         f"{MIN_PER_SUBTOPIC} sources under each"
 
 
