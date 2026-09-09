@@ -923,7 +923,7 @@ data.frame(year = sb$SURVEY_YEAR[sb$DCA_CODE == 11009],
 
 ## Satellite composites
 
-Annual peak-growing-season composites were assembled in Google Earth Engine [@Gorelick_2017], with the complete compilation code executing within this manuscript. Sentinel-2 Level-2A surface reflectance from 2016 onward supplies ten-metre visible, red-edge, NIR and SWIR bands; Landsat Collection 2 Level-2 surface reflectance from Landsat 5 through 9 extends the record to the pre-outbreak baseline at 30 m, with bands harmonized across sensors as in @Perbet_2024. Joining the two sensors is not free of consequence, because the Operational Land Imager and the MultiSpectral Instrument differ in band pass, view geometry and gain, and those differences have been characterised directly by cross-comparison of top-of-atmosphere, surface and nadir-adjusted reflectance [@Zhang_2018] and by empirical cross-sensor regression [@Chastain_2019]. The reference implementation of a joined record is the Harmonized Landsat and Sentinel-2 product [@Claverie_2018; @Ju_2025], and adjustments have also been derived from the time series itself rather than from paired scenes [@Shang_2019], while cross-sensor annual compositing at national scale is established practice [@Griffiths_2019]. Compositing follows the July to August window standard for boreal disturbance work [@Perbet_2024]. Cloud and shadow were masked with the Cloud Score+ quality dataset [@Pasquarella_2023], retaining pixels whose cs score meets or exceeds 0.40, and each annual composite is a quality mosaic that selects the clearest observation per cell as ranked by the same score; where a summer yields no clear observation, the cell is gap-filled from the prior year. The assembled composites and their observation counts are listed in Table S5. Southcentral Alaska's persistent cloud cover makes the per-cell count of clear observations itself a covariate. Composites were reduced to stand cells on the reference grid before any model sees them. The interferometric synthetic aperture radar (IFSAR) 5 m digital elevation model and the conifer-fraction map of @Macander_2022 enter as static covariates. Predictor composites were assembled below without reference to any severity label; no predictor-outcome relationship was examined before pre-registration.
+Annual peak-growing-season composites were assembled in Google Earth Engine [@Gorelick_2017], with the complete compilation code executing within this manuscript. Sentinel-2 Level-2A surface reflectance from 2016 onward supplies ten-metre visible, red-edge, NIR and SWIR bands; Landsat Collection 2 Level-2 surface reflectance from Landsat 5 through 9 extends the record to the pre-outbreak baseline at 30 m, with bands harmonized across sensors as in @Perbet_2024. Joining the two sensors is not free of consequence, because the Operational Land Imager and the MultiSpectral Instrument differ in band pass, view geometry and gain, and those differences have been characterised directly by cross-comparison of top-of-atmosphere, surface and nadir-adjusted reflectance [@Zhang_2018] and by empirical cross-sensor regression [@Chastain_2019]. The reference implementation of a joined record is the Harmonized Landsat and Sentinel-2 product [@Claverie_2018; @Ju_2025], and adjustments have also been derived from the time series itself rather than from paired scenes [@Shang_2019], while cross-sensor annual compositing at national scale is established practice [@Griffiths_2019]. Compositing follows the July to August window standard for boreal disturbance work [@Perbet_2024]. Cloud and shadow were masked with the Cloud Score+ quality dataset [@Pasquarella_2023], retaining pixels whose cs score meets or exceeds 0.40, and each annual composite is a quality mosaic that selects the clearest observation per cell as ranked by the same score; where a summer yields no clear observation, the cell is gap-filled from the prior year. Every acquisition entering every composite is listed by sensor, date and archive identifier in Table S5. Southcentral Alaska's persistent cloud cover makes the per-cell count of clear observations itself a covariate. Composites were reduced to stand cells on the reference grid before any model sees them. The interferometric synthetic aperture radar (IFSAR) 5 m digital elevation model and the conifer-fraction map of @Macander_2022 enter as static covariates. Predictor composites were assembled below without reference to any severity label; no predictor-outcome relationship was examined before pre-registration.
 
 ## Composite assembly
 
@@ -1024,6 +1024,50 @@ for (y in 2014:2018) {
 ```
 
 @fig-clearobs shows that record, because a mean per composite hides the cells that carried almost no observation at all, and it is those cells the gap-filling rule reaches for.
+
+```{r}
+#| label: scene-inventory
+#| echo: true
+#| output: false
+# Every acquisition that entered a composite, listed rather than counted. The
+# collection, the date window and the bounds are the same three filters the
+# build chunks above use, so this is the provenance of what was composited and
+# not a list of what happened to be available. Written once and read
+# thereafter, because it is a query against Earth Engine.
+scene_f <- file.path(root, "03.outputs", "scene_inventory.csv")
+if (!file.exists(scene_f)) {
+  library(rgee)
+  if (!exists("roi")) {
+    ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+    bb <- as.vector(ext(project(tpl, "EPSG:4326")))
+    roi <- ee$Geometry$Rectangle(c(bb[1], bb[3], bb[2], bb[4]))
+  }
+  grab <- function(coll, y, sensor) {
+    ic <- ee$ImageCollection(coll)$
+      filterDate(sprintf("%d-07-01", y), sprintf("%d-09-01", y))$
+      filterBounds(roi)
+    ids <- unlist(ic$aggregate_array("system:index")$getInfo())
+    if (!length(ids)) return(NULL)
+    data.frame(sensor = sensor, year = y, scene = ids)
+  }
+  rows <- c(lapply(2014:2018, function(y)
+              grab("LANDSAT/LC08/C02/T1_L2", y, "Landsat 8")),
+            lapply(2016:2025, function(y)
+              grab("COPERNICUS/S2_SR_HARMONIZED", y, "Sentinel-2")))
+  inv <- do.call(rbind, rows)
+  # The acquisition date is taken from the identifier rather than from
+  # system:time_start, which returned 1970 for every scene on this build.
+  d <- ifelse(inv$sensor == "Landsat 8",
+              sub("^LC08_[0-9]{6}_([0-9]{8})$", "\\1", inv$scene),
+              sub("^([0-9]{8})T.*$", "\\1", inv$scene))
+  stopifnot(all(grepl("^[0-9]{8}$", d)))
+  inv$date <- as.Date(d, "%Y%m%d")
+  inv <- inv[order(inv$sensor, inv$date, inv$scene), ]
+  write.csv(inv, scene_f, row.names = FALSE)
+}
+scenes <- read.csv(scene_f)
+scenes$date <- as.Date(scenes$date)
+```
 
 ```{r}
 #| label: clearobs-build
@@ -2127,16 +2171,8 @@ fmt_tbl(do.call(rbind, lapply(split(tq, tq$epoch), function(d)
 ```{r}
 #| label: supp-composites
 #| echo: true
-fmt_tbl(do.call(rbind, lapply(built, function(f) {
-  r <- rast(f)
-  data.frame(sensor = ifelse(startsWith(basename(f), "s2"),
-                             "Sentinel-2", "Landsat 8"),
-             year = sub("^\\w+_(\\d{4})\\.tif$", "\\1", basename(f)),
-             layers = nlyr(r),
-             mean_clear_obs = round(global(r$n_clear, "mean",
-                                           na.rm = TRUE)[1, 1], 1))
-})), right = "year",
-        caption = "Table S5. Assembled annual composites on the 90 m reference grid, with the mean per-cell count of clear observations entering each composite. Landsat 8 carries the 2014 to 2018 baseline and early outbreak and Sentinel-2 the record from 2019, as pre-registered. Sentinel-2 composites for 2016 to 2018 are also built and listed, and their clear-observation counts show why they cannot carry those years, Level-2A surface reflectance being sparse over this area before 2019.")
+fmt_tbl(scenes[, c("sensor", "year", "date", "scene")], right = "year",
+        caption = "Table S5. Every satellite acquisition entering the annual composites, one row per scene, with its sensor, the composite year it belongs to, its acquisition date and its archive identifier. The listing comes from the same collection, date window and bounds filters the build chunks apply, so it is the provenance of what was composited rather than an inventory of what was available. Landsat 8 carries 2014 to 2018 and Sentinel-2 carries 2019 onward, as pre-registered; the Sentinel-2 scenes listed for 2016 to 2018 are the few that exist over this area before the archive densifies, which is why those years rest on Landsat.")
 ```
 
 ```{r}
