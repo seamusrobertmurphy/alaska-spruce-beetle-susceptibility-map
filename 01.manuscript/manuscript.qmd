@@ -1099,6 +1099,44 @@ step_tab <- do.call(rbind, lapply(split(traj, traj$band), function(d) {
 The step between 2018 and 2019 is the sensor boundary, where the record changes from Landsat 8 to Sentinel-2, and the harmonisation has not removed it. In shortwave infrared 2 that step is `r sprintf("%+.4f", step_tab$boundary[step_tab$band == "B12"])` reflectance against a median absolute step of `r sprintf("%.4f", step_tab$other_median[step_tab$band == "B12"])` across every other year in the record, a ratio of `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B12"])`, and in shortwave infrared 1 the ratio is `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B11"])`. In both bands the boundary is the largest single step in twelve years. This bears directly on the pre-registered baseline, which differences the 2019 to 2021 mean against the 2014 to 2016 mean and therefore straddles the boundary, so part of what that difference measures is the sensor rather than the stand. The direction compounds the problem, since the step raises post-outbreak shortwave infrared, which is the direction mortality moves it. A step of this kind is what the published cross-sensor coefficients exist to remove [@Zhang_2018; @Chastain_2019], and what the Harmonized Landsat and Sentinel-2 product applies as a matter of course [@Claverie_2018; @Ju_2025]; neither was applied to this cube, whose harmonisation follows the band mapping of @Perbet_2024 alone. The size of the effect is measured here rather than assumed, and correcting it is a change to the baseline that requires a dated amendment rather than a quiet fix.
 
 ```{r}
+#| label: step-by-damage
+#| echo: true
+#| output: false
+# Whether the step is the sensor or the stand, tested without any published
+# coefficient, because the two papers carrying those coefficients could not be
+# retrieved. If the step is the sensor it is the same in blocks the aerial
+# survey never recorded damage in as in blocks it did. The damage flag is the
+# survey-based stratification variable, not a severity value, so this touches
+# no severity raster.
+blk_d <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                     quiet = TRUE)
+blk_d <- data.frame(block = seq_len(nrow(blk_d)), damage = blk_d$damage)
+step_blk <- do.call(rbind, lapply(split(traj, list(traj$block, traj$band)),
+  function(d) {
+    d <- d[order(d$year), ]
+    i <- which(d$year == 2019)
+    if (!length(i) || i == 1) return(NULL)
+    data.frame(block = d$block[1], band = d$band[1],
+               step = d$value[i] - d$value[i - 1])
+  }))
+step_blk <- merge(step_blk, blk_d, by = "block")
+# A block with no clear observation in either year has no step to compare, so
+# it is dropped here and the counts reported are the blocks actually used.
+step_blk <- step_blk[!is.na(step_blk$step), ]
+step_test <- do.call(rbind, lapply(split(step_blk, step_blk$band), function(d) {
+  a <- d$step[d$damage]; b <- d$step[!d$damage]
+  w <- suppressWarnings(wilcox.test(a, b))
+  data.frame(band = d$band[1],
+             med_damage = median(a), iqr_damage = IQR(a),
+             med_none = median(b), iqr_none = IQR(b),
+             n_damage = length(a), n_none = length(b),
+             W = unname(w$statistic), p = w$p.value)
+}))
+```
+
+The step is the sensor rather than the stand, on the evidence available here. Across the `r step_test$n_damage[1]` blocks in which the aerial survey recorded damage the median 2018 to 2019 step in shortwave infrared 2 was `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B12"])` reflectance, against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B12"])` across the `r step_test$n_none[1]` blocks in which it recorded none, a difference no rank-sum test distinguishes [W = `r sprintf("%.0f", step_test$W[step_test$band == "B12"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B12"])`]. Shortwave infrared 1 behaves the same way, `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B11"])` against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B11"])` [W = `r sprintf("%.0f", step_test$W[step_test$band == "B11"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B11"])`]. A step of the same size in stands with no recorded mortality as in stands with it is an instrument boundary rather than an outbreak, and in both shortwave-infrared bands the undamaged blocks moved slightly further than the damaged ones, which is the opposite of what mortality would produce. The two visible and near-infrared bands do separate the groups weakly, red at p = `r sprintf("%.2f", step_test$p[step_test$band == "B04"])` and near infrared at p = `r sprintf("%.2f", step_test$p[step_test$band == "B08"])`, so the boundary is not purely instrumental everywhere in the spectrum; it is instrumental in the two bands the detectability floor rests on. This was tested without applying any published cross-sensor coefficient, because neither of the two papers carrying those coefficients could be retrieved through an open repository, and the survey damage flag used here is the stratification variable rather than a severity value.
+
+```{r}
 #| label: fig-trajectory
 #| echo: true
 #| fig-cap: "Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the text quantifies. The dashed line marks the 2016 outbreak onset."
