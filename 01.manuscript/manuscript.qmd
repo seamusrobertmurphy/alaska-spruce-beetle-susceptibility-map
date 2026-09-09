@@ -50,7 +50,7 @@ execute:
   echo: true
   warning: false
   message: false
-  error: true
+  error: false
   comment: NA
 engine: knitr
 citeproc: true
@@ -984,6 +984,16 @@ data.frame(year = sb$SURVEY_YEAR[sb$DCA_CODE == 11009],
            n_polygons = sb$n_polygons[sb$DCA_CODE == 11009],
            hectares = round(sb$acres[sb$DCA_CODE == 11009] * 0.40468564))
 ```
+
+## Radar record
+
+The predictor record is Sentinel-1 Ground Range Detected imagery in interferometric wide swath mode, dual-polarisation VV and VH, from 2017 to 2025, composited by calendar month. The decision to build on radar rather than on optical composites was taken on 2026-09-09 and is recorded with the measurements that forced it in `05.tasks/2026-09-09-sensor-design-decision.md`; the amendment to the pre-registration is dated 2026-09-09 and stands unsigned until the author approves it. Cloud is the binding constraint on optical observation in Southcentral Alaska, and radar does not observe through it so much as ignore it, which is why a monthly step is available here where the optical record supported only an annual one.
+
+Three filters define the record and each removes a source of variation that would otherwise be read as canopy change. Only descending passes are retained, so look direction is constant across the series, following the convention in the author's own flood dynamics work; over the sampled blocks this keeps 1,353 of the 2,124 dual-polarisation scenes. Only 2017 onward is retained, because that is when this frame switched to dual polarisation, and the 43 scenes of 2014 and 149 of 2015 carry VV alone, from which neither Kennaugh element can be formed. And speckle is suppressed by a seven by seven focal mean on each polarisation before any element is computed, again following that convention, because multi-temporal averaging alone leaves residual speckle at the block scale.
+
+Two Kennaugh elements enter as channels, following equations 1 and 2 of @Hechtl_2025, who define K0 as the sum and K1 as the difference of the two polarisation intensities. Both polarisations are converted from decibels to linear power before the sum and difference are taken, because adding decibels adds logarithms and yields a quantity with no physical meaning. The remaining two elements of the dual-polarised Kennaugh matrix, K5 and K8, encode phase differences, which a Ground Range Detected product has discarded, so they are unavailable here; @Hechtl_2025 report K0 first and K1 second in every epoch of their own importance analysis, so the two elements that survive the product are the two carrying their signal.
+
+Earth Engine's collection arrives radiometrically calibrated and terrain corrected through the Sentinel-1 toolbox, but it does not apply the DEM-based calibration to flattening gamma that ends the processing chain of @Hechtl_2025. Whether that omission matters over the Susitna lowlands, which are flat by comparison with the Bavarian slopes that motivated it, is measured below rather than assumed either way.
 
 ## Satellite composites
 
