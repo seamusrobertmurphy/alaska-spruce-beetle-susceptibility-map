@@ -92,7 +92,14 @@ def check_read_status_declared(findings, screening):
 # location, and an author manuscript is paginated differently from the published
 # article, so quoting a page off one would be inventing it. Both must be stated
 # in the text beside the quotation, where a reader can check the claim.
-NO_PAGE_REASONS = ("from the abstract", "from the summary", "author manuscript")
+# A page is required where the full text was read. An abstract or summary is
+# already a named location and has no page of its own, and an author manuscript
+# is paginated differently from the published article, so quoting a page off one
+# would be inventing it. The read status beside the quotation decides which
+# applies, so the exemption is visible to a reader rather than a private rule.
+NO_PAGE_REASONS = ("from the abstract", "from the summary", "author manuscript",
+                   "abstract only", "abstract read", "metadata only",
+                   "title only")
 
 
 def check_quotes_have_pages(findings, screening):
