@@ -1574,7 +1574,39 @@ pb <- ggplot(clim, aes(year)) +
 pa / pb
 ```
 
-These enter the subsequences as additional per-year channels; Daymet currently extends through 2023, and later years carry an availability flag in place of measured values until the forcing series updates. One property was stated plainly, in that within a single study window climate varies far more between years than between cells, so these channels contribute chiefly timing information; whether that information improves detection is exactly what the third hypothesis tests, and elevational lapse across the window's 1,500 m relief provides the residual spatial contrast.
+These enter the subsequences as additional per-year channels; Daymet currently extends through 2023, and later years carry an availability flag in place of measured values until the forcing series updates.
+
+```{r}
+#| label: climate-variance
+#| echo: true
+#| output: false
+# Whether these channels carry timing information, spatial information or both,
+# measured over the blocks the models actually see rather than over the whole
+# frame, which includes the Alaska Range and inflates the spatial spread.
+climvar_f <- file.path(root, "03.outputs", "climate_variance.csv")
+if (!file.exists(climvar_f)) {
+  cf <- sort(list.files(file.path(inputs, "climate"),
+                        pattern = "^clim_[0-9]{4}[.]tif$", full.names = TRUE))
+  blk_c <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                       quiet = TRUE)
+  nm <- c("summer warmth index", "winter minimum", "lagged summer mean")
+  cv <- do.call(rbind, lapply(1:3, function(b) {
+    st <- rast(lapply(cf, function(x) rast(x)[[b]]))
+    v <- terra::extract(st, vect(sf::st_transform(blk_c, crs(st))),
+                        fun = mean, na.rm = TRUE, ID = FALSE)
+    v <- v[stats::complete.cases(v), ]
+    data.frame(channel = nm[b], blocks = nrow(v),
+               between_year = sd(colMeans(v)),
+               between_block = mean(apply(v, 2, sd)))
+  }))
+  cv$ratio <- cv$between_year / cv$between_block
+  write.csv(cv, climvar_f, row.names = FALSE)
+}
+climvar <- read.csv(climvar_f)
+cvr <- function(ch) climvar$ratio[climvar$channel == ch]
+```
+
+Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand.
 
 ## Subsequence sampling
 
