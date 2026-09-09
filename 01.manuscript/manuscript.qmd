@@ -208,7 +208,6 @@ if (length(todo_c)) {
 
 @fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion.
 
-
 ```{r}
 #| label: climograph-build
 #| echo: true
@@ -530,7 +529,7 @@ spread_yr <- do.call(rbind, lapply(split(spread, spread$year), function(d)
 spread_fit <- lm(lat ~ year, spread_yr)
 ```
 
-Across `r nrow(spread_yr)` survey years the area-weighted mean latitude of recorded damage moved north by `r sprintf("%.2f", coef(spread_fit)[2] * diff(range(spread_yr$year)))` degrees, about `r sprintf("%.0f", coef(spread_fit)[2] * diff(range(spread_yr$year)) * 111)` km [F(1, `r spread_fit$df.residual`) = `r sprintf("%.2f", summary(spread_fit)$fstatistic[1])`, p = `r sprintf("%.3f", summary(spread_fit)$coefficients[2, 4])`, R² = `r sprintf("%.3f", summary(spread_fit)$r.squared)`]. Three things bound that number. The trend explains under a quarter of the year-to-year variance, so it describes a drift rather than a march. The survey records where observers flew, so a shift in the recorded centre is partly a shift in effort. And the mass at the start of the record is the Kenai Peninsula outbreak while the mass at the end is the Susitna lowlands, so this is the centre of recorded damage moving between two events rather than one population tracked as it moves.
+Across `r nrow(spread_yr)` survey years the area-weighted mean latitude of recorded damage moved north by `r sprintf("%.2f", coef(spread_fit)[2] * diff(range(spread_yr$year)))` degrees, about `r sprintf("%.0f", coef(spread_fit)[2] * diff(range(spread_yr$year)) * 111)` km \[F(1, `r spread_fit$df.residual`) = `r sprintf("%.2f", summary(spread_fit)$fstatistic[1])`, p = `r sprintf("%.3f", summary(spread_fit)$coefficients[2, 4])`, R² = `r sprintf("%.3f", summary(spread_fit)$r.squared)`\]. Three things bound that number. The trend explains under a quarter of the year-to-year variance, so it describes a drift rather than a march. The survey records where observers flew, so a shift in the recorded centre is partly a shift in effort. And the mass at the start of the record is the Kenai Peninsula outbreak while the mass at the end is the Susitna lowlands, so this is the centre of recorded damage moving between two events rather than one population tracked as it moves.
 
 ```{r}
 #| label: fig-spread
@@ -615,10 +614,10 @@ data.frame(
 
 Reference labels were produced by machine-assisted digitisation of dead spruce crowns on the statewide sub-metre mosaics, acquired in 2020 at 0.5 m and in 2023 at 0.3 m resolution, over sample blocks stratified by conifer fraction and survey-recorded damage history. Imagery was obtained as four-band chips from the USDA NRCS image services, whose export endpoint carries the same mosaics. The route is public but the pixels are not, since the service records the Alaska Vivid imagery as a dataset licensed from Maxar to USDA-FPAC in 2020, with copyright retained by the vendor. Imagery was therefore processed locally and never redistributed, and what this study publishes from it are the derived crown delineations and stand-level severity fractions, not the pixels, on the same footing as the published delineations of @Zwieback_2024, which were drawn on proprietary imagery that their release could not include. Label preparation runs in four stages.
 
-1. **Pre-labelling.** The released dead-spruce network of @Zwieback_2024 is the only domain-tuned component available, but it cannot be applied to these mosaics as released. It was trained on seven pansharpened WorldView-2 bands, blue, green, yellow, red, red edge and two near-infrared bands, and its encoder's first layer was widened from three channels to seven to match; the four-band mosaics used here supply no yellow, red-edge or second near-infrared channel. The network was therefore adapted rather than applied. The first-layer weights for the four channels the two sensors share were retained, the remaining three discarded, and the network fine-tuned on the published crown labels of the same study, which were rasterised against mosaic imagery over their own delineation areas. Those areas, not the sample blocks, supply the tuning imagery, because the delineations intersect only four blocks and all four fall in the held-out reference fold.
-2. **Crown segmentation.** Candidate detections were refined into crown polygons with general-purpose segmentation models, DeepForest crown detection [@Weinstein_2019] supplying box prompts to the Segment Anything Model (SAM2) through the segment-geospatial toolchain [@Wu_2023], an established zero-shot pipeline for tree delineation. Segmentation runs on the project's cloud GPU; outputs are vector crown candidates scored by the dead-spruce probability.
-3. **Cleaning and triage.** Candidates below a minimum crown area or outside plausible crown geometry were dropped; overlapping detections were merged. Two annotators then accept, edit or reject each candidate independently in QGIS, with a third adjudicating disagreements [after @Khatri_Chhetri_2024]. Fully occluded dead spruce under closed deciduous canopy remain undetectable in RGB imagery and are an acknowledged limitation carried forward from @Zwieback_2024.
-4. **Aggregation, triangulation and classification.** Accepted crowns were rasterised to stand-cell areal severity fractions at 30 and 90 m, Mortality agent was inferred from context throughout, since no crown was confirmed by ground observation, so other agents of spruce death enter the labels as beetle kill at a rate this design cannot measure. Crown polygons were rasterised to stand-cell areal severity fractions at 30 and 90 m, and each labelled stand was classified as low, medium or high disturbance at the pre-registered severity breaks. Cross-epoch triangulation then assigned every crown a temporal state, either dead by 2020, died between 2020 and 2023, or alive through 2023, yielding interval-censored onset labels for the dating head, verified pre-mortality trajectories for exploratory green-stage analysis, and confirmed-alive negatives. The same comparison cleaned the labels, since a crown dead in 2020 must remain dead in 2023, and violations were returned to triage, a consistency check unavailable to single-epoch designs.
+1.  **Pre-labelling.** The released dead-spruce network of @Zwieback_2024 is the only domain-tuned component available, but it cannot be applied to these mosaics as released. It was trained on seven pansharpened WorldView-2 bands, blue, green, yellow, red, red edge and two near-infrared bands, and its encoder's first layer was widened from three channels to seven to match; the four-band mosaics used here supply no yellow, red-edge or second near-infrared channel. The network was therefore adapted rather than applied. The first-layer weights for the four channels the two sensors share were retained, the remaining three discarded, and the network fine-tuned on the published crown labels of the same study, which were rasterised against mosaic imagery over their own delineation areas. Those areas, not the sample blocks, supply the tuning imagery, because the delineations intersect only four blocks and all four fall in the held-out reference fold.
+2.  **Crown segmentation.** Candidate detections were refined into crown polygons with general-purpose segmentation models, DeepForest crown detection [@Weinstein_2019] supplying box prompts to the Segment Anything Model (SAM2) through the segment-geospatial toolchain [@Wu_2023], an established zero-shot pipeline for tree delineation. Segmentation runs on the project's cloud GPU; outputs are vector crown candidates scored by the dead-spruce probability.
+3.  **Cleaning and triage.** Candidates below a minimum crown area or outside plausible crown geometry were dropped; overlapping detections were merged. Two annotators then accept, edit or reject each candidate independently in QGIS, with a third adjudicating disagreements [after @Khatri_Chhetri_2024]. Fully occluded dead spruce under closed deciduous canopy remain undetectable in RGB imagery and are an acknowledged limitation carried forward from @Zwieback_2024.
+4.  **Aggregation, triangulation and classification.** Accepted crowns were rasterised to stand-cell areal severity fractions at 30 and 90 m, Mortality agent was inferred from context throughout, since no crown was confirmed by ground observation, so other agents of spruce death enter the labels as beetle kill at a rate this design cannot measure. Crown polygons were rasterised to stand-cell areal severity fractions at 30 and 90 m, and each labelled stand was classified as low, medium or high disturbance at the pre-registered severity breaks. Cross-epoch triangulation then assigned every crown a temporal state, either dead by 2020, died between 2020 and 2023, or alive through 2023, yielding interval-censored onset labels for the dating head, verified pre-mortality trajectories for exploratory green-stage analysis, and confirmed-alive negatives. The same comparison cleaned the labels, since a crown dead in 2020 must remain dead in 2023, and violations were returned to triage, a consistency check unavailable to single-epoch designs.
 
 The published crown labels of @Zwieback_2024, distributed under an attribution licence, additionally enter the training pool within their delineation areas, contributing temporal cuts at their image dates of 2018 and 2021. Combined with the 2020 and 2023 mosaic epochs, four temporal cuts are available in the Talkeetna to Byers Lake area, narrowing onset brackets there to one to two years. The severity rasters of @Zwieback_2024, by contrast, take no part in label preparation; they remain the untouched independent evaluation dataset described under Model evaluation.
 
@@ -1187,6 +1186,358 @@ c(label_areas = length(labs), extent_files = length(exts))
 
 Sketch-mapped damage polygons for Alaska, all survey years, US public domain. These were not used as labels, because positional accuracy was coarse, low-severity damage was under-recorded, and the intensity attribute counted faded trees per treed area, which was not commensurable with pixel-fraction severity [@Zwieback_2024]. They served two supporting roles, stratifying the label-block sample by recorded damage history, and, through the flown-area footprints, distinguishing surveyed absence from non-survey. Annual spruce beetle extent was tabulated here as published descriptive context, not as an outcome.
 
+```{python}
+#| eval: false
+
+
+var table = ee.FeatureCollection("FAO/GAUL/2015/level0"),
+    VH = ee.ImageCollection("projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH"),
+    VV = ee.ImageCollection("projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV");
+    
+    print('Polarization VV',VV.first())
+print('Polarization VH',VH.first())
+
+//var palettes = require('users/gena/packages:palettes')
+print('VV count',VV.size())
+print('VH count',VH.size())
+var palette = ['#081d58','#253494','#225ea8','#1d91c0','#41b6c4','#7fcdbb','#c7e9b4','#edf8b1','#ffffd9']
+
+
+Map.addLayer(VV.mosaic().clip(table),{min:-200,max:-60,palette:palette},'Backscatter VV',false)
+
+var palette = ['#f7fcf5','#e5f5e0','#c7e9c0','#a1d99b','#74c476','#41ab5d','#238b45','#006d2c','#00441b']
+Map.addLayer(VH.mosaic().clip(table),{min:-237,max:-70,palette:palette},'Backscatter VH',false)
+
+var Dark
+ = 
+[
+  {
+    "featureType": "all",
+    "elementType": "labels",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "all",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "all",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "saturation": 36
+      },
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 40
+      }
+    ]
+  },
+  {
+    "featureType": "all",
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      {
+        "visibility": "on"
+      },
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 16
+      }
+    ]
+  },
+  {
+    "featureType": "all",
+    "elementType": "labels.icon",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "visibility": "on"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 20
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 17
+      },
+      {
+        "weight": 1.2
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "labels",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "landscape",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 20
+      }
+    ]
+  },
+  {
+    "featureType": "landscape",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 21
+      }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "visibility": "simplified"
+      },
+      {
+        "color": "#8a4040"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "visibility": "on"
+      },
+      {
+        "color": "#ffffff"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 17
+      }
+    ]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 29
+      },
+      {
+        "weight": 0.2
+      }
+    ]
+  },
+  {
+    "featureType": "road.arterial",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 18
+      }
+    ]
+  },
+  {
+    "featureType": "road.arterial",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "color": "#ffffff"
+      },
+      {
+        "visibility": "on"
+      }
+    ]
+  },
+  {
+    "featureType": "road.local",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 16
+      }
+    ]
+  },
+  {
+    "featureType": "road.local",
+    "elementType": "geometry.fill",
+    "stylers": [
+      {
+        "visibility": "on"
+      },
+      {
+        "color": "#faf2f2"
+      }
+    ]
+  },
+  {
+    "featureType": "transit",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#000000"
+      },
+      {
+        "lightness": 19
+      }
+    ]
+  },
+  {
+    "featureType": "transit",
+    "elementType": "labels",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "transit",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#b4bcc2"
+      },
+      {
+        "lightness": 17
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels",
+    "stylers": [
+      {
+        "visibility": "on"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text",
+    "stylers": [
+      {
+        "visibility": "off"
+      }
+    ]
+  }
+]
+Map.setOptions('Dark', {Dark
+: Dark
+})
+```
+
 ```{r}
 #| label: ids-context
 #| echo: true
@@ -1224,23 +1575,12 @@ Two Kennaugh elements enter as channels, following equations 1 and 2 of @Hechtl_
 
 Earth Engine's collection arrives radiometrically calibrated and terrain corrected through the Sentinel-1 toolbox, but it does not apply the DEM-based calibration to flattening gamma that ends the processing chain of @Hechtl_2025. Whether that omission matters over the Susitna lowlands, which are flat by comparison with the Bavarian slopes that motivated it, is measured below rather than assumed either way.
 
-The chain was checked against an independent published one rather than trusted. The
-Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band
-backscatter of 2016 and 2017 at ten metre sampling, built by a different processor over the
-same ground and distributed through the Earth Engine community catalogue, so a disagreement
-in the block pattern would indict the chain here. Its values are stored as whole numbers
-holding decibels multiplied by ten, and its own file naming records the statistical
-parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence
-angle, which is not the same quantity as the gamma nought this study carries.
+The chain was checked against an independent published one rather than trusted. The Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band backscatter of 2016 and 2017 at ten metre sampling, built by a different processor over the same ground and distributed through the Earth Engine community catalogue, so a disagreement in the block pattern would indict the chain here. Its values are stored as whole numbers holding decibels multiplied by ten, and its own file naming records the statistical parameter as the temporal mean of sigma nought normalised to a thirty-eight degree incidence angle, which is not the same quantity as the gamma nought this study carries.
 
 ```{r}
 #| label: s1gbm-reference
 #| echo: true
 #| output: false
-# The normalised Sentinel-1 Global Backscatter Model over the sampled blocks. Ten
-# metres is the sampling of this product, not the resolution of the instrument,
-# which is 20 by 22 m, so it is read at its own scale and compared rather than
-# resampled.
 s1gbm_f <- file.path(root, "03.outputs", "s1gbm_blocks.csv")
 if (!file.exists(s1gbm_f)) {
   library(rgee)
@@ -1270,14 +1610,60 @@ s1val <- read.csv(file.path(root, "03.outputs", "s1gbm_validation.csv"))
 sig2gam <- -10 * log10(cos(38 * pi / 180))
 ```
 
-Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of
-`r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and
-`r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here
-reproduces what an independent chain found over the same forest. The levels differ by
-`r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and
-`r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which
-`r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at
-thirty-eight degrees and is arithmetic rather than disagreement.
+Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
+
+```{r}
+#| label: fig-s1gbm
+#| echo: true
+#| fig-cap: "Mean Sentinel-1 backscatter over the study area from the normalised Global Backscatter Model of @Bauer_Marschallinger_2021, co-polarised VV above and cross-polarised VH below, with the 160 sampled blocks drawn over them. The display range is the one the catalogue ships, -20 to -6 dB for VV and -23.7 to -7 dB for VH, converted from the stored integers rather than stretched to the data, so the two panels are comparable to any other rendering of this product. Values are the temporal mean of sigma nought over 2016 and 2017, normalised to a 38 degree incidence angle, on Equi7Grid North America at ten metre sampling."
+#| fig-height: 7
+library(tmap)
+if (!exists("ee_tile_url")) {
+  # One line, following the author's own flood dynamics work, which serves
+  # Earth Engine tiles to tmap without downloading the pixels.
+  ee_tile_url <- function(ee_image, vis_params) {
+    ee_image$getMapId(vis_params)$tile_fetcher$url_format
+  }
+}
+if (!exists("s1gbm_img")) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  s1gbm_img <- ee$ImageCollection(
+      "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV")$
+    mosaic()$rename("VV")$addBands(
+      ee$ImageCollection(
+        "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH")$
+      mosaic()$rename("VH"))
+}
+blk_v <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE)
+aoi_v <- st_as_sfc(st_bbox(st_buffer(blk_v, 5000)))
+
+# The stored values are decibels times ten, so the display limits are the
+# catalogue's own, multiplied up rather than chosen by eye.
+vis_vv <- list(bands = list("VV"), min = -200, max = -60,
+               palette = c("#081d58", "#225ea8", "#41b6c4", "#c7e9b4", "#ffffd9"))
+vis_vh <- list(bands = list("VH"), min = -237, max = -70,
+               palette = c("#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"))
+
+tmap_mode("plot")
+m_vv <- tm_shape(st_transform(aoi_v, 4326)) +
+  tm_borders(col = NA) +
+  tm_tiles(ee_tile_url(s1gbm_img, vis_vv)) +
+  tm_shape(st_transform(blk_v, 4326)) +
+  tm_borders(col = "red", lwd = 0.6) +
+  tm_title("VV, -20 to -6 dB", size = 0.8)
+m_vh <- tm_shape(st_transform(aoi_v, 4326)) +
+  tm_borders(col = NA) +
+  tm_tiles(ee_tile_url(s1gbm_img, vis_vh)) +
+  tm_shape(st_transform(blk_v, 4326)) +
+  tm_borders(col = "red", lwd = 0.6) +
+  tm_title("VH, -23.7 to -7 dB", size = 0.8)
+tmap_arrange(m_vv, m_vh, ncol = 1)
+```
+
+@fig-s1gbm shows the two polarisations over the sampled blocks at the display range the
+catalogue ships, so the panels can be set beside any other rendering of the same product
+without a private stretch standing between them.
 
 
 ## Satellite composites
@@ -1649,7 +2035,7 @@ step_test <- do.call(rbind, lapply(split(step_blk, step_blk$band), function(d) {
 }))
 ```
 
-The step was the sensor rather than the stand, on the evidence available here. Across the `r step_test$n_damage[1]` blocks in which the aerial survey recorded damage the median 2018 to 2019 step in shortwave infrared 2 was `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B12"])` reflectance, against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B12"])` across the `r step_test$n_none[1]` blocks in which it recorded none, a difference no rank-sum test distinguishes [W = `r sprintf("%.0f", step_test$W[step_test$band == "B12"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B12"])`]. Shortwave infrared 1 behaves the same way, `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B11"])` against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B11"])` [W = `r sprintf("%.0f", step_test$W[step_test$band == "B11"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B11"])`]. A step of the same size in stands with no recorded mortality as in stands with it is an instrument boundary rather than an outbreak, and in both shortwave-infrared bands the undamaged blocks moved slightly further than the damaged ones, which is the opposite of what mortality would produce. The two visible and near-infrared bands do separate the groups weakly, red at p = `r sprintf("%.2f", step_test$p[step_test$band == "B04"])` and near infrared at p = `r sprintf("%.2f", step_test$p[step_test$band == "B08"])`, so the boundary is not purely instrumental everywhere in the spectrum; it is instrumental in the two bands the detectability floor rests on. This was tested without applying any published cross-sensor coefficient, because neither of the two papers carrying those coefficients could be retrieved through an open repository, and the survey damage flag used here is the stratification variable rather than a severity value.
+The step was the sensor rather than the stand, on the evidence available here. Across the `r step_test$n_damage[1]` blocks in which the aerial survey recorded damage the median 2018 to 2019 step in shortwave infrared 2 was `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B12"])` reflectance, against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B12"])` across the `r step_test$n_none[1]` blocks in which it recorded none, a difference no rank-sum test distinguishes \[W = `r sprintf("%.0f", step_test$W[step_test$band == "B12"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B12"])`\]. Shortwave infrared 1 behaves the same way, `r sprintf("%+.4f", step_test$med_damage[step_test$band == "B11"])` against `r sprintf("%+.4f", step_test$med_none[step_test$band == "B11"])` \[W = `r sprintf("%.0f", step_test$W[step_test$band == "B11"])`, p = `r sprintf("%.2f", step_test$p[step_test$band == "B11"])`\]. A step of the same size in stands with no recorded mortality as in stands with it is an instrument boundary rather than an outbreak, and in both shortwave-infrared bands the undamaged blocks moved slightly further than the damaged ones, which is the opposite of what mortality would produce. The two visible and near-infrared bands do separate the groups weakly, red at p = `r sprintf("%.2f", step_test$p[step_test$band == "B04"])` and near infrared at p = `r sprintf("%.2f", step_test$p[step_test$band == "B08"])`, so the boundary is not purely instrumental everywhere in the spectrum; it is instrumental in the two bands the detectability floor rests on. This was tested without applying any published cross-sensor coefficient, because neither of the two papers carrying those coefficients could be retrieved through an open repository, and the survey damage flag used here is the stratification variable rather than a severity value.
 
 ```{r}
 #| label: fig-trajectory
@@ -1812,7 +2198,6 @@ if (!file.exists(em_csv)) {
 endmember_tbl <- read.csv(em_csv)
 ```
 
-
 ```{r}
 #| label: em-numbers
 #| echo: true
@@ -1830,7 +2215,6 @@ emv <- function(est, b, col = "endmember")
 # the number. A figure typed twice is a figure that drifts once.
 EM_ASSUMED <- c(red = 0.040, nir = -0.060, swir16 = 0.055, swir22 = 0.045)
 ```
-
 
 Both estimators are reported in Table S7. The estimate covers `r endmember_tbl$n_cells[1]` stand cells reaching a maximum observed dead-crown fraction of `r endmember_tbl$max_sev[1]`. The two estimators answer different questions and only the second answers the one that matters. Regressing levels asks whether cells holding more dead crowns look different from cells holding none, a comparison that stand composition, slope and canopy shadow dominate; it returns an R² of `r sprintf("%.3f", emv("level", "swir16", "r2"))` in the shortwave infrared and a slope of the wrong sign, which is a statement about between-cell confounding rather than about mortality. Differencing each cell against its own pre-outbreak state removes those stable differences and estimates the quantity the mixing model actually defines. The change estimator puts the shortwave-infrared endmember at `r sprintf("%+.3f", emv("change", "swir16"))` with a 95 percent interval of `r sprintf("%+.3f to %+.3f", emv("change", "swir16", "ci_low"), emv("change", "swir16", "ci_high"))`, against the `r sprintf("%+.3f", EM_ASSUMED[["swir16"]])` assumed before measurement. The synthetic test below was run at both values so the consequence of the assumption is visible rather than asserted.
 
@@ -1950,7 +2334,6 @@ if (!all(file.exists(syn_f))) {
 }
 syn_recall <- read.csv(syn_f[1]); syn_onset <- read.csv(syn_f[2])
 ```
-
 
 ```{r}
 #| label: syn-numbers
@@ -2197,7 +2580,6 @@ det_shell[c("UA", "PA", "R90", "R90_sd")] <- "pending"
 fmt_tbl(det_shell, right = c("UA","PA","R90","R90_sd"))
 ```
 
-
 ## Onset dating
 
 @tbl-onset reports onset-year error under the two supervision regimes, testing H2, and gives mean absolute error and root-mean-square error in years, the share of predictions falling within the label bracket, and the fold-wise paired difference between triangulated and single-epoch supervision. The share falling inside the bracket is the more informative column, because mean absolute error against a bracketed truth penalises a prediction that is correct in every sense the labels can express.
@@ -2231,11 +2613,9 @@ fmt_tbl(h3_shell, right = c("Delta_R90", "Delta_MAE_yr", "CI95", "Wilcoxon_p"))
 
 Table S11 reports agreement with the untouched severity reference of @Zwieback_2024 in the Talkeetna to Byers Lake footprint, using only fold models whose training excluded the footprint, and carries the same error slate as @tbl-severity at 90 m and 30 m support, alongside the published within-study errors of the reference itself for context, which are not directly comparable and are marked as such.
 
-
 ## Outbreak progression
 
 Table S12 compares reconstructed annual outbreak area against the aerial survey record, reported as descriptive correspondence, giving mapped area, surveyed area, their ratio, and the intersection-over-union of the footprints per year.
-
 
 # Discussion
 
@@ -2253,11 +2633,11 @@ Five limitations are known by design. First, crown labels derive from visual int
 
 ## Operational implications
 
-[Pending: contingent on Tables S10 and S12.] The aerial detection survey remains the only annual statewide observation system, and nothing here replaces it; the question is what a free satellite complement adds. A model whose floor sits below 0.1 severity would flag dispersed mortality the surveys under-record, at annual cadence, over unflown terrain, for the cost of compute alone, with the reconstructed progression in Table S12 indicating how faithfully such a system would have tracked this outbreak had it run from 2016. The label pipeline is the transferable asset, since statewide sub-metre mosaics now recur, and each new epoch extends the interval-censored label set without new fieldwork. That is the same argument the survey programme reviews reach from the opposite direction, that remote sensing augments a survey whose consistency and coverage cannot scale to a continental forest estate [@Hall_2016; @Housman_2018], and it is the direction the record of insect disturbance has already taken elsewhere, where an annual national series now runs from 1985 [@White_2017; @Perbet_2025].
+\[Pending: contingent on Tables S10 and S12.\] The aerial detection survey remains the only annual statewide observation system, and nothing here replaces it; the question is what a free satellite complement adds. A model whose floor sits below 0.1 severity would flag dispersed mortality the surveys under-record, at annual cadence, over unflown terrain, for the cost of compute alone, with the reconstructed progression in Table S12 indicating how faithfully such a system would have tracked this outbreak had it run from 2016. The label pipeline is the transferable asset, since statewide sub-metre mosaics now recur, and each new epoch extends the interval-censored label set without new fieldwork. That is the same argument the survey programme reviews reach from the opposite direction, that remote sensing augments a survey whose consistency and coverage cannot scale to a continental forest estate [@Hall_2016; @Housman_2018], and it is the direction the record of insect disturbance has already taken elsewhere, where an annual national series now runs from 1985 [@White_2017; @Perbet_2025].
 
 # Conclusion
 
-[Pending: quantitative sentences follow the pre-registered analysis.] This study asks a bounded question with a decade of consequence behind it: how much of a spruce beetle outbreak can freely available satellite data see? Prior work fixed the answer at severities above 0.1 [@Zwieback_2024], leaving most beetle-killed trees in this landscape invisible to open-data monitoring, and the wider literature on bark beetle detection has concentrated on the earliest and the most severe stages rather than on the dispersed middle [@Marvasti_Zadeh_2023; @Morris_2016]. The design assembled here tests whether temporal deep learning moves that boundary, using only open data end to end: Cloud Score+ screened Sentinel-2 composites, crown labels digitised on public statewide mosaics, onset intervals triangulated between mosaic epochs, and an independent published severity product as referee. Whatever the direction of the result, the study delivers the first annually resolved, openly reproducible record of the 2016 to 2025 Southcentral Alaska outbreak at stand scale, a labelled dataset positioned to grow with each statewide mosaic epoch, and a pre-registered benchmark against which subsequent methods, sensors and regions can be measured.
+\[Pending: quantitative sentences follow the pre-registered analysis.\] This study asks a bounded question with a decade of consequence behind it: how much of a spruce beetle outbreak can freely available satellite data see? Prior work fixed the answer at severities above 0.1 [@Zwieback_2024], leaving most beetle-killed trees in this landscape invisible to open-data monitoring, and the wider literature on bark beetle detection has concentrated on the earliest and the most severe stages rather than on the dispersed middle [@Marvasti_Zadeh_2023; @Morris_2016]. The design assembled here tests whether temporal deep learning moves that boundary, using only open data end to end: Cloud Score+ screened Sentinel-2 composites, crown labels digitised on public statewide mosaics, onset intervals triangulated between mosaic epochs, and an independent published severity product as referee. Whatever the direction of the result, the study delivers the first annually resolved, openly reproducible record of the 2016 to 2025 Southcentral Alaska outbreak at stand scale, a labelled dataset positioned to grow with each statewide mosaic epoch, and a pre-registered benchmark against which subsequent methods, sensors and regions can be measured.
 
 # Data availability
 
@@ -2286,9 +2666,7 @@ Not yet declared. The manuscript is drafted single-authored pending that declara
 
 # Supplementary material
 
-The tables below record how the label pipeline was built and checked. They document that the
-pipeline works, which is a reproducibility claim rather than a result, and the main text draws
-on them without reproducing them.
+The tables below record how the label pipeline was built and checked. They document that the pipeline works, which is a reproducibility claim rather than a result, and the main text draws on them without reproducing them.
 
 ```{r}
 #| label: supp-label-pairs
