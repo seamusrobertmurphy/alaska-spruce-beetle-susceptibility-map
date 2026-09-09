@@ -2051,9 +2051,28 @@ Five limitations are known by design. First, crown labels derive from visual int
 
 # Data availability
 
-All inputs are publicly retrievable; the download script, checksums and provenance manifest are in the project repository. The severity rasters of @Zwieback_2024 are archived at doi:10.5281/zenodo.8423568, the crown labels at doi:10.5281/zenodo.10569990 and the trained network at doi:10.5281/zenodo.10569975; the latter two are distributed under the Creative Commons Attribution 4.0 licence, while the severity rasters carry no declared licence and are used for independent evaluation only, pending clarification with the author. Aerial detection survey data are distributed by the United States Forest Service as public-domain works, and Sentinel-2, Landsat and elevation data are open under their respective public licences. The Maxar mosaics of the State of Alaska Geoportal are accessible for non-commercial use by streaming and are not redistributed here.
+All inputs are publicly retrievable; the download script, checksums and provenance manifest are in the project repository. The severity rasters of @Zwieback_2024 are archived at doi:10.5281/zenodo.8423568, the crown labels at doi:10.5281/zenodo.10569990 and the trained network at doi:10.5281/zenodo.10569975; the latter two are distributed under the Creative Commons Attribution 4.0 licence, while the severity rasters carry no declared licence and are used for independent evaluation only, pending clarification with the author. Aerial detection survey data are distributed by the United States Forest Service as public-domain works, and Sentinel-2, Landsat and elevation data are open under their respective public licences. The Maxar mosaics of the State of Alaska Geoportal are accessible for non-commercial use by streaming, and their pixels are processed locally and never redistributed; what this study publishes from them is derived crowns and severity fractions, on the same footing as the published delineations it started from.
+
+This study's own derived outputs are committed with the manuscript rather than deposited separately, because each is small and each is read at render time by the code that reports it. The literature screening table, the block sample with its fold assignment, and the annual and monthly climate series are under `02.inputs/derived`; the crown network's per-epoch metrics, the operating-point sweep, the triage queue, the endmember calibration, the synthetic validation summaries, the per-block annual reflectance trajectories and the per-cell clear-observation record are under `03.outputs`. Every number in the text is read from one of those files at render time, so the manuscript cannot report a figure the committed data does not contain.
 
 # References
+
+# Declarations
+
+## Funding
+
+Not yet declared. No funding source has been recorded for this work and none is asserted here.
+
+## Competing interests
+
+Not yet declared by the author.
+
+## Author contributions
+
+Not yet declared. The manuscript is drafted single-authored pending that declaration, and no co-author is listed on the strength of an assumption.
+
+## Generative artificial intelligence
+
 
 # Supplementary material
 
