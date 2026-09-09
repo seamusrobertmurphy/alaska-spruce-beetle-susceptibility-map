@@ -1225,7 +1225,7 @@ Two Kennaugh elements enter as channels, following equations 1 and 2 of @Hechtl_
 Earth Engine's collection arrives radiometrically calibrated and terrain corrected through the Sentinel-1 toolbox, but it does not apply the DEM-based calibration to flattening gamma that ends the processing chain of @Hechtl_2025. Whether that omission matters over the Susitna lowlands, which are flat by comparison with the Bavarian slopes that motivated it, is measured below rather than assumed either way.
 
 The chain was checked against an independent published one rather than trusted. The
-Sentinel-1 Global Backscatter Model of @BauerMarschallinger_2021 is the mean C-band
+Sentinel-1 Global Backscatter Model of @Bauer_Marschallinger_2021 is the mean C-band
 backscatter of 2016 and 2017 at ten metre sampling, built by a different processor over the
 same ground and distributed through the Earth Engine community catalogue, so a disagreement
 in the block pattern would indict the chain here. Its values are stored as whole numbers
