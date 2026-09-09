@@ -5,35 +5,35 @@ author:
   - name: Seamus Murphy
     orcid: 0000-0002-1792-0351
 abstract: |
-  Spruce beetle (*Dendroctonus rufipennis*) has killed spruce across Southcentral
-  Alaska since about 2016, yet roughly ninety percent of the mortality sits in
-  stands of areal severity below 0.05, beneath the detection floor of conventional
-  Landsat change analysis, and the aerial survey record understates exactly this
-  dispersed, low-severity damage. Few studies have asked whether the
-  temporal dimension of freely available satellite data reaches below that
-  floor, and none has asked it of a spruce beetle outbreak in Alaska. This
-  study tests whether temporal deep learning on open satellite time series
-  lowers it, across 160 stand blocks sampled over the Southcentral outbreak
-  region and assigned wholly to eight spatial cross-validation folds. Annual Sentinel-2 composites,
-  cloud-screened with Cloud Score+ quality mosaics on a 90 m stand grid, feed
-  subsequence models, a temporal convolutional network and a Transformer encoder,
-  augmented with annual climate variables that govern spruce beetle development
-  and survival, a warmth index built on the 17 °C univoltinism threshold, winter
-  minimum temperature and lagged summer means,
-  trained on dead-spruce crowns digitised from statewide sub-metre image mosaics of
-  2020 and 2023; comparison of the two epochs supplies interval-censored
-  mortality-onset labels, verified pre-mortality trajectories and a cross-epoch
-  consistency check on the labels themselves. Models are benchmarked against the
-  pre- to post-outbreak shortwave-infrared reflectance change that defines the
-  current floor, under block spatial cross-validation, with skill reported per
-  severity stratum and evaluated independently against a published high-resolution
-  severity product whose footprint no training fold touches. [Detection skill in
-  the 0.01 to 0.10 stratum: pending.] [Detectability floor per method: pending.]
-  [Onset-dating error and the effect of interval supervision: pending.]
-  [Contribution of climate variables to detection skill: pending.]
-  [Correspondence of the reconstructed 2016 to 2025 outbreak progression with the
-  aerial survey record: pending.] The severity strata, metrics and decision rules
-  were fixed by pre-registration before outcome data were analysed.
+  Spruce beetle (*Dendroctonus rufipennis*) has killed spruce across
+  Southcentral Alaska since about 2016, yet roughly ninety per cent of the
+  mortality sits in stands of areal severity below 0.05, beneath the detection
+  floor of Landsat change analysis, and the aerial survey record understates
+  this dispersed damage. Few studies have asked whether the temporal dimension
+  of freely available satellite data reaches below that floor, and none has
+  asked it of a spruce beetle outbreak in Alaska with radar, which cloud does
+  not stop. This study tests whether temporal deep learning on a monthly
+  Sentinel-1 radar series lowers the floor, across 160 stand blocks sampled
+  over the Southcentral outbreak region and assigned wholly to eight spatial
+  cross-validation folds. Terrain-flattened dual-polarisation backscatter from
+  one satellite track, speckle-filtered across the length of the series and
+  held at 30 m, supplies monthly sums and differences of the two polarisations
+  from June 2017 to the present, with climate variables defined from the
+  beetle's biology fitted at the same monthly step, to a temporal convolutional
+  network and a Transformer encoder trained on dead-spruce crowns digitised
+  from statewide sub-metre image mosaics of 2020 and 2023; comparison of the
+  two epochs supplies interval-censored mortality-onset labels and a
+  cross-epoch consistency check on the labels themselves. Skill is reported per
+  severity stratum under block cross-validation against the published
+  shortwave-infrared floor, and evaluated independently against a
+  high-resolution severity product whose footprint no training fold touches.
+  [Detection skill in the 0.01 to 0.10 stratum: pending.] [Detectability floor
+  per method: pending.] [Onset-dating error and the effect of interval
+  supervision: pending.] [Contribution of climate variables to detection skill:
+  pending.] [Correspondence of the reconstructed 2016 to 2025 outbreak
+  progression with the aerial survey record: pending.] The severity strata,
+  metrics and decision rules were fixed by pre-registration before outcome data
+  were analysed.
 format:
   html:
     toc: true
@@ -110,7 +110,7 @@ The size of that gap in Alaska is now quantified. @Zwieback_2024 mapped dead spr
 
 Deep learning applied to the temporal dimension offers a route below the index-based floor. One-dimensional convolutional networks [@Pelletier_2019] and self-attention models [@Ru_wurm_2020] classify satellite image time series without handcrafted temporal features, learning which parts of a trajectory discriminate, and the field has since accumulated recurrent detectors of disturbance [@Kong_2018], attention placed over a convolutional trunk [@Tang_2022] and self-supervised pretraining that exists because labelled time series are scarce [@Yuan_2021], surveyed by @Miller_2024. Label scarcity is the binding constraint here too, which is why the label pipeline below occupies as much of the Methods as the models do. Applied to annual Landsat subsequences over the boreal forest of eastern Canada, TempCNN and Transformer models detected and dated partial and progressive disturbances that LandTrendr-based classification missed, producing the first satellite-derived epidemic maps for the eastern spruce budworm [@Perbet_2024]. Whether that result transfers from a defoliator in Quebec to a bark beetle in Alaska is unknown, and the transfer is not trivial, since agent, host, landscape and label regime all differ, and reviews caution against porting detection results across pest-host systems [@Kautz_2024]. The European literature on *Ips typographus* (Linnaeus, 1758) is the largest body of satellite work on any bark beetle and it maps the green-attack stage from Sentinel-2 and Landsat-8 [@Abdullah_2018], builds indices for early stress [@Huo_2021], tracks an outbreak crown by crown through a season [@Dalponte_2022] and separates wind damage from beetle damage in the same frame [@Candotti_2022], but its detection targets a tree that fades within one season, so its timings do not carry to a host that fades over years. The biology, however, favours Alaska. Unlike *Ips typographus*, where trees fade within months and detection races beetle emergence [@Kautz_2024], *Dendroctonus*-attacked spruce fade over years, in Alaska from green through red to gray [@Hicke_2024], so the spectral signal accumulates over time scales that annual composites resolve. What has been missing is a reference severity dataset commensurable with the satellite grid, and that now exists in the tree-scale severity product of @Zwieback_2024, released openly at 30 to 250 m stand scales, together with sub-metre statewide image mosaics on which additional reference labels can be digitised.
 
-This study evaluates deep learning methods and open satellite time series against that reference, and tests whether feeding the models the climate variables that govern beetle development and survival, set out from the biology at the close of this Introduction, improves what they can see. It assembles annual Sentinel-2 and Landsat composites over Southcentral Alaska, trains subsequence models [after @Perbet_2024] against stand-scale severity reference data, and benchmarks them against the pre- to post-outbreak SWIR reflectance change baseline that defines the current detection floor [@Zwieback_2024]. The objectives are to (1) quantify the skill with which open satellite time series estimate stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; (4) quantify the contribution of biologically motivated climate variables to detection skill; and (5) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the Matanuska-Susitna Borough application extent, evaluating the reconstruction against the aerial survey archive.
+This study evaluates deep learning methods and an open radar time series against that reference, and tests whether feeding the models the climate variables that govern beetle development and survival, set out from the biology at the close of this Introduction, improves what they can see. It assembles a monthly Sentinel-1 radar series over Southcentral Alaska from June 2017, trains subsequence models [after @Perbet_2024] against stand-scale severity reference data, and measures them against the published SWIR detection floor [@Zwieback_2024]; the annual optical composites it built first were set aside for the measured reasons the Methods report. The objectives are to (1) quantify the skill with which an open radar time series estimates stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; (4) quantify the contribution of biologically motivated climate variables to detection skill; and (5) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the Matanuska-Susitna Borough application extent, evaluating the reconstruction against the aerial survey archive.
 
 Three hypotheses are tested, all over the complete outbreak trajectory from 2016 through the present rather than the single dates or two-epoch differences of prior work. Under the null (H0), temporal deep learning models do not exceed the skill of the SWIR change baseline below areal severity of 0.1, and the detection floor of @Zwieback_2024 stands. Under the alternative (H1), subsequence models achieve significantly higher detection skill than the baseline within the 0.01 to 0.10 severity stratum, lowering the floor at which freely available imagery can monitor spruce beetle mortality. The second hypothesis concerns temporal supervision, which single-date mapping cannot provide. Under H2, models trained with mortality-onset intervals triangulated between the 2020 and 2023 label epochs date onset more accurately than the same models trained on single-epoch labels. The third hypothesis carries the climate mechanism into the detection problem. Under H3, models receiving annual climate channels, a summer warmth index anchored on the 17 °C univoltinism threshold [@Hansen_2001], winter minimum temperature, and lagged summer means [@Berg_2006], detect low-severity mortality better than spectrally identical models without them. Secondarily, estimated onset years are expected to lag true onset by one to two years, as observed for gradual disturbances elsewhere in the boreal [@Perbet_2024]. The severity strata, skill metrics and decision thresholds are fixed by pre-registration before any outcome data are analysed.
 
