@@ -59,7 +59,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BLOCKS = ROOT / "02.inputs" / "derived" / "sample_blocks.gpkg"
 TEMPLATE = ROOT / "02.inputs" / "derived" / "sits_cube" / \
     "SENTINEL-2_MSI_TBL01_B04_2014-08-01.tif"
-OUTDIR = ROOT / "02.inputs" / "derived" / "s1_cube"
+RES = int(os.environ.get("S1_RES", "30"))
+OUTDIR = ROOT / "02.inputs" / "derived" / f"s1_cube_{RES}m"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
 SAS = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-1-rtc"
 BBOX = [-151.963, 61.52, -148.438, 63.467]
@@ -74,8 +75,18 @@ def sas_token():
         if time.time() < _token["expires"] - 300:
             return _token["value"]
         with urllib.request.urlopen(SAS, timeout=60) as f:
-            _token["value"] = json.load(f)["token"]
-        _token["expires"] = time.time() + 3300
+            d = json.load(f)
+        _token["value"] = d["token"]
+        # Read the expiry the service reports. Assuming an hour from the fetch
+        # cost 314 scenes to HTTP 403 on 2026-09-09, every one of them after the
+        # token actually lapsed, and the build wrote 56 months of 109.
+        exp = d.get("msft:expiry")
+        if exp:
+            import datetime as _dt
+            e = _dt.datetime.fromisoformat(exp.replace("Z", "+00:00"))
+            _token["expires"] = e.timestamp()
+        else:
+            _token["expires"] = time.time() + 3300
         return _token["value"]
 
 
@@ -113,9 +124,19 @@ def search_scenes():
 
 
 def grid():
-    """The optical cube's grid, so the two cubes join cell for cell."""
+    """The optical grid refined to RES metres.
+
+    The optical cube is 90 m. A 30 m cell nests exactly three by three inside a
+    90 m cell when the origin is shared, so the radar can be aggregated back to
+    the optical grid without resampling and the two still join cell for cell.
+    """
     with rasterio.open(TEMPLATE) as t:
-        return t.profile.copy(), t.transform, t.crs, t.height, t.width
+        prof = t.profile.copy()
+        f = int(round(abs(t.transform.a) / RES))
+        tr = rasterio.Affine(RES, 0, t.transform.c, 0, -RES, t.transform.f)
+        h, w = t.height * f, t.width * f
+        prof.update(transform=tr, height=h, width=w)
+        return prof, tr, t.crs, h, w
 
 
 def block_windows(transform, height, width):
@@ -200,7 +221,7 @@ def main():
     prof.update(dtype="float32", count=1, nodata=np.nan, compress="deflate",
                 tiled=True, blockxsize=256, blockysize=256)
     wins = block_windows(transform, height, width)
-    print(f"grid {height} by {width} at 90 m, {len(wins)} block windows", flush=True)
+    print(f"grid {height} by {width} at {RES} m, {len(wins)} block windows", flush=True)
 
     scenes = search_scenes()
     by_month = defaultdict(list)
@@ -225,14 +246,26 @@ def main():
         counts = {b: defaultdict(lambda: None) for b in ("VV", "VH")}
         nscene = 0
         for sc in by_month[month]:
-            try:
-                got = {"VV": read_scene(sc["vv"], token, crs, transform,
-                                        height, width, wins),
-                       "VH": read_scene(sc["vh"], token, crs, transform,
-                                        height, width, wins)}
-            except Exception as e:
-                print(f"  skip {sc['id']}: {type(e).__name__} {e}",
-                      file=sys.stderr, flush=True)
+            got = None
+            for attempt in (1, 2):
+                try:
+                    tk = sas_token()
+                    got = {"VV": read_scene(sc["vv"], tk, crs, transform,
+                                            height, width, wins),
+                           "VH": read_scene(sc["vh"], tk, crs, transform,
+                                            height, width, wins)}
+                    break
+                except Exception as e:
+                    if attempt == 1 and "403" in str(e):
+                        # A token can lapse mid scene. Force a refresh and retry
+                        # once before giving up on the scene.
+                        with _lock:
+                            _token["expires"] = 0.0
+                        continue
+                    print(f"  skip {sc['id']}: {type(e).__name__} {e}",
+                          file=sys.stderr, flush=True)
+                    break
+            if got is None:
                 continue
             nscene += 1
             for band in ("VV", "VH"):
@@ -260,7 +293,7 @@ def main():
             path = OUTDIR / f"SENTINEL-1_RTC_TBL01_{band}_{month}-01.tif"
             with rasterio.open(path, "w", **prof) as dst:
                 dst.write(canvas, 1)
-                dst.update_tags(scenes=nscene, track=TRACK, month=month)
+                dst.update_tags(scenes=nscene, track=TRACK, month=month, res_m=RES)
         with wlock:
             done["n"] += 1
             print(f"  {done['n']}/{len(todo)} {month}, {nscene} scenes",
