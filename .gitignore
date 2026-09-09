@@ -82,3 +82,11 @@ INDEX.md
 # source of truth, so a committed copy is only ever a stale one; the render
 # that matters is the one the eval runs with --render.
 01.manuscript/manuscript.html
+
+# Radar block stacks and cube, regenerable from 05.scripts/14, 15 and 19; the cube alone is 437 MB
+02.inputs/derived/s1_scene_cache_30m/
+02.inputs/derived/s1_block_stack_30m*.npz
+02.inputs/derived/s1_cube_30m/
+02.inputs/derived/s1_cube/
+02.inputs/derived/s1_reg_test/
+.Rhistory
