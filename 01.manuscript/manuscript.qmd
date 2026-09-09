@@ -1954,11 +1954,11 @@ All `r nrow(checks)` checks pass, which is the only reason the document renders 
 
 # Results
 
-Values in this section populate when the pre-registered analysis executes; every table below is rendered from the analysis code with its final structure, and cells display as pending until model training completes. No value in this section is estimated, assumed or illustrative.
+Values in this section populate when the pre-registered analysis executes; every table below is rendered from the analysis code with its final structure, and cells display as pending until model training completes. No value in this section is estimated, assumed or illustrative. The section is written in the present tense throughout, unlike the completed Methods sections, because the analyses it reports have not run and describing them in the past would assert work that has not happened. Each subsection states the decision rule its table will be read against, all of them fixed by pre-registration, so the reading is committed before the numbers arrive rather than fitted to them.
 
 ## Severity skill
 
-@tbl-severity reports severity-estimation skill per severity stratum for the two deep learning models and the SWIR change baseline on identical stand cells, giving root-mean-square error, relative RMSE normalised by the stratum mean of the reference severity, mean absolute error, and Theil's U with its bias, variance and covariance proportions.
+@tbl-severity reports severity-estimation skill per severity stratum for the two deep learning models and the SWIR change baseline on identical stand cells, read down the strata rather than across the models, because the question is where skill fails rather than which model wins, and giving root-mean-square error, relative RMSE normalised by the stratum mean of the reference severity, mean absolute error, and Theil's U with its bias, variance and covariance proportions.
 
 ```{r}
 #| label: tbl-severity
@@ -1975,7 +1975,7 @@ fmt_tbl(sev_shell, right = c("RMSE","rRMSE","MAE","U_Theil","U_bias","U_var","U_
 
 ## Detection skill
 
-@tbl-detection reports the confusion-matrix summary per stratum, user's and producer's accuracy and the primary metric, recall at 0.90 precision, with fold-wise dispersion. Table S10 carries the H1 test, the fold-wise paired difference in the primary metric between each deep model and the baseline within the 0.01 to 0.10 stratum, its block-bootstrap confidence interval, the one-sided Wilcoxon signed-rank statistic, and the McNemar cell-level check. The detectability floor of each model is the lowest stratum whose primary metric exceeds the pre-registered threshold.
+@tbl-detection reports the confusion-matrix summary per stratum, user's and producer's accuracy and the primary metric, recall at 0.90 precision, with fold-wise dispersion. The detectability floor of each method is read from this table as the lowest stratum whose recall at 0.90 precision reaches 0.50, a rule and a threshold both fixed before any outcome was seen, so the floor is located rather than chosen. Table S10 carries the H1 test, the fold-wise paired difference in the primary metric between each deep model and the baseline within the 0.01 to 0.10 stratum, its block-bootstrap confidence interval, the one-sided Wilcoxon signed-rank statistic, and the McNemar cell-level check. The detectability floor of each model is the lowest stratum whose primary metric exceeds the pre-registered threshold.
 
 ```{r}
 #| label: tbl-detection
@@ -1990,7 +1990,7 @@ fmt_tbl(det_shell, right = c("UA","PA","R90","R90_sd"))
 
 ## Onset dating
 
-@tbl-onset reports onset-year error under the two supervision regimes, testing H2, and gives mean absolute error and root-mean-square error in years, the share of predictions falling within the label bracket, and the fold-wise paired difference between triangulated and single-epoch supervision.
+@tbl-onset reports onset-year error under the two supervision regimes, testing H2, and gives mean absolute error and root-mean-square error in years, the share of predictions falling within the label bracket, and the fold-wise paired difference between triangulated and single-epoch supervision. The share falling inside the bracket is the more informative column, because mean absolute error against a bracketed truth penalises a prediction that is correct in every sense the labels can express.
 
 ```{r}
 #| label: tbl-onset
@@ -2005,7 +2005,7 @@ fmt_tbl(onset_shell, right = c("MAE_yr","RMSE_yr","In_bracket","Delta_MAE","Wilc
 
 ## Climate contribution
 
-@tbl-climate reports the third hypothesis as fold-wise paired differences in the primary detection metric and in onset error between climate-augmented and spectral-only models.
+@tbl-climate reports the third hypothesis as fold-wise paired differences in the primary detection metric and in onset error between climate-augmented and spectral-only models. The pairing is what carries the test, since the two arms differ in their input channels alone and are trained on identical folds, so a difference cannot be attributed to the split. All three confirmatory tests belong to one family and are corrected together by the Holm procedure, which means each is read at its corrected level rather than at 0.05.
 
 ```{r}
 #| label: tbl-climate
