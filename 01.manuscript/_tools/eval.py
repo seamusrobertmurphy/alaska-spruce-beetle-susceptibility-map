@@ -876,6 +876,38 @@ def check_biology_developed(base):
             f"placed, {BIOLOGY_MINIMUM} or more sources", art)
 
 
+
+PAGE = os.path.join(ROOT, "01.manuscript", "manuscript.html")
+
+
+def check_references_resolve_in_page(base):
+    """Every cross-reference resolves in the page the render produced.
+
+    A chunk that errors before it draws leaves no figure for Quarto to number,
+    so the reference prints as "?@fig-name" and the render finishes clean: the
+    error strings the render check looks for never appear, because the failure
+    was an unattached package rather than a raised condition. That happened to
+    fig-spread on 2026-09-08 and was found by eye. This check is the reason it
+    would not be found by eye a second time.
+    """
+    art = os.path.relpath(PAGE, ROOT)
+    if not os.path.exists(PAGE):
+        return "blocked", "no rendered page; run --render", "a page", art
+    page = open(PAGE, encoding="utf-8", errors="replace").read()
+    unresolved = sorted(set(re.findall(r"\?@((?:fig|tbl)-[\w-]+)", page)))
+    src_figs = set(re.findall(r"^#\|\s*label:\s*(fig-[\w-]+)",
+                              open(QMD).read(), re.M))
+    drawn = len(re.findall(r"<img", page))
+    if unresolved:
+        return "fail", f"{len(unresolved)} unresolved: " + \
+            ", ".join(unresolved[:4]), "none unresolved", art
+    if drawn < len(src_figs):
+        return "fail", f"{len(src_figs)} figure labels but {drawn} images " \
+            "in the page", "one image per figure", art
+    return "pass", f"{len(src_figs)} figures, {drawn} images, none unresolved", \
+        "none unresolved", art
+
+
 def check_restore_point(base):
     """A restore point exists for the current session."""
     d = os.path.expanduser(
@@ -914,6 +946,8 @@ CHECKS = [
      True),
     ("sensor design decision recorded", check_sensor_decision_recorded, True),
     ("beetle biology argued, not asserted", check_biology_developed, True),
+    ("cross-references resolve in the page", check_references_resolve_in_page,
+     True),
     ("session restore point exists", check_restore_point, False),
 ]
 
