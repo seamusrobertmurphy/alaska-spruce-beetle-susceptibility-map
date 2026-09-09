@@ -1,0 +1,6 @@
+"quantity","value","source"
+"seasonal_swing_db",2.16095018655034,"03.outputs/s1_kennaugh_monthly.csv"
+"yearly_noise_floor_db",0.389667067655748,"03.outputs/s1_kennaugh_monthly.csv"
+"between_block_sd_db",1.19943004254773,"03.outputs/s1_kennaugh_monthly.csv"
+"windthrow_vv_db",0.45,"Ruetschi et al. 2019 Remote Sensing 11:115 p. 11"
+"windthrow_vh_db",0.68,"Ruetschi et al. 2019 Remote Sensing 11:115 p. 11"
