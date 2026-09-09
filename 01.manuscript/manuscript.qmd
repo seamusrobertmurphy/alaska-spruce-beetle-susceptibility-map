@@ -1704,86 +1704,45 @@ s1gbm_disp <- list(
 ```{r}
 #| label: fig-s1gbm
 #| echo: true
-#| fig-cap: "The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Cook Inlet is the dark water at the lower left."
+#| fig-cap: "The Sentinel-1 Global Backscatter Model over the confirmatory study window, (a) VV and (b) VH, drawn on its own grid, WGS 84 Equi7 North America (EPSG:27705), with the 160 sample blocks outlined in red. Each panel is scaled over the display range the catalogue example ships with, -20 to -6 dB for VV and -23.7 to -7 dB for VH, on the example's own palettes, with values beyond the range held at its ends; the colour bar reads in decibels where the file stores decibels multiplied by ten. The mosaic is the 2016 to 2017 temporal mean of sigma nought normalised to a thirty-eight degree incidence angle [@Bauer_Marschallinger_2021], thinned to 200 m cells for drawing. Graticule in Equi7 eastings and northings, km. Cook Inlet is the dark water at the lower left."
 #| fig-width: 7
-#| fig-height: 3.9
+#| fig-height: 3.3
+library(tmap)
+tmap_mode("plot")
+# The same projection in kilometre units, so the graticule reads in km
+# unaided. The false easting and northing stay in metres, which is how PROJ
+# defines them whatever the unit.
+s1gbm_crs_km <- sub("+units=m", "+units=km", st_crs(s1gbm_epsg)$proj4string,
+                    fixed = TRUE)
+s1gbm_db <- s1gbm_r / 10
+ext(s1gbm_db) <- as.vector(ext(s1gbm_r)) / 1000
+crs(s1gbm_db) <- s1gbm_crs_km
 s1gbm_blk <- st_transform(st_read(file.path(inputs, "derived",
                                             "sample_blocks.gpkg"),
-                                  quiet = TRUE), s1gbm_epsg)
-st_geometry(s1gbm_blk) <- st_geometry(s1gbm_blk) / 1000
-s1gbm_df <- as.data.frame(s1gbm_r / 10, xy = TRUE)
-s1gbm_df$x <- s1gbm_df$x / 1000
-s1gbm_df$y <- s1gbm_df$y / 1000
+                                  quiet = TRUE), s1gbm_crs_km)
 s1gbm_panel <- function(pol, tag) {
   d <- s1gbm_disp[[pol]]
-  ggplot() +
-    geom_raster(data = s1gbm_df, aes(x, y, fill = .data[[pol]])) +
-    geom_sf(data = s1gbm_blk, fill = NA, colour = "red", linewidth = .25) +
-    scale_fill_gradientn(colours = d$palette, limits = d$range,
-                         oob = scales::squish, name = "dB") +
-    coord_sf(expand = FALSE) +
-    labs(title = paste0("(", tag, ") ", pol),
-         x = "Equi7 easting (km)", y = "Equi7 northing (km)") +
-    th + theme(legend.key.height = unit(.6, "cm"),
-               legend.key.width = unit(.25, "cm"))
+  tm_shape(s1gbm_db[[pol]]) +
+    tm_raster(col.scale = tm_scale_continuous(values = d$palette,
+                                              limits = d$range,
+                                              outliers.trunc = c(TRUE, TRUE)),
+              col.legend = tm_legend(title = "dB", title.size = 0.7,
+                                     text.size = 0.6, reverse = TRUE,
+                                     height = 9,
+                                     position = tm_pos_out("right", "center"))) +
+    tm_shape(s1gbm_blk) + tm_borders(col = "red", lwd = 0.6) +
+    # Axis titles are left to the caption, because tm_xlab displaces the x
+    # grid labels in tmap 4.2.
+    tm_grid(labels.size = 0.55, lwd = 0.3, col = "grey70") +
+    tm_title(paste0("(", tag, ") ", pol), size = 0.8, fontface = "bold") +
+    tm_layout(frame = TRUE, inner.margins = 0,
+              outer.margins = c(0.08, 0.08, 0.01, 0.01))
 }
-s1gbm_panel("VV", "a") + s1gbm_panel("VH", "b")
+tmap_arrange(s1gbm_panel("VV", "a"), s1gbm_panel("VH", "b"), ncol = 2,
+             asp = 1, outer.margins = 0.01)
 ```
 
-The mosaic sat on `r s1gbm_crs_name` (EPSG:`r s1gbm_epsg`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. @fig-s1gbm draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
-
-```{r}
-#| label: fig-s1gbm
-#| echo: true
-#| fig-cap: "Mean Sentinel-1 backscatter over the study area from the normalised Global Backscatter Model of @Bauer_Marschallinger_2021, co-polarised VV above and cross-polarised VH below, with the 160 sampled blocks drawn over them. The display range is the one the catalogue ships, -20 to -6 dB for VV and -23.7 to -7 dB for VH, converted from the stored integers rather than stretched to the data, so the two panels are comparable to any other rendering of this product. Values are the temporal mean of sigma nought over 2016 and 2017, normalised to a 38 degree incidence angle, on Equi7Grid North America at ten metre sampling."
-#| fig-height: 7
-library(tmap)
-if (!exists("ee_tile_url")) {
-  # One line, following the author's own flood dynamics work, which serves
-  # Earth Engine tiles to tmap without downloading the pixels.
-  ee_tile_url <- function(ee_image, vis_params) {
-    ee_image$getMapId(vis_params)$tile_fetcher$url_format
-  }
-}
-if (!exists("s1gbm_img")) {
-  library(rgee)
-  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  s1gbm_img <- ee$ImageCollection(
-      "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV")$
-    mosaic()$rename("VV")$addBands(
-      ee$ImageCollection(
-        "projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH")$
-      mosaic()$rename("VH"))
-}
-blk_v <- st_read(file.path(inputs, "derived", "sample_blocks.gpkg"), quiet = TRUE)
-aoi_v <- st_as_sfc(st_bbox(st_buffer(blk_v, 5000)))
-
-# The stored values are decibels times ten, so the display limits are the
-# catalogue's own, multiplied up rather than chosen by eye.
-vis_vv <- list(bands = list("VV"), min = -200, max = -60,
-               palette = c("#081d58", "#225ea8", "#41b6c4", "#c7e9b4", "#ffffd9"))
-vis_vh <- list(bands = list("VH"), min = -237, max = -70,
-               palette = c("#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"))
-
-tmap_mode("plot")
-m_vv <- tm_shape(st_transform(aoi_v, 4326)) +
-  tm_borders(col = NA) +
-  tm_tiles(ee_tile_url(s1gbm_img, vis_vv)) +
-  tm_shape(st_transform(blk_v, 4326)) +
-  tm_borders(col = "red", lwd = 0.6) +
-  tm_title("VV, -20 to -6 dB", size = 0.8)
-m_vh <- tm_shape(st_transform(aoi_v, 4326)) +
-  tm_borders(col = NA) +
-  tm_tiles(ee_tile_url(s1gbm_img, vis_vh)) +
-  tm_shape(st_transform(blk_v, 4326)) +
-  tm_borders(col = "red", lwd = 0.6) +
-  tm_title("VH, -23.7 to -7 dB", size = 0.8)
-tmap_arrange(m_vv, m_vh, ncol = 1)
-```
-
-@fig-s1gbm shows the two polarisations over the sampled blocks at the display range the
-catalogue ships, so the panels can be set beside any other rendering of the same product
-without a private stretch standing between them.
+The mosaic sat on `r s1gbm_crs_name` (EPSG:`r sprintf("%d", s1gbm_epsg)`), one azimuthal equidistant projection for the whole continent, which the asset carried only as well-known text and which was certified as that registry code at render time rather than assumed. Its cell size, read from the asset's nominal scale and again from its affine transform, was `r s1gbm_cell_m` m on every reading. That figure was the product's sampling and not the instrument's resolution, which the archive the radar record was built on listed as `r s1grid$sar_resolution_range_m` m in range and `r s1grid$sar_resolution_azimuth_m` m in azimuth for interferometric wide swath mode, at a pixel spacing of `r s1grid$sar_pixel_spacing_range_m` m, so the product was oversampled by design. Block means were taken on that grid at the pixels' own positions, with the block outlines moved into the projection rather than the pixels moved out of it. @fig-s1gbm draws both polarisations over the study window on the display ranges the catalogue example ships with. Across the `r nrow(s1gbm)` blocks the two records agree in pattern, at a correlation of `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VV"])` in VV and `r sprintf("%.3f", s1val$pearson_r[s1val$band == "VH"])` in VH, so the processing here reproduces what an independent chain found over the same forest. The levels differ by `r sprintf("%.2f", s1val$offset_db[s1val$band == "VV"])` dB in VV and `r sprintf("%.2f", s1val$offset_db[s1val$band == "VH"])` dB in VH, of which `r sprintf("%.2f", sig2gam)` dB is the conversion from sigma nought to gamma nought at thirty-eight degrees and is arithmetic rather than disagreement.
 
 
 ## Satellite composites

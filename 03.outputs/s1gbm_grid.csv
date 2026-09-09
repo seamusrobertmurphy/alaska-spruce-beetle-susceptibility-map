@@ -1,0 +1,2 @@
+"collection_vv","collection_vh","n_tiles_vv","n_tiles_vh","band","agg_stat_param","nominal_scale_m","transform","pc_item","sar_resolution_range_m","sar_resolution_azimuth_m","sar_pixel_spacing_range_m","sar_pixel_spacing_azimuth_m"
+"projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VV","projects/sat-io/open-datasets/S1GBM/normalized_s1_backscatter_VH",16064,16066,"b1","TMENSIG38",10,"10 0 5600000 0 -10 7200000","S1B_IW_GRDH_1SDV_20190724T031959_20190724T032024_017270_0207AF_rtc",20,22,10,10
