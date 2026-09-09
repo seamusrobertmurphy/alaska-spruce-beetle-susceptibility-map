@@ -109,6 +109,22 @@ Three hypotheses are tested, all over the complete outbreak trajectory from 2016
 
 All inputs are open source; scripted retrieval, integrity checksums and a provenance manifest accompany the analysis code.
 
+## Literature search
+
+The corpus this study is argued against was assembled by a search run on 2026-09-08 over OpenAlex and arXiv, with every retained record verified against Crossref by content negotiation on its digital object identifier before it entered the bibliography. Five strands were searched, taking their keywords from the title, namely spruce beetle with remote sensing, deep learning over satellite image time series, low-severity and partial disturbance detection, bark beetle mortality mapping, and boreal Alaskan forest disturbance, each restricted to 2010 and later. Records were retained where they reported a method for detecting or mapping insect-caused tree mortality from satellite or airborne imagery, supplied a deep learning architecture for satellite image time series, or reported spruce beetle outbreak ecology bearing on the climate mechanism tested here; records reporting agriculture, fire, land cover, tundra or carbon cycle work were excluded, as were sensor descriptions carrying no detection method.
+
+```{r}
+#| label: lit-screening
+#| echo: true
+#| output: false
+scr <- read.csv(file.path(inputs, "derived", "literature_screening.csv"))
+n_screened <- nrow(scr)
+n_included <- sum(scr$decision == "included")
+n_strands <- length(unique(scr$strand))
+```
+
+The search returned `r n_screened` unique records across `r n_strands` strands after duplicates were removed, of which `r n_included` were retained and `r n_screened - n_included` excluded. The screening table is committed with the manuscript at `02.inputs/derived/literature_screening.csv`, one row per record with its strand, its decision and the reason for that decision, so the counts above are read at render time rather than written down.
+
 ## Study area
 
 The study area is the Southcentral Alaska outbreak region, centred on the Susitna lowlands and Matanuska-Susitna Valley and bounded by the Talkeetna Mountains and the Alaska Range, in the NAD83 Alaska Albers projection. Forests are boreal mosaics of white spruce (*Picea glauca*), black spruce (*P. mariana*), paper birch (*Betula neoalaskana*) and trembling aspen (*Populus tremuloides*), with wetlands and mixed stands in which conifer fractions of 10 to 30% predominate [@Zwieback_2024]. The ongoing outbreak reached the area around 2016 and had exhausted much of the large white spruce by 2021 [@Zwieback_2024]. The temporal window of the study spans the full history of this outbreak, from its onset around 2016 through the most recent survey year, observed by annual Sentinel-2 and Landsat composites; earlier Landsat years enter only as the undisturbed pre-outbreak baseline against which the outbreak trajectory was measured. Model training and cross-validation blocks span the confirmatory study window, a 39,050 km2 frame around the reference footprint; the Talkeetna to Byers Lake footprint of the independent severity reference serves as the held-out evaluation area for the severity product. A larger application extent, the Matanuska-Susitna Borough, receives the trained model's wall-to-wall severity and progression maps for management use; predictions outside the confirmatory window are application products whose transfer was not confirmed by the cross-validation, and were labelled accordingly. Severity summaries are additionally reported per stand of the state Mat-Su Borough forest inventory for use by forest managers.

@@ -1,5 +1,5 @@
 {
-  "bib_entry_count": 50,
+  "bib_entry_count": 70,
   "chunks_without_explicit_echo": 0,
   "first_person": 0,
   "hypothesis_fingerprint": "d1d4b6c131d62d5e",
@@ -1915,7 +1915,7 @@
   },
   "raster_unreadable_at_baseline": [],
   "recorded": "2026-09-08T21:36:21Z",
-  "recorded_manuscript": "2026-09-08T23:47:11Z",
+  "recorded_manuscript": "2026-09-09T00:15:39Z",
   "results_shells": 4,
   "severity_readers": [
     "climate-build",
