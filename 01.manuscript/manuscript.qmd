@@ -1047,7 +1047,7 @@ checks <- data.frame(
 stopifnot(all(checks$passes))
 ```
 
-@fig-trajectory shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline they are differenced from.
+@fig-trajectory shows what the cube holds, the annual reflectance of the sampled blocks across the whole record, so the outbreak years can be read against the pre-outbreak baseline they are differenced from. It also shows a discontinuity that has to be dealt with before any of that differencing can be believed.
 
 ```{r}
 #| label: trajectory-build
@@ -1078,9 +1078,30 @@ traj <- read.csv(traj_f)
 ```
 
 ```{r}
+#| label: trajectory-step
+#| echo: true
+#| output: false
+# The size of the year-to-year step at the sensor boundary against the size of
+# every other step in the series, per band. If the boundary step is the largest
+# in the record, the harmonisation has not removed it and the two-window
+# difference the baseline computes straddles it.
+step_tab <- do.call(rbind, lapply(split(traj, traj$band), function(d) {
+  m <- aggregate(value ~ year, d, median)
+  m <- m[order(m$year), ]
+  st <- diff(m$value)
+  yrs <- m$year[-1]
+  data.frame(band = d$band[1], boundary = st[yrs == 2019],
+             other_median = median(abs(st[yrs != 2019])),
+             ratio = abs(st[yrs == 2019]) / median(abs(st[yrs != 2019])))
+}))
+```
+
+The step between 2018 and 2019 is the sensor boundary, where the record changes from Landsat 8 to Sentinel-2, and the harmonisation has not removed it. In shortwave infrared 2 that step is `r sprintf("%+.4f", step_tab$boundary[step_tab$band == "B12"])` reflectance against a median absolute step of `r sprintf("%.4f", step_tab$other_median[step_tab$band == "B12"])` across every other year in the record, a ratio of `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B12"])`, and in shortwave infrared 1 the ratio is `r sprintf("%.1f", step_tab$ratio[step_tab$band == "B11"])`. In both bands the boundary is the largest single step in twelve years. This bears directly on the pre-registered baseline, which differences the 2019 to 2021 mean against the 2014 to 2016 mean and therefore straddles the boundary, so part of what that difference measures is the sensor rather than the stand. The size of the effect is measured here rather than assumed, and correcting it is a change to the baseline that requires a dated amendment rather than a quiet fix.
+
+```{r}
 #| label: fig-trajectory
 #| echo: true
-#| fig-cap: "Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, harmonized as described above, and the dashed line marks the 2016 outbreak onset. The shortwave-infrared bands are the ones the published detection floor rests on."
+#| fig-cap: "Annual surface reflectance of the 160 sampled blocks across the analysis cube, 2014 to 2025, one panel per band. The line is the median block and the ribbon the interquartile range, so the spread is the between-block variation the models have to work in rather than a measurement error. Years 2014 to 2018 are Landsat 8 and 2019 onward Sentinel-2, and the step between those two years is the sensor boundary rather than the outbreak, which the text quantifies. The dashed line marks the 2016 outbreak onset."
 #| fig-width: 7
 #| fig-height: 4.6
 band_lab <- c(B04 = "B04, red", B08 = "B08, near infrared",
