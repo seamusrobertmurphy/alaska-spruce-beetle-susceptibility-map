@@ -102,11 +102,7 @@ th <- theme_bw(base_size = 8) +
 
 # Introduction
 
-The boreal forest of Southcentral Alaska, which supplies subsistence resources, timber, wildlife habitat and carbon storage, has its dynamics governed to an unusual degree by a single biotic agent. Recurrent spruce beetle (*Dendroctonus rufipennis* Kirby, 1837) outbreaks have shaped the spruce forests of the region for centuries, with outbreak extent linked to summer temperatures [@Berg_2006]. From 1990 to 2000 an extensive outbreak caused spruce mortality across 1.19 million ha of Alaskan forest, roughly 40% more area than had been infested in the previous 70 years [@Werner_2006], and a new outbreak under way in Southcentral Alaska since about 2016 has spread from the Susitna lowlands toward the Alaska Range [@Zwieback_2024]. Identifying where and when beetle-caused mortality occurs, and at what severity, is foundational to hazard management, to carbon accounting and to understanding how a warming climate reshapes boreal disturbance regimes [@Hicke_2024], and the pressure is rising rather than steady, since a reconstruction across Europe found natural disturbance impacts increasing since 1950 [@Patacca_2022]. What that mortality costs, and what management can do about it, are set out as a research agenda by @Morris_2016, who frame outbreak impact in terms of area affected, host mortality rate and altered stand structure, the same three quantities a satellite map has to recover. Yet the operational damage record for Alaska rests on aerial sketch mapping, whose polygons carry coarse positional accuracy, record only what an observer saw from the air that year, and understate dispersed low-severity mortality [@Zwieback_2024; @Hicke_2024].
-
-The climate dependence of these outbreaks operates through the beetle's biology, stage by stage. Adults fly in early summer, colonise windthrown, stressed or, at outbreak densities, healthy spruce through pheromone-coordinated mass attack that overwhelms host resin defences, and lay eggs in phloem galleries; larvae develop and overwinter beneath the bark, and populations build in downed and weakened hosts before erupting onto live stands [@Werner_2006]. Temperature regulates every step. The generation normally takes two years, but warm summers shift brood to a one-year cycle, and the univoltine proportion is predictable from cumulative hours above 17 °C in the weeks following peak flight [@Hansen_2001]; a halved generation time compounds population growth. Milder winters raise overwinter survival of the life stages beneath the bark, and both mechanisms link bark beetle outbreak likelihood to warming across western North America [@Bentz_2010]. In Southcentral Alaska specifically, tree-ring reconstructions and the survey record tie outbreak extent to running-mean summer temperature over more than two centuries [@Berg_2006; @Sherriff_2011]. The same dependence has been measured from satellite data in another *Dendroctonus rufipennis* system, where @Hart_2017 detected outbreak from Landsat across the Southern Rocky Mountain Ecoregion for 2000 to 2014 and found summer and winter drought driving both its initiation and its spread, with beetle activity spatially correlated above 0.5 only within about five kilometres. Stand-level work in the same host has approached the question from dendrochronology and from the spatial and temporal dynamics of mortality during an outbreak [@DeRose_2011; @DeRose_2012].
-
-This biology has a methodological consequence that remote sensing has not exploited. The years in which populations can erupt, and hence the years in which canopy decline can begin, are partially forecastable from air temperature alone; a spectral decline that follows consecutive warm summers and mild winters is more probably beetle-caused than an identical decline that does not, and the converse helps separate beetle mortality from drought stress, whose spectral expression is similar but whose climatic precursors differ. Detection models that see only reflectance discard this information. The models developed here receive the climate variables that the biology nominates, a summer warmth index anchored on the univoltinism threshold, winter minimum temperature, and lagged summer means, as input channels alongside the spectral time series, and the study tests whether that biological information measurably improves detection.
+The boreal forest of Southcentral Alaska, which supplies subsistence resources, timber, wildlife habitat and carbon storage, has its dynamics governed to an unusual degree by a single biotic agent. Recurrent outbreaks of the spruce beetle, *Dendroctonus rufipennis* (Kirby, 1837), Coleoptera, Curculionidae, Scolytinae, have shaped the spruce forests of the region for centuries, with outbreak extent linked to summer temperatures [@Berg_2006]. From 1990 to 2000 an extensive outbreak caused spruce mortality across 1.19 million ha of Alaskan forest, roughly 40% more area than had been infested in the previous 70 years [@Werner_2006], and a new outbreak under way in Southcentral Alaska since about 2016 has spread from the Susitna lowlands toward the Alaska Range [@Zwieback_2024]. Identifying where and when beetle-caused mortality occurs, and at what severity, is foundational to hazard management, to carbon accounting and to understanding how a warming climate reshapes boreal disturbance regimes [@Hicke_2024], and the pressure is rising rather than steady, since a reconstruction across Europe found natural disturbance impacts increasing since 1950 [@Patacca_2022]. What that mortality costs, and what management can do about it, are set out as a research agenda by @Morris_2016, who frame outbreak impact in terms of area affected, host mortality rate and altered stand structure, the same three quantities a satellite map has to recover. Yet the operational damage record for Alaska rests on aerial sketch mapping, whose polygons carry coarse positional accuracy, record only what an observer saw from the air that year, and understate dispersed low-severity mortality [@Zwieback_2024; @Hicke_2024].
 
 Satellite remote sensing offers the systematic record that survey flights cannot. The Landsat archive provides four decades of calibrated observation at a resolution suited to stand-scale disturbance [@Wulder_2019], and its availability in cloud platforms has made time-series analysis routine [@Gorelick_2017]. The established approach extracts temporal features from spectral index trajectories with segmentation algorithms such as LandTrendr [@Kennedy_2010] or continuous change methods such as CCDC [@Zhu_2014] and classifies them with ensemble learners, an approach mature enough to have produced an annual national record of disturbance and recovery spanning 25 years [@White_2017]. Insect damage specifically has been characterised this way, both to separate the spectral and temporal signatures of defoliators from those of bark beetles [@Meigs_2011; @Senf_2015] and to compare single-date against multi-date detection of beetle-caused mortality [@Meddens_2013]. These methods detect abrupt, stand-replacing disturbance reliably, but their outputs diverge widely for subtle change, and their skill degrades exactly where insect damage lives, on partial, gradual disturbance whose trajectories merge with natural forest variation [@Cohen_2017; @Senf_2017]. For bark beetles the mature capability is mapping the red and gray stages of heavily killed stands; low-severity and dispersed mortality remain the recognized frontier [@Senf_2017; @Hicke_2024; @Marvasti_Zadeh_2023]. That frontier is the reason aerial survey persists rather than being replaced, and reviews of the Canadian and United States survey programmes reach the same conclusion, that remote sensing can augment those methods where aerial survey consistency and spatial coverage may be insufficient for detailed monitoring across a vast forest estate [@Hall_2016; @Housman_2018].
 
@@ -114,13 +110,246 @@ The size of that gap in Alaska is now quantified. @Zwieback_2024 mapped dead spr
 
 Deep learning applied to the temporal dimension offers a route below the index-based floor. One-dimensional convolutional networks [@Pelletier_2019] and self-attention models [@Ru_wurm_2020] classify satellite image time series without handcrafted temporal features, learning which parts of a trajectory discriminate, and the field has since accumulated recurrent detectors of disturbance [@Kong_2018], attention placed over a convolutional trunk [@Tang_2022] and self-supervised pretraining that exists because labelled time series are scarce [@Yuan_2021], surveyed by @Miller_2024. Label scarcity is the binding constraint here too, which is why the label pipeline below occupies as much of the Methods as the models do. Applied to annual Landsat subsequences over the boreal forest of eastern Canada, TempCNN and Transformer models detected and dated partial and progressive disturbances that LandTrendr-based classification missed, producing the first satellite-derived epidemic maps for the eastern spruce budworm [@Perbet_2024]. Whether that result transfers from a defoliator in Quebec to a bark beetle in Alaska is unknown, and the transfer is not trivial, since agent, host, landscape and label regime all differ, and reviews caution against porting detection results across pest-host systems [@Kautz_2024]. The European literature on *Ips typographus* (Linnaeus, 1758) is the largest body of satellite work on any bark beetle and it maps the green-attack stage from Sentinel-2 and Landsat-8 [@Abdullah_2018], builds indices for early stress [@Huo_2021], tracks an outbreak crown by crown through a season [@Dalponte_2022] and separates wind damage from beetle damage in the same frame [@Candotti_2022], but its detection targets a tree that fades within one season, so its timings do not carry to a host that fades over years. The biology, however, favours Alaska. Unlike *Ips typographus*, where trees fade within months and detection races beetle emergence [@Kautz_2024], *Dendroctonus*-attacked spruce fade over years, in Alaska from green through red to gray [@Hicke_2024], so the spectral signal accumulates over time scales that annual composites resolve. What has been missing is a reference severity dataset commensurable with the satellite grid, and that now exists in the tree-scale severity product of @Zwieback_2024, released openly at 30 to 250 m stand scales, together with sub-metre statewide image mosaics on which additional reference labels can be digitised.
 
-This study evaluates deep learning methods and open satellite time series against that reference, and tests whether feeding the models the climate variables that govern beetle development and survival improves what they can see. It assembles annual Sentinel-2 and Landsat composites over Southcentral Alaska, trains subsequence models [after @Perbet_2024] against stand-scale severity reference data, and benchmarks them against the pre- to post-outbreak SWIR reflectance change baseline that defines the current detection floor [@Zwieback_2024]. The objectives are to (1) quantify the skill with which open satellite time series estimate stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; (4) quantify the contribution of biologically motivated climate variables to detection skill; and (5) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the Matanuska-Susitna Borough application extent, evaluating the reconstruction against the aerial survey archive.
+This study evaluates deep learning methods and open satellite time series against that reference, and tests whether feeding the models the climate variables that govern beetle development and survival, set out from the biology at the close of this Introduction, improves what they can see. It assembles annual Sentinel-2 and Landsat composites over Southcentral Alaska, trains subsequence models [after @Perbet_2024] against stand-scale severity reference data, and benchmarks them against the pre- to post-outbreak SWIR reflectance change baseline that defines the current detection floor [@Zwieback_2024]. The objectives are to (1) quantify the skill with which open satellite time series estimate stand-scale areal severity of beetle-associated mortality, reported per severity stratum; (2) determine the detectability floor, the lowest severity stratum at which detection skill exceeds a pre-registered threshold, for each method; (3) estimate the year of mortality onset, supervised by onset intervals triangulated between the two label epochs, and quantify its lag relative to the reference record; (4) quantify the contribution of biologically motivated climate variables to detection skill; and (5) reconstruct the annual progression of the outbreak from its 2016 onset through the present across the Matanuska-Susitna Borough application extent, evaluating the reconstruction against the aerial survey archive.
 
 Three hypotheses are tested, all over the complete outbreak trajectory from 2016 through the present rather than the single dates or two-epoch differences of prior work. Under the null (H0), temporal deep learning models do not exceed the skill of the SWIR change baseline below areal severity of 0.1, and the detection floor of @Zwieback_2024 stands. Under the alternative (H1), subsequence models achieve significantly higher detection skill than the baseline within the 0.01 to 0.10 severity stratum, lowering the floor at which freely available imagery can monitor spruce beetle mortality. The second hypothesis concerns temporal supervision, which single-date mapping cannot provide. Under H2, models trained with mortality-onset intervals triangulated between the 2020 and 2023 label epochs date onset more accurately than the same models trained on single-epoch labels. The third hypothesis carries the climate mechanism into the detection problem. Under H3, models receiving annual climate channels, a summer warmth index anchored on the 17 °C univoltinism threshold [@Hansen_2001], winter minimum temperature, and lagged summer means [@Berg_2006], detect low-severity mortality better than spectrally identical models without them. Secondarily, estimated onset years are expected to lag true onset by one to two years, as observed for gradual disturbances elsewhere in the boreal [@Perbet_2024]. The severity strata, skill metrics and decision thresholds are fixed by pre-registration before any outcome data are analysed.
 
+The third hypothesis rests on the beetle's biology, and the climate variables it names are defined from that biology at the opening of the Methods, so the Introduction closes with the three parts of the life cycle that set them, the generation time, the manner of spread and the winter. Detection models that see only reflectance discard what those three parts imply, that a spectral decline following summers warm enough to shorten the generation is more probably beetle-caused than an identical decline that does not, although the drought term set out below means beetle mortality and drought stress are not fully separable by their precursors. The generation time is set in the phloem, and the season that sets it opens with flight. Adult flight in Southcentral Alaska began by the first week of June in two years of trapping, once ambient temperature rose above 12.8 °C, with most dispersal as temperatures approached and exceeded 16 °C, and attack lagged the first flights by a week or more [@Holsten_2001], so that attacks concentrate in June, in the first half of the period of rapid cambial growth of white spruce [@Hard_1985b]. Whether the brood then matures in one year or two is under direct temperature control acting on the fourth larval instar and the prepupa rather than under photoperiod, with prepupal diapause the default for larvae that have not matured by autumn [@Hansen_2001b], and the best predictor of the univoltine proportion at stand level was cumulative hours above 17 °C from 40 to 90 days after peak flight [@Hansen_2001]. The temperature that governs this is that of the phloem under direct solar radiation rather than that of the air, since two-year cycles developed on the north and west faces of standing boles at a mean phloem temperature of 10.6 °C while one-year cycles developed on the south faces of the same trees at 16.5 °C [@Werner_1985], a contrast set by aspect and canopy openness within a single stand. A warm summer therefore halves the generation time without raising fecundity, because egg production did not differ between univoltine, semivoltine and re-emerged parents, and it is the shorter generation that raises the growth rate of the population and the rate of spruce mortality in an established outbreak [@Hansen_2003]. Warming cannot add a second generation either, since an obligate adult diapause requiring a period of cold floors the life cycle at one year [@Bleiker_2019], and only a small proportion of females terminated diapause without chilling [@Davenport_2024]. Population growth between seasons is therefore stepped by the year, and the mortality a satellite series records cannot advance faster than an annual increment however warm the summer.
+
+Spread is by threshold and by opportunity rather than along a front. The beetle relies on pheromone-mediated aggregation to raise attack density until it suffices to kill the host, and strong aggregation plumes concentrate attacks around focal trees while the anti-aggregation switching that spreads attack in the mountain pine beetle is weaker in this species [@Jenkins_2014], so mortality accumulates in foci around killed trees rather than evenly across a stand. Attack succeeds where host defence is overwhelmed and where growth is slow, since trees killed in 1982 carried a higher density of completed egg galleries than trees attacked unsuccessfully that year but did not differ from them in diameter [@Hard_1985], and diameter predicted susceptibility only where large size was coupled with slower than average radial growth over the previous five years [@Hard_1983]. Populations build in windthrown and weakened hosts before erupting onto standing stands, and windthrow and stand hazard were the two factors weighted most heavily in an expert model of outbreak risk [@Reynolds_1994], yet a blowdown alone does not start an outbreak, because major windthrow in Idaho in 1981 and 1982 preceded mortality of 350,000 trees over 90,000 ha where an extensive 1934 blowdown in Colorado produced no rise in beetle-caused mortality, so host condition, stand structure, weather and population level must all align with the fallen trees [@Jenkins_2014]. When they align the eruption is synchronous rather than radial, since the Utah population did not spread from one epicentre but erupted in many locations at once, which points to an overriding influence of temperature [@Jenkins_2014], and the Landsat record of the Southern Rocky Mountain outbreak showed the same shape, an outbreak developing at multiple incipient locations and spreading from them, synchronised by regional drivers and local dispersal together, with beetle activity strongly correlated only within about five kilometres [@Hart_2017]. Local dispersal is short, since *D. rufipennis* released in Alaska were recovered 90 to 300 m from their overwintering sites and at most 600 m away, in numbers that followed the prevailing wind [@Werner_1997]. Which regional driver synchronises the eruption is not settled as temperature alone, because in Colorado outbreaks were predicted best by interannual to multidecadal variability in drought, indexed by the Atlantic Multidecadal Oscillation and by summer vapour pressure deficit, and not by temperature alone [@Hart_2014], and outbreaks initiated in areas of summer, winter and multi-year drought, associated with low peak snow water equivalent and not only with summer drought [@Hart_2017]. In Alaska, the El Niño Southern Oscillation combined with late-summer drought contributed to outbreaks over one to three years while the cool phase of the Pacific Decadal Oscillation preceded them over about forty years [@Jenkins_2014], and in Interior white spruce stands cold winters usually held populations at endemic levels until those limits eased, whereupon populations increased rapidly to epidemic levels [@Holsten_1990]. The summer temperature relationship in the Alaskan record [@Berg_2006; @Sherriff_2011] therefore stands beside a moisture term rather than in place of one, and the outbreak is opportunistic in the sense that a population held at endemic level by cold or moisture erupts when the limit lifts, onto hosts already weakened.
+
+The winter sets the last threshold, and it is a depth rather than a temperature. Larvae and adults in Alaska supercooled to about −12 °C in summer and to about −31 °C in winter, the fall carried by glycerol synthesis, and neither stage was freeze tolerant at any time of year, while temperatures measured beneath the bark of standing spruce showed that only beetles hibernating below the snow line would be expected to survive a typical winter [@Miller_1987]. Attack concentrates on the lower bole for the same reason, since that part of the stem is often below the snow line, which shields the brood from lethal cold and from woodpeckers [@Hard_1985b], and in two years of observation new attacks were first noticed and most numerous there [@Holsten_2001]. Winter minimum air temperature therefore bounds survival only for brood above the snow, and the snowpack that shelters the brood is the same one whose low peak water equivalent marked the drought-initiated outbreaks of the Southern Rockies [@Hart_2017], so a mild winter and a thin one are not the same event for this insect. Snow depth over a stand follows elevation, canopy closure and terrain, all of which the analysis grid carries, so the overwintering threshold ends as a line on the bole rather than a temperature in the air, and the measurement of the climate the models received begins from that line.
+
 # Materials and methods
 
-All inputs are open source; scripted retrieval, integrity checksums and a provenance manifest accompany the analysis code.
+The Introduction closed on the snow line because that is where the biology stops describing the insect and starts describing the climate of a stand, and every climate variable the models received was defined from that biology, the warmth index from the univoltinism threshold, the winter minimum from the cold to which brood above the snow is exposed, and the lagged summer mean from the delay between a warm summer and the population it produces. The climate description was therefore placed first, before the literature, the study area and the imagery, so that the quantities the biology named are seen measured, and at what distance from the phloem temperature and the snow depth the biology turned on, before any other input is introduced. All inputs were open source, and scripted retrieval, integrity checksums and a provenance manifest accompanied the analysis code.
+
+The sections that follow ran in the order the analysis was assembled. Climate variables defined the three channels and measured whether each varied by year or by place. Literature search recorded how the corpus was built and screened. Study area and Outbreak history placed the outbreak in its region and in the full span of the aerial survey record. Input datasets listed every source with its role and access terms, and Training data, Crown labels, Crown network and Triage queue described how reference labels were made from the two mosaic epochs. Spectral separability, Survey polygons, Radar record, Satellite composites, Composite assembly and Analysis cube built the predictor record. Subsequence sampling, Architectures, Baseline model and Model training defined what was fitted, Endmember calibration and Pipeline validation tested the pipeline on synthetic stands before any label was scored, and Model evaluation set out the cross-validation and the tests of the three hypotheses.
+
+## Climate variables
+
+The biology named phloem temperature and snow depth, and neither was observed at stand scale across the outbreak years, so the channels were built from the gridded daily air temperature record standing nearest to both. Daily minimum and maximum air temperature from the Daymet version 4 gridded forcings at 1 km resolution [@Thornton_2021] were reduced, per 90 m stand cell and year, to three biologically motivated variables, namely a summer warmth index, the cumulative degree-hours above 17 °C from June through September, a fixed-window approximation of the univoltinism predictor of @Hansen_2001, whose original formulation counts hours above that threshold from 40 to 90 days after peak flight; the winter minimum daily temperature from November through March, indexing the cold to which brood above the snow line was exposed, the snow depth that governed survival below it lying outside the pre-registered channels; and the two-year lagged mean summer temperature, following the lagged temperature association in the regional outbreak record [@Berg_2006; @Sherriff_2011]. @fig-climate shows the three variables over the study window from 1990 through the most recent complete Daymet year, with the seasonal integration windows drawn from the biology, June through September for the warmth index, when development above the 17 °C threshold accrues [@Hansen_2001], and November through March for the winter minimum, when the overwintering stages are exposed [@Werner_2006; @Bentz_2010]. The regional series was computed live from the daily forcings and cached.
+
+```{r}
+#| label: climate-build
+#| echo: true
+#| output: false
+clim_f <- file.path(inputs, "derived", "climate_series.csv")
+if (!file.exists(clim_f)) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
+  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
+                                           crs = crs(tpl_c)), "EPSG:4326")))
+  roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
+  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
+  yearly <- function(y) {
+    smr <- dm$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))
+    tmean <- smr$map(function(img)
+      img$select("tmax")$add(img$select("tmin"))$divide(2)$rename("tmean"))
+    gdd <- tmean$map(function(img)
+      img$subtract(17)$max(0)$multiply(24))$sum()$rename("warmth")
+    smean <- tmean$mean()$rename("summer_mean")
+    wtr <- dm$filterDate(sprintf("%d-11-01", y - 1), sprintf("%d-04-01", y))$
+      select("tmin")$min()$rename("winter_min")
+    gdd$addBands(smean)$addBands(wtr)$reduceRegion(
+      reducer = ee$Reducer$mean(), geometry = roi_c, scale = 1000,
+      maxPixels = 1e10)
+  }
+  years <- 1990:2023
+  vals <- lapply(years, function(y) unlist(yearly(y)$getInfo()))
+  clim <- data.frame(year = years, do.call(rbind, vals))
+  clim$summer_mean_lag2 <- c(NA, NA, head(clim$summer_mean, -2))
+  dir.create(dirname(clim_f), showWarnings = FALSE)
+  write.csv(clim, clim_f, row.names = FALSE)
+}
+clim <- read.csv(clim_f)
+```
+
+Per-cell channel rasters were exported at Daymet's native 1 km resolution for each year and resampled to the stand grid when subsequences were assembled.
+
+```{r}
+#| label: climate-rasters
+#| echo: true
+#| output: false
+clim_dir <- file.path(inputs, "climate")
+dir.create(clim_dir, showWarnings = FALSE)
+todo_c <- (2012:2023)[!file.exists(file.path(clim_dir,
+                                             sprintf("clim_%d.tif", 2012:2023)))]
+if (length(todo_c)) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
+  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
+                                           crs = crs(tpl_c)), "EPSG:4326")))
+  roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
+  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
+  for (y in todo_c) {
+    smr <- dm$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))
+    tmean <- smr$map(function(img)
+      img$select("tmax")$add(img$select("tmin"))$divide(2)$rename("tmean"))
+    img <- tmean$map(function(im) im$subtract(17)$max(0)$multiply(24))$sum()$
+      rename("warmth")$
+      addBands(tmean$mean()$rename("summer_mean"))$
+      addBands(dm$filterDate(sprintf("%d-11-01", y - 1),
+                             sprintf("%d-04-01", y))$
+                 select("tmin")$min()$rename("winter_min"))
+    url <- img$toFloat()$getDownloadURL(list(region = roi_c,
+                                             scale = 1000,
+                                             crs = "EPSG:32605",
+                                             format = "GEO_TIFF"))
+    f <- file.path(clim_dir, sprintf("clim_%d.tif", y))
+    old_to <- options(timeout = 600)
+    try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE)
+    options(old_to)
+  }
+}
+```
+
+@fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion.
+
+
+```{r}
+#| label: climograph-build
+#| echo: true
+#| output: false
+# Monthly climatology from the same Daymet version 4 forcings the annual
+# variables are built from, reduced server-side one calendar month at a time so
+# the whole daily archive never has to be pulled. Written once and read
+# thereafter, on the pattern every other input chunk here follows.
+mon_f <- file.path(inputs, "derived", "climate_monthly.csv")
+if (!file.exists(mon_f)) {
+  library(rgee)
+  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
+  # The extent comes from a climate raster already built for this study rather
+  # than from the severity reference. A climograph needs a bounding box, not a
+  # severity value, and reading the reference here would put a sixth chunk on
+  # the list of those that touch it before the analysis is unblocked.
+  tpl_m <- rast(file.path(inputs, "climate", "clim_2016.tif"))
+  bbm <- as.vector(ext(project(as.polygons(ext(tpl_m), crs = crs(tpl_m)),
+                               "EPSG:4326")))
+  aoi_m <- ee$Geometry$Rectangle(c(bbm[1], bbm[3], bbm[2], bbm[4]))
+  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")$
+    filterDate("1990-01-01", "2024-01-01")$filterBounds(aoi_m)
+  rows <- do.call(rbind, lapply(1:12, function(m) {
+    sub <- dm$filter(ee$Filter$calendarRange(m, m, "month"))
+    img <- sub$select(c("tmax", "tmin"))$mean()$
+      addBands(sub$select("prcp")$mean()$multiply(
+        c(31,28,31,30,31,30,31,31,30,31,30,31)[m])$rename("prcp_month"))
+    v <- img$reduceRegion(reducer = ee$Reducer$mean(), geometry = aoi_m,
+                          scale = 1000, maxPixels = 1e9, bestEffort = TRUE)$
+      getInfo()
+    data.frame(month = m, tmax = v$tmax, tmin = v$tmin, prcp = v$prcp_month)
+  }))
+  rows$tmean <- (rows$tmax + rows$tmin) / 2
+  write.csv(rows, mon_f, row.names = FALSE)
+}
+clim_m <- read.csv(mon_f)
+clim_m$month_name <- month.abb[clim_m$month]
+```
+
+```{r}
+#| label: climograph-numbers
+#| echo: true
+#| output: false
+warm_m <- clim_m[which.max(clim_m$tmax), ]
+```
+
+The threshold sits above the season rather than inside it. The warmest month was `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 was `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature did not reach the 17 °C univoltinism threshold at all and degree-hours accrue only on the warmer days within the window. That is why the warmth index varies so strongly between years, and it is the reason a summer that runs a degree above normal changes the generation time of a population that an average summer leaves on a two-year cycle [@Hansen_2001].
+
+```{r}
+#| label: fig-climograph
+#| echo: true
+#| fig-cap: "Climograph of the study area from Daymet version 4 daily forcings averaged over 1990 to 2023, monthly mean precipitation as bars against monthly mean, maximum and minimum daily air temperature. The horizontal line marks the 17 °C threshold above which spruce beetle development accrues toward a one-year generation, and the shaded band marks June through September, the window over which the summer warmth index integrates. Adult flight occurs in early summer, at the opening of that band."
+#| fig-width: 7
+#| fig-height: 4.2
+# Precipitation is drawn from a baseline at the floor of the temperature axis
+# rather than from zero. Sharing zero puts the bars over the winter curves and
+# makes the right-hand axis run negative, which is a precipitation no station
+# has ever recorded.
+base <- floor(min(clim_m$tmin) / 5) * 5
+sc <- max(clim_m$prcp) / (max(clim_m$tmax) - base)
+# The month axis is numeric so the bars can be drawn as rectangles standing on
+# the baseline. geom_col always starts a bar at zero, which here would hang the
+# drier months below the axis.
+ggplot(clim_m, aes(x = month)) +
+  annotate("rect", xmin = 5.5, xmax = 9.5, ymin = -Inf, ymax = Inf,
+           fill = "grey85", alpha = .55) +
+  geom_rect(aes(xmin = month - .35, xmax = month + .35, ymin = base,
+                ymax = base + prcp / sc), fill = "steelblue4", alpha = .75) +
+  geom_hline(yintercept = 17, linetype = "22", colour = "#C0392B") +
+  annotate("text", x = 1.4, y = 18.2, label = "17 °C univoltinism threshold",
+           size = 2.5, colour = "#C0392B", hjust = 0) +
+  geom_line(aes(y = tmax, colour = "Daily maximum"), linewidth = .5) +
+  geom_line(aes(y = tmean, colour = "Daily mean"), linewidth = .6) +
+  geom_line(aes(y = tmin, colour = "Daily minimum"), linewidth = .5) +
+  scale_colour_manual(NULL, values = c("Daily maximum" = "#E67E22",
+                                       "Daily mean" = "grey20",
+                                       "Daily minimum" = "steelblue4")) +
+  scale_y_continuous(name = "Temperature (°C)",
+                     sec.axis = sec_axis(~ (. - base) * sc,
+                                         name = "Precipitation (mm)")) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb, expand = c(.01, .01)) +
+  labs(x = NULL) + th + theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: fig-climate
+#| echo: true
+#| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index, the cumulative degree-hours above 17 °C from June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
+#| fig-width: 7
+#| fig-height: 4.6
+library(patchwork)
+pa <- ggplot(clim, aes(year, warmth)) +
+  geom_col(fill = "#C0392B", width = .75) +
+  geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
+  labs(title = "(a) Summer warmth index", y = "Degree-hours > 17 °C",
+       x = NULL) + th
+pb <- ggplot(clim, aes(year)) +
+  geom_line(aes(y = winter_min, colour = "Winter minimum"), linewidth = .5) +
+  geom_line(aes(y = summer_mean_lag2, colour = "Summer mean, lag 2 yr"),
+            linewidth = .5) +
+  geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
+  scale_colour_manual(NULL, values = c("Winter minimum" = "steelblue4",
+                                       "Summer mean, lag 2 yr" = "#E67E22")) +
+  labs(title = "(b) Winter minimum and lagged summer mean",
+       y = "°C", x = NULL) + th + theme(legend.position = "bottom")
+pa / pb
+```
+
+These entered the model inputs as additional per-year channels beside the spectral bands, within the subsequences described below; Daymet extended through 2023 when the analysis was run, and later years carried an availability flag in place of measured values until the forcing series updates.
+
+```{r}
+#| label: climate-variance
+#| echo: true
+#| output: false
+# Whether these channels carry timing information, spatial information or both,
+# measured over the blocks the models actually see rather than over the whole
+# frame, which includes the Alaska Range and inflates the spatial spread.
+climvar_f <- file.path(root, "03.outputs", "climate_variance.csv")
+if (!file.exists(climvar_f)) {
+  cf <- sort(list.files(file.path(inputs, "climate"),
+                        pattern = "^clim_[0-9]{4}[.]tif$", full.names = TRUE))
+  blk_c <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
+                       quiet = TRUE)
+  nm <- c("summer warmth index", "winter minimum", "lagged summer mean")
+  cv <- do.call(rbind, lapply(1:3, function(b) {
+    st <- rast(lapply(cf, function(x) rast(x)[[b]]))
+    v <- terra::extract(st, vect(sf::st_transform(blk_c, crs(st))),
+                        fun = mean, na.rm = TRUE, ID = FALSE)
+    v <- v[stats::complete.cases(v), ]
+    data.frame(channel = nm[b], blocks = nrow(v),
+               between_year = sd(colMeans(v)),
+               between_block = mean(apply(v, 2, sd)))
+  }))
+  cv$ratio <- cv$between_year / cv$between_block
+  write.csv(cv, climvar_f, row.names = FALSE)
+}
+climvar <- read.csv(climvar_f)
+cvr <- function(ch) climvar$ratio[climvar$channel == ch]
+```
+
+Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks of the cross-validation design described below rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand.
 
 ## Literature search
 
@@ -1392,231 +1621,6 @@ ggplot(tr, aes(year, med)) +
   scale_x_continuous(breaks = seq(2014, 2024, 2)) +
   labs(x = NULL, y = "Surface reflectance") + th
 ```
-
-## Climate variables
-
-Daily minimum and maximum air temperature from the Daymet version 4 gridded forcings at 1 km resolution [@Thornton_2021] were reduced, per stand cell and year, to three biologically motivated variables, namely a summer warmth index, the cumulative degree-hours above 17 °C from June through September, a fixed-window approximation of the univoltinism predictor of @Hansen_2001, whose original formulation counts hours above that threshold from 40 to 90 days after peak flight; the winter minimum daily temperature from November through March, indexing overwinter mortality; and the two-year lagged mean summer temperature, following the lagged temperature association in the regional outbreak record [@Berg_2006; @Sherriff_2011]. @fig-climate shows the three variables over the study window from 1990 through the most recent complete Daymet year, with the seasonal integration windows drawn from the biology, June through September for the warmth index, when development above the 17 °C threshold accrues [@Hansen_2001], and November through March for the winter minimum, when the overwintering stages are exposed [@Werner_2006; @Bentz_2010]. The regional series was computed live from the daily forcings and cached.
-
-```{r}
-#| label: climate-build
-#| echo: true
-#| output: false
-clim_f <- file.path(inputs, "derived", "climate_series.csv")
-if (!file.exists(clim_f)) {
-  library(rgee)
-  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
-  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
-                                           crs = crs(tpl_c)), "EPSG:4326")))
-  roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
-  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
-  yearly <- function(y) {
-    smr <- dm$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))
-    tmean <- smr$map(function(img)
-      img$select("tmax")$add(img$select("tmin"))$divide(2)$rename("tmean"))
-    gdd <- tmean$map(function(img)
-      img$subtract(17)$max(0)$multiply(24))$sum()$rename("warmth")
-    smean <- tmean$mean()$rename("summer_mean")
-    wtr <- dm$filterDate(sprintf("%d-11-01", y - 1), sprintf("%d-04-01", y))$
-      select("tmin")$min()$rename("winter_min")
-    gdd$addBands(smean)$addBands(wtr)$reduceRegion(
-      reducer = ee$Reducer$mean(), geometry = roi_c, scale = 1000,
-      maxPixels = 1e10)
-  }
-  years <- 1990:2023
-  vals <- lapply(years, function(y) unlist(yearly(y)$getInfo()))
-  clim <- data.frame(year = years, do.call(rbind, vals))
-  clim$summer_mean_lag2 <- c(NA, NA, head(clim$summer_mean, -2))
-  dir.create(dirname(clim_f), showWarnings = FALSE)
-  write.csv(clim, clim_f, row.names = FALSE)
-}
-clim <- read.csv(clim_f)
-```
-
-Per-cell channel rasters were exported at Daymet's native 1 km resolution for each year and resampled to the stand grid when subsequences were assembled.
-
-```{r}
-#| label: climate-rasters
-#| echo: true
-#| output: false
-clim_dir <- file.path(inputs, "climate")
-dir.create(clim_dir, showWarnings = FALSE)
-todo_c <- (2012:2023)[!file.exists(file.path(clim_dir,
-                                             sprintf("clim_%d.tif", 2012:2023)))]
-if (length(todo_c)) {
-  library(rgee)
-  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  tpl_c <- rast(file.path(inputs, "zwieback-severity", "merged_ref_h_c90c.tif"))
-  bbc <- as.vector(ext(project(as.polygons(ext(tpl_c) + 50000,
-                                           crs = crs(tpl_c)), "EPSG:4326")))
-  roi_c <- ee$Geometry$Rectangle(c(bbc[1], bbc[3], bbc[2], bbc[4]))
-  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")
-  for (y in todo_c) {
-    smr <- dm$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))
-    tmean <- smr$map(function(img)
-      img$select("tmax")$add(img$select("tmin"))$divide(2)$rename("tmean"))
-    img <- tmean$map(function(im) im$subtract(17)$max(0)$multiply(24))$sum()$
-      rename("warmth")$
-      addBands(tmean$mean()$rename("summer_mean"))$
-      addBands(dm$filterDate(sprintf("%d-11-01", y - 1),
-                             sprintf("%d-04-01", y))$
-                 select("tmin")$min()$rename("winter_min"))
-    url <- img$toFloat()$getDownloadURL(list(region = roi_c,
-                                             scale = 1000,
-                                             crs = "EPSG:32605",
-                                             format = "GEO_TIFF"))
-    f <- file.path(clim_dir, sprintf("clim_%d.tif", y))
-    old_to <- options(timeout = 600)
-    try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE)
-    options(old_to)
-  }
-}
-```
-
-@fig-climograph gives the seasonal setting the annual variables above are integrated from, so that the June to September window and the 17 °C threshold can be read against the temperature regime they sit in rather than taken on assertion.
-
-
-```{r}
-#| label: climograph-build
-#| echo: true
-#| output: false
-# Monthly climatology from the same Daymet version 4 forcings the annual
-# variables are built from, reduced server-side one calendar month at a time so
-# the whole daily archive never has to be pulled. Written once and read
-# thereafter, on the pattern every other input chunk here follows.
-mon_f <- file.path(inputs, "derived", "climate_monthly.csv")
-if (!file.exists(mon_f)) {
-  library(rgee)
-  ee_Initialize(project = "murphys-deforisk", quiet = TRUE)
-  # The extent comes from a climate raster already built for this study rather
-  # than from the severity reference. A climograph needs a bounding box, not a
-  # severity value, and reading the reference here would put a sixth chunk on
-  # the list of those that touch it before the analysis is unblocked.
-  tpl_m <- rast(file.path(inputs, "climate", "clim_2016.tif"))
-  bbm <- as.vector(ext(project(as.polygons(ext(tpl_m), crs = crs(tpl_m)),
-                               "EPSG:4326")))
-  aoi_m <- ee$Geometry$Rectangle(c(bbm[1], bbm[3], bbm[2], bbm[4]))
-  dm <- ee$ImageCollection("NASA/ORNL/DAYMET_V4")$
-    filterDate("1990-01-01", "2024-01-01")$filterBounds(aoi_m)
-  rows <- do.call(rbind, lapply(1:12, function(m) {
-    sub <- dm$filter(ee$Filter$calendarRange(m, m, "month"))
-    img <- sub$select(c("tmax", "tmin"))$mean()$
-      addBands(sub$select("prcp")$mean()$multiply(
-        c(31,28,31,30,31,30,31,31,30,31,30,31)[m])$rename("prcp_month"))
-    v <- img$reduceRegion(reducer = ee$Reducer$mean(), geometry = aoi_m,
-                          scale = 1000, maxPixels = 1e9, bestEffort = TRUE)$
-      getInfo()
-    data.frame(month = m, tmax = v$tmax, tmin = v$tmin, prcp = v$prcp_month)
-  }))
-  rows$tmean <- (rows$tmax + rows$tmin) / 2
-  write.csv(rows, mon_f, row.names = FALSE)
-}
-clim_m <- read.csv(mon_f)
-clim_m$month_name <- month.abb[clim_m$month]
-```
-
-```{r}
-#| label: climograph-numbers
-#| echo: true
-#| output: false
-warm_m <- clim_m[which.max(clim_m$tmax), ]
-```
-
-The threshold sits above the season rather than inside it. The warmest month was `r month.name[warm_m$month]`, whose mean daily maximum over 1990 to 2023 was `r sprintf("%.1f", warm_m$tmax)` °C, so on an average day of the warmest month the temperature did not reach the 17 °C univoltinism threshold at all and degree-hours accrue only on the warmer days within the window. That is why the warmth index varies so strongly between years, and it is the reason a summer that runs a degree above normal changes the generation time of a population that an average summer leaves on a two-year cycle [@Hansen_2001].
-
-```{r}
-#| label: fig-climograph
-#| echo: true
-#| fig-cap: "Climograph of the study area from Daymet version 4 daily forcings averaged over 1990 to 2023, monthly mean precipitation as bars against monthly mean, maximum and minimum daily air temperature. The horizontal line marks the 17 °C threshold above which spruce beetle development accrues toward a one-year generation, and the shaded band marks June through September, the window over which the summer warmth index integrates. Adult flight occurs in early summer, at the opening of that band."
-#| fig-width: 7
-#| fig-height: 4.2
-# Precipitation is drawn from a baseline at the floor of the temperature axis
-# rather than from zero. Sharing zero puts the bars over the winter curves and
-# makes the right-hand axis run negative, which is a precipitation no station
-# has ever recorded.
-base <- floor(min(clim_m$tmin) / 5) * 5
-sc <- max(clim_m$prcp) / (max(clim_m$tmax) - base)
-# The month axis is numeric so the bars can be drawn as rectangles standing on
-# the baseline. geom_col always starts a bar at zero, which here would hang the
-# drier months below the axis.
-ggplot(clim_m, aes(x = month)) +
-  annotate("rect", xmin = 5.5, xmax = 9.5, ymin = -Inf, ymax = Inf,
-           fill = "grey85", alpha = .55) +
-  geom_rect(aes(xmin = month - .35, xmax = month + .35, ymin = base,
-                ymax = base + prcp / sc), fill = "steelblue4", alpha = .75) +
-  geom_hline(yintercept = 17, linetype = "22", colour = "#C0392B") +
-  annotate("text", x = 1.4, y = 18.2, label = "17 °C univoltinism threshold",
-           size = 2.5, colour = "#C0392B", hjust = 0) +
-  geom_line(aes(y = tmax, colour = "Daily maximum"), linewidth = .5) +
-  geom_line(aes(y = tmean, colour = "Daily mean"), linewidth = .6) +
-  geom_line(aes(y = tmin, colour = "Daily minimum"), linewidth = .5) +
-  scale_colour_manual(NULL, values = c("Daily maximum" = "#E67E22",
-                                       "Daily mean" = "grey20",
-                                       "Daily minimum" = "steelblue4")) +
-  scale_y_continuous(name = "Temperature (°C)",
-                     sec.axis = sec_axis(~ (. - base) * sc,
-                                         name = "Precipitation (mm)")) +
-  scale_x_continuous(breaks = 1:12, labels = month.abb, expand = c(.01, .01)) +
-  labs(x = NULL) + th + theme(legend.position = "bottom")
-```
-
-```{r}
-#| label: fig-climate
-#| echo: true
-#| fig-cap: "Annual climate variables over the study window from Daymet version 4 daily forcings, 1990 to 2023. (a) Summer warmth index, the cumulative degree-hours above 17 °C from June to September, the seasonal window in which development above the univoltinism threshold accrues. (b) Winter minimum daily temperature, November to March, when overwintering stages beneath the bark are exposed to cold mortality; the two-year lagged summer mean tracks the delayed population response. The dashed line marks the 2016 outbreak onset."
-#| fig-width: 7
-#| fig-height: 4.6
-library(patchwork)
-pa <- ggplot(clim, aes(year, warmth)) +
-  geom_col(fill = "#C0392B", width = .75) +
-  geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
-  labs(title = "(a) Summer warmth index", y = "Degree-hours > 17 °C",
-       x = NULL) + th
-pb <- ggplot(clim, aes(year)) +
-  geom_line(aes(y = winter_min, colour = "Winter minimum"), linewidth = .5) +
-  geom_line(aes(y = summer_mean_lag2, colour = "Summer mean, lag 2 yr"),
-            linewidth = .5) +
-  geom_vline(xintercept = 2016, linetype = "22", colour = "grey30") +
-  scale_colour_manual(NULL, values = c("Winter minimum" = "steelblue4",
-                                       "Summer mean, lag 2 yr" = "#E67E22")) +
-  labs(title = "(b) Winter minimum and lagged summer mean",
-       y = "°C", x = NULL) + th + theme(legend.position = "bottom")
-pa / pb
-```
-
-These enter the subsequences as additional per-year channels; Daymet currently extends through 2023, and later years carry an availability flag in place of measured values until the forcing series updates.
-
-```{r}
-#| label: climate-variance
-#| echo: true
-#| output: false
-# Whether these channels carry timing information, spatial information or both,
-# measured over the blocks the models actually see rather than over the whole
-# frame, which includes the Alaska Range and inflates the spatial spread.
-climvar_f <- file.path(root, "03.outputs", "climate_variance.csv")
-if (!file.exists(climvar_f)) {
-  cf <- sort(list.files(file.path(inputs, "climate"),
-                        pattern = "^clim_[0-9]{4}[.]tif$", full.names = TRUE))
-  blk_c <- sf::st_read(file.path(inputs, "derived", "sample_blocks.gpkg"),
-                       quiet = TRUE)
-  nm <- c("summer warmth index", "winter minimum", "lagged summer mean")
-  cv <- do.call(rbind, lapply(1:3, function(b) {
-    st <- rast(lapply(cf, function(x) rast(x)[[b]]))
-    v <- terra::extract(st, vect(sf::st_transform(blk_c, crs(st))),
-                        fun = mean, na.rm = TRUE, ID = FALSE)
-    v <- v[stats::complete.cases(v), ]
-    data.frame(channel = nm[b], blocks = nrow(v),
-               between_year = sd(colMeans(v)),
-               between_block = mean(apply(v, 2, sd)))
-  }))
-  cv$ratio <- cv$between_year / cv$between_block
-  write.csv(cv, climvar_f, row.names = FALSE)
-}
-climvar <- read.csv(climvar_f)
-cvr <- function(ch) climvar$ratio[climvar$channel == ch]
-```
-
-Whether these channels carry timing or place was measured rather than asserted, over the `r climvar$blocks[1]` sampled blocks rather than the whole frame, whose mountains would inflate any spatial spread. The three do not behave alike. The summer warmth index varies `r sprintf("%.2f", cvr("summer warmth index"))` times as much between years as between blocks, so it is chiefly a timing channel. The winter minimum and the two-year lagged summer mean do the opposite, at `r sprintf("%.2f", cvr("winter minimum"))` and `r sprintf("%.2f", cvr("lagged summer mean"))`, varying more between blocks within a year than between years. Two of the three therefore carry spatial contrast the network can use to tell one stand from another, which is more than a timing channel can offer and more than the design assumed. The third hypothesis is correspondingly better posed than it would be if all three were regional series broadcast to every cell, because a channel with no spatial variation could only shift a prediction year by year, never stand by stand.
 
 ## Subsequence sampling
 
