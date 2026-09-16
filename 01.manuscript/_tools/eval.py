@@ -33,6 +33,7 @@ import argparse
 import csv
 import glob
 import hashlib
+import io
 import json
 import os
 import re
@@ -56,14 +57,14 @@ STANDARDS = os.path.join(ROOT, "04.references", "standards")
 SAMPLE_CSV = os.path.join(ROOT, "02.inputs", "derived", "sample_blocks.csv")
 SAMPLE_GPKG = os.path.join(ROOT, "02.inputs", "derived", "sample_blocks.gpkg")
 
-# Each locked artefact against the commit that locked it. The fold assignment
-# was locked in 0d5de75; the block geometries were committed two commits later
-# in 3288abb and do not exist in the earlier tree, so checking both against
-# 0d5de75 blocks the gate on a healthy repository.
+# The block sample against the commit that locked it. The fold column written
+# in 0d5de75 was withdrawn on 2026-09-12 and the folds are now dealt by blockCV
+# in the sample-folds chunk, so the lock compares every block row with that
+# column removed from the committed table.
 SAMPLE_LOCKS = {
     "02.inputs/derived/sample_blocks.csv": "0d5de75",
-    "02.inputs/derived/sample_blocks.gpkg": "3288abb",
 }
+WITHDRAWN_SAMPLE_COLUMNS = {"fold"}
 
 # The severity rasters are the outcome. A chunk that reads them is doing
 # outcome analysis, and the pre-registration governs which chunks may.
@@ -191,12 +192,21 @@ def check_preregistration_drift(base):
             out.strip() or "clean", "clean", art)
 
 
-def check_sample_lock(base):
-    """The block sample and fold assignment are byte-identical to their lock.
+def _sample_rows(text):
+    """Block rows of the sample table with the withdrawn columns dropped."""
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return []
+    keep = [i for i, h in enumerate(rows[0]) if h not in WITHDRAWN_SAMPLE_COLUMNS]
+    return [[r[i] for i in keep] for r in rows if r]
 
-    Folds are the only thing separating this study's skill estimates from the
-    leakage in the literature. If a fold moves after outcome data are touched,
-    every confirmatory test is invalid and no downstream number can be trusted.
+
+def check_sample_lock(base):
+    """The block sample is identical to its lock, row for row.
+
+    The blocks are the unit every fold and every skill estimate rests on. If a
+    block moves after outcome data are touched, every confirmatory test is
+    invalid. The fold column of the lock is excluded because it was withdrawn.
     """
     results = []
     for art, commit in sorted(SAMPLE_LOCKS.items()):
@@ -206,7 +216,9 @@ def check_sample_lock(base):
         blob = git_bytes("show", f"{commit}:{art}")
         if blob is None:
             return "blocked", f"{art} absent from {commit}", commit, art
-        results.append((art, sha256(path), hashlib.sha256(blob).hexdigest()))
+        with open(path, newline="") as fh:
+            now = _sample_rows(fh.read())
+        results.append((art, now, _sample_rows(blob.decode())))
     moved = [a for a, now, then in results if now != then]
     art = "02.inputs/derived"
     return ("pass" if not moved else "fail",

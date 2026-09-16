@@ -1,4 +1,4 @@
-# Multi-year temporal deep learning and open satellite data lower the detectability floor for low-severity spruce beetle mortality in Southcentral Alaska
+# Radar satellite data and deep learning lower the detectability floor for low-severity spruce beetle disturbance in Southcentral Alaska
 
 ## Abstract
 

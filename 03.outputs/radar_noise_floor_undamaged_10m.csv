@@ -1,0 +1,5 @@
+processing,band,repeatability_median_db,repeatability_n,year_to_year_median_db,year_to_year_q25_db,year_to_year_q75_db,year_to_year_n,blocks,months,support
+unfiltered,VV,1.282,13677568,1.183,0.976,1.418,1478656,64,6-9,10 m cell
+unfiltered,VH,1.324,13677568,1.187,0.98,1.42,1478656,64,6-9,10 m cell
+mt_filtered,VV,0.985,12967168,0.907,0.744,1.098,1401856,64,6-9,10 m cell
+mt_filtered,VH,1.024,12967168,0.918,0.752,1.114,1401856,64,6-9,10 m cell

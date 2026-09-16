@@ -1,0 +1,564 @@
+---
+title: "Reconstructing temporal variability of the Alaskan spruce beetle outbreak using SAR radar data and deep learning algorithms"
+date: today
+author:
+  - name: Seamus Murphy
+    orcid: 0000-0002-1792-0351
+keywords:
+  - wildfire
+  - Sentinel-1
+  - weak supervision
+  - deep learning
+  - boreal forest
+  - Alaska
+format:
+  html:
+    toc: true
+    number-sections: false
+    embed-resources: true
+    code-fold: false
+    df-print: kable
+  docx:
+    prefer-html: true
+    reference-doc: ../04.references/style-formal.docx
+    highlight-style: pygments
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+  error: false
+  comment: NA
+engine: knitr
+citeproc: true
+editor: visual
+bibliography: ../04.references/references.bib
+csl: ../04.references/apa.csl
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| output: false
+
+easypackages::packages(
+  "bslib", "blockCV",
+  "e1071", "exactextractr","elevatr", 
+  "gdalcubes", "gdalUtilities", "geojsonsf", "geos", "ggplot2", "ggstats", 
+  "ggspatial", "ggmap", "ggplotify", "ggpubr", "ggrepel", "giscoR", 
+  "hdf5r", "httr", "httr2", "htmltools",
+  "jsonlite", 
+  "leaflet.providers", "leafem", "libgeos","luz","lwgeom", "leaflet", "leafgl",
+  "ncdf4", "nnet", 
+  "openxlsx", "parallel", "plotly", "patchwork",
+  "randomForest", "raster", "Rcpp", "RcppArmadillo", "readr", "reticulate",
+  "RColorBrewer", "reactable", "rgl", "rsconnect","RStoolbox", "rts", "rgee",
+  "s2", "sf", "scales", "sits","spdep", "stars", "stringr","supercells", 
+  "terra", "testthat", "tidyverse", "tidyterra","tools", 
+  "tmap", "tmaptools", "terrainr", 
+  "xgboost",
+  prompt = F)
+
+# remove ExFAT artifacts
+sidecars<-list.files(".", pattern = "^\\._",recursive=T, all.files=T, full.names=T)
+file.remove(sidecars)
+
+# Assign working directory to repo root: '../manuscript.qmd'
+knitr::opts_knit$set(root.dir = here::here())
+
+# Point environment to your configured python
+#reticulate::use_python("/opt/local/bin/python", required=T)
+
+# Initialise Earth Engine
+ee <- reticulate::import("ee")
+ee$Initialize(project = "murphys-deforisk")
+
+# Helper to visualize EE tile in tmap/leaflet
+ee_tile_url <- function(ee_image, vis_params) {
+  ee_image$getMapId(vis_params)$tile_fetcher$url_format}
+
+# EE FeatureCollection => sf
+ee_to_sf <- function(fc) {geojsonsf::geojson_sf(jsonlite::toJSON(fc$getInfo(), auto_unbox = T))}
+
+# table formatting
+fmt_tbl <- function(df, right = NULL, caption = NULL) {
+  right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
+  left_cols <- setdiff(names(df), right_cols)
+  ft <- flextable::flextable(df)
+  ft <- flextable::fontsize(ft, size = 9, part = "all")
+  ft <- flextable::align(ft, align = "center", part = "header")
+  if (length(right_cols)) ft <- flextable::align(ft, j = right_cols, align = "right", part = "body")
+  if (length(left_cols)) ft <- flextable::align(ft, j = left_cols, align = "left", part = "body")
+  ft <- flextable::line_spacing(ft, space = 1, part = "all")
+  ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1,part = "all")
+  if (!is.null(caption)) ft <- flextable::set_caption(ft, caption)
+  flextable::set_table_properties(ft, layout = "autofit", width = 1)
+}
+
+# graph formatting
+th <- theme_bw(base_size = 8) + theme(
+	panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold", size = 8.5))
+
+# map formatting
+tmap::tmap_mode("plot")
+in_km <- function(x, km = "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs") {
+  if (!inherits(x, "SpatRaster")) return(sf::st_transform(x, km))
+  ext(x) <- as.vector(ext(x)) / 1000
+  crs(x) <- km
+  x
+}
+
+frame_at_scale <- function(x, scale, width_in, height_in, crs = "EPSG:32605") {
+  bb <- sf::st_bbox(sf::st_transform(x, crs))
+  cx <- mean(bb[c("xmin", "xmax")]); cy <- mean(bb[c("ymin", "ymax")])
+  hw <- width_in  * 0.0254 * scale / 2
+  hh <- height_in * 0.0254 * scale / 2
+  sf::st_bbox(c(xmin = cx - hw, ymin = cy - hh, xmax = cx + hw, ymax = cy + hh),
+              crs = sf::st_crs(crs))
+}
+
+scale_label <- function(scale) paste0("1:", format(scale, big.mark = ",", scientific = F))
+
+map_frame <- function(title, legend=tmap::tm_pos_out("right","center"), ...) {
+	tmap::tm_grid(lines=T,labels.size = 0.55,lwd=0.2) +
+  tmap::tm_compass(position = c("left", "top"), size = 1.2, text.size = 0.5) +
+  tmap::tm_title(title, size = 0.8, fontface = "bold") +
+  tmap::tm_layout(
+  	frame = T, inner.margins = 0, 
+  	outer.margins = c(0.08, 0.08, 0.01, 0.01),
+    legend.position = legend, legend.text.size = 0.55,
+    legend.title.size = 0.65, component.autoscale = F)
+}
+
+```
+
+# Introduction
+
+The area burned in the Alaskan boreal forest has grown, rising 4.6-fold in Interior Alaska over the 70 years analysed by @Calef_2015. Single seasons now burn millions of hectares; the 2015 season burned 5.1 million acres, the second largest area since 1940, with lightning igniting 99.5 per cent of it [@Partain_2016]. Mapping where and how severely each fire burned supports carbon accounting, fire management and the study of how fire interacts with the spruce beetle outbreaks that are killing spruce in Southcentral Alaska [@Zwieback_2024], an interaction for which tree-ring records from British Columbia found no regional association between fire years and outbreaks of another forest insect, the western spruce budworm [@Harvey_2018].
+
+Burned area in the United States, Alaska included, is mapped by the Monitoring Trends in Burn Severity (MTBS) program from Landsat [@Eidenshink_2007]. Optical mapping of this kind is limited in the north, where "Optical images at critical time frame, however, are often unavailable due to frequent cloud cover in the boreal and tropical regions" [@Ban_2020, p. 2] and "optical observations are often affected by clouds or smoke, especially when a wildfire is active" [@Zhang_2024a, p. 3]. MTBS therefore maps many fires from imagery of the year after they burned, sets its severity thresholds fire by fire and is not field validated, so its record is detailed but late and noisy.
+
+Synthetic aperture radar images through cloud and smoke by day and night [@Ban_2020], and Sentinel-1 has supplied a dense C-band record since 2014. In boreal Alberta the mean backscatter of both VH and VV in burnt forest "decreased approximately 2–3.5 dBs" after the fire while unburnt forest remained stable [@Ban_2020, p. 5], and a deep network on the Sentinel-1 series mapped the Chuckegg Creek Fire with an F1 score of 0.87 [@Ban_2020]. Two difficulties remain. The burned and unburned distributions of C-band backscatter overlap considerably, and "C-Band SAR's effectiveness is significantly enhanced by incorporating pre-event data" [@Zhang_2024a, p. 18]; and "some low burn severity areas without structural changes may be missed" [@Ban_2020, p. 8]. Deep networks can separate the overlapping classes, but they need large reference sets, which are rarely available in remote boreal forest.
+
+Weak supervision offers a way to build those reference sets from existing noisy maps. @Mullissa_2023 harvested reference labels for Sentinel-1 disturbance mapping in tropical dry forest from the Landsat-based Hansen forest loss map [@Hansen_2013], keeping only loss pixels that the radar confirmed and that an initial network agreed with, and label harvesting raised the F1 score of their alerts from 0.22 to 0.75 in Paraguay and from 0.26 to 0.66 in Mozambique. Automated labels from an existing product with a confidence filter likewise improved Sentinel-1 surface water mapping [@Huang_2018]. The MTBS record is such a product for Alaskan fire.
+
+This study adapted the label harvesting of @Mullissa_2023 to wildfire in the Alaskan boreal forest, with the following objectives:
+
+1. Harvest burned and stable forest reference labels for Sentinel-1 from the MTBS record of Alaskan wildfires from 2017 to 2022.
+2. Train a deep neural network on the harvested labels and measure its agreement with MTBS on fires held out by spatial cross-validation, with and without label harvesting.
+3. Relate burned forest to spruce beetle and other insect and disease damage recorded by the aerial detection survey before each fire, as a first measure of the interactions between these disturbances.
+
+# Study area
+
+```{r}
+#| label: mtbs-fires
+#| echo: true
+#| output: false
+# Monitoring Trends in Burn Severity burned area boundaries, Earth Engine USFS/GTAC/MTBS/burned_area_boundaries/v1.
+# https://developers.google.com/earth-engine/datasets/catalog/USFS_GTAC_MTBS_burned_area_boundaries_v1
+fires_csv <- "02.inputs/derived/mtbs_alaska_fires.csv"
+ak_fires <- ee$FeatureCollection("USFS/GTAC/MTBS/burned_area_boundaries/v1")$
+  filter(ee$Filter$stringStartsWith("Event_ID", "AK"))$
+  filter(ee$Filter$rangeContains("Ig_Date", ee$Date("2017-01-01")$millis(), ee$Date("2023-01-01")$millis()))
+if (!file.exists(fires_csv)) {
+  p <- lapply(ak_fires$map(function(f) f$set("ignition", ee$Date(f$get("Ig_Date"))$format("YYYY-MM-dd")))$
+                select(c("Event_ID", "Incid_Name", "Incid_Type", "Asmnt_Type", "BurnBndAc", "BurnBndLat", "BurnBndLon", "ignition"), NULL, FALSE)$getInfo()$features, `[[`, "properties")
+  write.csv(data.frame(event_id = sapply(p, `[[`, "Event_ID"), name = sapply(p, `[[`, "Incid_Name"), type = sapply(p, `[[`, "Incid_Type"),
+                       assessment = sapply(p, `[[`, "Asmnt_Type"), ha = sapply(p, `[[`, "BurnBndAc") * 0.40468564,
+                       lat = as.numeric(sapply(p, `[[`, "BurnBndLat")), lon = as.numeric(sapply(p, `[[`, "BurnBndLon")),
+                       ignition = sapply(p, `[[`, "ignition")), fires_csv, row.names = FALSE)
+}
+fires <- read.csv(fires_csv)
+fires$year <- as.integer(substr(fires$ignition, 1, 4))
+```
+
+```{r}
+#| label: fig-study
+#| echo: true
+#| fig-cap: "Wildfires of 2017 to 2022 in the Monitoring Trends in Burn Severity record for Alaska, drawn at the centre of each burned area, sized by area and coloured by year of ignition, in Alaska Albers Equal Area (EPSG:3338)."
+#| fig-width: 7
+#| fig-height: 5
+# United States Census Bureau cartographic boundary file of states, 2023, 1:20,000,000.
+# https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_20m.zip
+states_zip <- "02.inputs/context/cb_2023_us_state_20m.zip"
+if (!file.exists(states_zip)) download.file("https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_20m.zip", states_zip, mode = "wb")
+alaska <- sf::st_transform(subset(sf::st_read(file.path("/vsizip", states_zip, "cb_2023_us_state_20m.shp"), quiet = TRUE), STUSPS == "AK"), 3338)
+wf <- sf::st_transform(sf::st_as_sf(fires[fires$type == "Wildfire", ], coords = c("lon", "lat"), crs = 4326), 3338)
+ggplot() + geom_sf(data = alaska, fill = "grey95", colour = "grey40", linewidth = 0.2) +
+  geom_sf(data = wf, aes(size = ha / 1000, colour = factor(year)), alpha = 0.7) +
+  scale_size_area("Burned area (kha)", max_size = 7) + scale_colour_brewer("Ignition year", palette = "Dark2") +
+  coord_sf(xlim = sf::st_bbox(wf)[c(1, 3)] + c(-3e5, 3e5), ylim = sf::st_bbox(wf)[c(2, 4)] + c(-2e5, 2e5)) + th
+```
+
+The study area was the part of Alaska burned from 2017 to 2022 by wildfires large enough to be mapped by MTBS, `r sum(fires$type == "Wildfire")` fires lying between `r sprintf("%.1f", min(fires$lat[fires$type == "Wildfire"]))`° N and `r sprintf("%.1f", max(fires$lat[fires$type == "Wildfire"]))`° N (@fig-study), `r sum(fires$type == "Wildfire" & fires$lat >= 62)` of them north of 62° N in Interior Alaska, where the annual area burned has increased over the fire record [@Calef_2015]. The years were uneven. The `r sum(fires$type == "Wildfire" & fires$year == 2019)` wildfires of 2019 and `r sum(fires$type == "Wildfire" & fires$year == 2022)` of 2022 burned `r round(100 * sum(fires$ha[fires$type == "Wildfire" & fires$year %in% c(2019, 2022)]) / sum(fires$ha[fires$type == "Wildfire"]))` per cent of the area, against `r sum(fires$type == "Wildfire" & fires$year == 2021)` wildfires in 2021, the fewest in any year.
+
+# Data
+
+## Sentinel-1 data
+
+## Fire and forest
+
+Burned labels were drawn from the Monitoring Trends in Burn Severity (MTBS) record [@Eidenshink_2007], which maps every fire of 1,000 acres (405 ha) or more in Alaska from Landsat and classes each 30 m pixel as unburned to low, low, moderate or high severity using thresholds on the differenced Normalized Burn Ratio set by an analyst for each fire. The classes are not field validated, and the MTBS program had completed its mapping only to the 2022 fire year when the data were read on 13 September 2026, so the study period was fires ignited from 2017 to 2022. The record held `r nrow(fires)` Alaskan fires in that period, of which the `r sum(fires$type == "Wildfire")` wildfires, burning `r format(round(sum(fires$ha[fires$type == "Wildfire"]) / 1e6, 2), nsmall = 2)` million ha, were used; `r sum(fires$type == "Wildfire" & fires$year %in% c(2019, 2022))` of them burned in 2019 and 2022. The forest baseline for each fire followed @Mullissa_2023, pixels of 30 per cent tree cover or more in 2000 from the Hansen Global Forest Change dataset [@Hansen_2013] less any loss recorded before the year of the fire.
+
+# Methods
+
+## Radar preprocessing
+
+```{r}
+#| label: s1-flatten
+#| echo: true
+#| output: false
+# Sentinel-1 GRD, Earth Engine COPERNICUS/S1_GRD.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S1_GRD
+# Copernicus GLO-30 DEM, Earth Engine COPERNICUS/DEM/GLO30_2024_1.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30_2024_1
+s1 <- ee$ImageCollection("COPERNICUS/S1_GRD")$filter(ee$Filter$eq("instrumentMode", "IW"))$
+  filter(ee$Filter$listContains("transmitterReceiverPolarisation", "VH"))
+dem <- ee$ImageCollection("COPERNICUS/DEM/GLO30_2024_1")$select("DEM")$mosaic()
+rad <- pi / 180
+flatten <- function(img) {  # volume-model slope correction of Vollrath et al. (2020), layover and shadow masked
+  theta <- img$select("angle")$multiply(rad)
+  phi <- ee$Image$constant(ee$Terrain$aspect(img$select("angle"))$reduceRegion(ee$Reducer$mean(), img$geometry(), 1000)$get("aspect"))$multiply(rad)
+  a_r <- ee$Terrain$slope(dem)$multiply(rad)$tan()$multiply(phi$subtract(ee$Terrain$aspect(dem)$multiply(rad))$cos())$atan()
+  g0 <- ee$Image$constant(10)$pow(img$select(c("VV", "VH"))$divide(10))$divide(theta$cos())
+  corr <- ee$Image$constant(pi / 2)$subtract(theta)$add(a_r)$tan()$divide(ee$Image$constant(pi / 2)$subtract(theta)$tan())
+  ee$Image(g0$divide(corr)$focalMean(1.5)$log10()$multiply(10)$updateMask(a_r$lt(theta)$And(a_r$gt(theta$subtract(pi / 2))))$
+    copyProperties(img, list("system:time_start", "relativeOrbitNumber_start")))
+}
+```
+
+Sentinel-1 ground range detected scenes acquired in interferometric wide swath mode with VV and VH polarisation were read in Google Earth Engine [@Gorelick_2017], where each scene had been corrected for thermal noise, radiometrically calibrated, terrain corrected and converted to decibels. Following the analysis-ready data preparation of @Mullissa_2021, the backscatter was then normalised for slope with the volume scattering model of @Vollrath_2020, using the Copernicus 30 m digital elevation model in place of the Shuttle Radar Topography Mission, which does not extend north of 60° N, and pixels in layover or radar shadow were masked. Speckle was reduced with a 3 by 3 pixel mean in linear power before conversion back to decibels, in place of the multi-temporal filter of @Mullissa_2023, and ascending and descending relative orbits were kept apart throughout.
+
+## Feature engineering
+
+```{r}
+#| label: fire-samples
+#| echo: true
+#| output: false
+# Hansen Global Forest Change, Earth Engine UMD/hansen/global_forest_change_2025_v1_13.
+# https://developers.google.com/earth-engine/datasets/catalog/UMD_hansen_global_forest_change_2025_v1_13
+# MTBS annual burn severity mosaics, Earth Engine USFS/GTAC/MTBS/annual_burn_severity_mosaics/v1.
+# https://developers.google.com/earth-engine/datasets/catalog/USFS_GTAC_MTBS_annual_burn_severity_mosaics_v1
+samp_dir <- "02.inputs/derived/fire_samples"; dir.create(samp_dir, showWarnings = FALSE)
+gfc <- ee$Image("UMD/hansen/global_forest_change_2025_v1_13")
+all_fires <- ee$FeatureCollection("USFS/GTAC/MTBS/burned_area_boundaries/v1")$filter(ee$Filter$stringStartsWith("Event_ID", "AK"))
+summer <- function(y0, y1) ee$Filter$And(ee$Filter$date(sprintf("%d-06-01", y0), sprintf("%d-10-01", y1)), ee$Filter$calendarRange(6L, 9L, "month"))
+wild <- fires[fires$type == "Wildfire", ]
+for (i in sample(nrow(wild))) {
+  out <- file.path(samp_dir, paste0(wild$event_id[i], ".csv")); y <- wild$year[i]
+  if (file.exists(out)) next
+  g <- all_fires$filter(ee$Filter$eq("Event_ID", wild$event_id[i]))$geometry()
+  forest <- gfc$select("treecover2000")$gte(30)$And(gfc$select("lossyear")$eq(0)$Or(gfc$select("lossyear")$gte(y - 2000)))
+  sev <- ee$Image(paste0("USFS/GTAC/MTBS/annual_burn_severity_mosaics/v1/mtbs_AK_", y))$select("Severity")
+  ring <- g$buffer(10000)$difference(g$buffer(2000))$difference(all_fires$filterBounds(g$buffer(10000))$geometry(), 100)
+  draw <- function(img, region) img$rename("class")$toByte()$stratifiedSample(numPoints = 50L, classBand = "class", region = region,
+                                                                             scale = 30, seed = 20260913L, geometries = TRUE)
+  pts <- draw(forest$And(sev$gte(2))$And(sev$lte(4))$selfMask(), g$buffer(-20))$merge(draw(forest$selfMask()$multiply(2), ring))$getInfo()$features
+  xy <- data.frame(pid = seq_along(pts), lon = sapply(pts, function(x) x$geometry$coordinates[[1]]), lat = sapply(pts, function(x) x$geometry$coordinates[[2]]))
+  pts <- ee$FeatureCollection(lapply(seq_along(pts), function(k) ee$Feature(ee$Geometry$Point(c(xy$lon[k], xy$lat[k])), list(class = pts[[k]]$properties$class, pid = k))))
+  post <- s1$filterBounds(pts$geometry())$filter(summer(y + 1, y + 1))
+  rows <- post$map(function(img) {
+    hist <- s1$filterBounds(img$geometry())$filter(summer(y - 2, y - 1))$
+      filter(ee$Filter$eq("relativeOrbitNumber_start", img$get("relativeOrbitNumber_start")))$map(flatten)
+    ee$Image$cat(flatten(img), hist$median()$rename(c("VV_med", "VH_med")), hist$reduce(ee$Reducer$percentile(list(2L)))$rename(c("VV_p2", "VH_p2")),
+                 ee$Image$constant(list(hist$size(), img$date()$getRelative("day", "year"), img$get("relativeOrbitNumber_start")))$rename(c("n_hist", "doy", "orbit")))$
+      sampleRegions(pts, list("class", "pid"), 10)
+  })$flatten()
+  f <- tryCatch(rows$getInfo()$features, error = function(e) if (grepl("concurren|Too Many Requests|timed out", conditionMessage(e))) NULL else stop(e))
+  if (is.null(f)) next  # left for the next pass when Earth Engine refuses the request under load
+  write.csv(if (length(f)) merge(data.frame(event_id = wild$event_id[i], year = y + 1, dplyr::bind_rows(lapply(f, `[[`, "properties"))), xy)
+            else data.frame(event_id = wild$event_id[i], year = y + 1, points = nrow(xy), images = post$size()$getInfo()), out, row.names = FALSE)
+}
+```
+
+The features followed @Mullissa_2023, who paired each Sentinel-1 image in the monitoring period with the median and 2nd percentile of backscatter over a stable historical period, so that each sample carried one vector of three values per polarisation. For each wildfire the historical period was June to September of the two years before ignition and the monitoring period was June to September of the year after it, so that both periods avoided the months of snow cover and frozen ground and the monitoring images followed the whole burning season; the historical statistics were computed only from scenes on the same relative orbit as the monitoring image. Within each fire, 50 candidate burned points were drawn at random from forest pixels mapped as low, moderate or high severity more than 20 m inside the perimeter, and 50 candidate stable points from forest pixels 2 to 10 km outside it and outside every Alaskan fire perimeter in the MTBS record, and every monitoring image was sampled at every point.
+
+## Label harvesting
+
+### Burned labels
+
+```{r}
+#| label: burned-labels
+#| echo: true
+#| output: false
+bands <- c("VV", "VH", "VV_med", "VH_med", "VV_p2", "VH_p2")
+samples <- dplyr::bind_rows(lapply(list.files(samp_dir, "\\.csv$", full.names = TRUE), read.csv))
+sampled <- c(fires = length(unique(samples$event_id)), empty = sum(!is.na(samples$points)), rows = sum(!is.na(samples$VH)))
+samples <- samples[complete.cases(samples[, bands]) & samples$n_hist >= 5, ]
+samples$burned <- as.integer(samples$class == 1)
+cross <- function(d, p) {  # change in backscatter at which the burned and stable densities meet, between their medians
+  ch <- d[[p]] - d[[paste0(p, "_med")]]; b <- ch[d$burned == 1]; s <- ch[d$burned == 0]
+  db <- density(b, from = median(b), to = median(s)); ds <- density(s, from = median(b), to = median(s))
+  db$x[which.min(abs(db$y - ds$y))]
+}
+initial <- function(d) {
+  thr <- c(VV = cross(d, "VV"), VH = cross(d, "VH"))
+  ifelse(d$burned == 0, 0L, ifelse(d$VV - d$VV_med <= thr["VV"] & d$VH - d$VH_med <= thr["VH"], 1L, NA))
+}
+thr_all <- c(VV = cross(samples, "VV"), VH = cross(samples, "VH"))
+```
+
+Burned labels were harvested from the MTBS candidates by the weakly supervised procedure of @Mullissa_2023, in which a noisy map made from optical imagery is refined until the labels it supplies agree with what the radar records. MTBS maps many fires from Landsat imagery acquired the year after they burned, so a pixel it calls burned may show no change in C-band backscatter where the canopy survived or where regrowth and soil moisture restored the signal, and its 30 m pixels do not align with the 10 m radar grid. The candidates were first screened on the change in backscatter from the historical median, keeping a burned candidate only where the change in both VV and VH fell below a threshold. The thresholds were set empirically, as @Mullissa_2023 set theirs from the histograms of loss pixels and of the image, at the value between the medians of the burned and stable candidates where their density curves met. Candidates lacking five historical scenes on the same orbit were dropped.
+
+### Stable forest
+
+### Training samples
+
+```{r}
+#| label: fire-folds
+#| echo: true
+#| output: false
+fire_xy <- aggregate(cbind(lon, lat) ~ event_id, samples, mean)
+folds <- blockCV::cv_spatial(sf::st_as_sf(fire_xy, coords = c("lon", "lat"), crs = 4326), k = 5, size = 1e5,
+                             selection = "random", seed = 20260913, progress = FALSE, report = FALSE, plot = FALSE)
+samples$fold <- folds$folds_ids[match(samples$event_id, fire_xy$event_id)]
+balance <- function(d, n = 10000) do.call(rbind, lapply(split(d, d$label), function(x) x[sample(nrow(x), min(nrow(x), n)), ]))
+```
+
+```{r}
+#| label: fig-folds
+#| echo: true
+#| fig-cap: "Sampled wildfires dealt to five spatial cross-validation folds over hexagons 100 km across; the network for each fold was trained without the fires of that fold."
+#| fig-width: 7
+#| fig-height: 5
+ggplot() + geom_sf(data = alaska, fill = "grey95", colour = "grey40", linewidth = 0.2) +
+  geom_sf(data = sf::st_transform(sf::st_as_sf(transform(fire_xy, fold = factor(folds$folds_ids)), coords = c("lon", "lat"), crs = 4326), 3338),
+          aes(colour = fold), size = 1.8) +
+  scale_colour_brewer("Fold", palette = "Set1") + coord_sf(xlim = sf::st_bbox(wf)[c(1, 3)] + c(-3e5, 3e5), ylim = sf::st_bbox(wf)[c(2, 4)] + c(-2e5, 2e5)) + th
+```
+
+Stable forest labels were the stable candidates, drawn well outside any mapped fire, which @Mullissa_2023 likewise took from the forest baseline away from loss. The screened labels trained an initial network for each polarisation, and the final labels were the burned candidates to which both initial networks gave a probability of burning of 0.7 or more and the stable candidates to which both gave 0.3 or less, the probability threshold of @Mullissa_2023. Because the labels of one fire are spatially dependent, the fires were dealt to five spatial folds with blockCV [@Valavi_2019] over hexagons 100 km across (@fig-folds), and label harvesting, training and prediction were repeated for each fold using only the fires of the other four, so that no held-out fire contributed to its own labels. Each network was trained on at most 10,000 samples per class drawn at random, the class-balanced sample size of @Mullissa_2023.
+
+## Neural network
+
+```{r}
+#| label: dnn
+#| echo: true
+#| output: false
+dnn <- function(d, p, units = c(256, 256, 128), epochs = 50) {
+  layers <- unlist(lapply(seq_along(units), function(i) list(torch::nn_linear(c(3, units)[i], units[i]), torch::nn_batch_norm1d(units[i]),
+                                                            torch::nn_relu(), torch::nn_dropout(0.2))), recursive = FALSE)
+  net <- torch::nn_module(initialize = function() self$f <- do.call(torch::nn_sequential, c(layers, torch::nn_linear(tail(units, 1), 2))),
+                          forward = function(x) self$f(x))
+  luz::setup(net, loss = torch::nn_cross_entropy_loss(), optimizer = torch::optim_adam) |> luz::set_opt_hparams(lr = 0.001) |>
+    luz::fit(list(torch::torch_tensor(as.matrix(d[, paste0(p, c("", "_med", "_p2"))])), torch::torch_tensor(d$label + 1L, dtype = torch::torch_long())),
+             epochs = epochs, dataloader_options = list(batch_size = 1024, shuffle = TRUE), verbose = FALSE)
+}
+p_burn <- function(fit, d, p) as.numeric(torch::nnf_softmax(predict(fit, torch::torch_tensor(as.matrix(d[, paste0(p, c("", "_med", "_p2"))]))), 2)[, 2])
+pair <- function(d) lapply(c(VV = "VV", VH = "VH"), function(p) dnn(balance(d), p))
+fused <- function(m, d) p_burn(m$VV, d, "VV") * p_burn(m$VH, d, "VH")
+harvest <- function(tr) {  # initial networks on the thresholded candidates, then the 0.7 intersection
+  tr$label <- initial(tr); m0 <- pair(tr[!is.na(tr$label), ]); pv <- p_burn(m0$VV, tr, "VV"); ph <- p_burn(m0$VH, tr, "VH")
+  tr$label <- ifelse(tr$burned == 1 & pv >= 0.7 & ph >= 0.7, 1L, ifelse(tr$burned == 0 & pv <= 0.3 & ph <= 0.3, 0L, NA))
+  tr[!is.na(tr$label), ]
+}
+pred_csv <- "03.outputs/fire_fold_predictions.csv"
+if (!file.exists(pred_csv)) {
+  set.seed(20260913); torch::torch_manual_seed(20260913)
+  write.csv(do.call(rbind, lapply(sort(unique(samples$fold)), function(k) {
+    tr <- samples[samples$fold != k, ]; te <- samples[samples$fold == k, ]
+    lab <- harvest(tr); harvested <- pair(lab); unrefined <- pair(transform(tr, label = burned))
+    data.frame(te[, c("event_id", "pid", "year", "doy", "orbit", "lon", "lat", "burned", "fold")], n_train = nrow(tr), n_initial = sum(!is.na(initial(tr))),
+               n_harvested = nrow(lab), n_harvested_burned = sum(lab$label), p_harvested = fused(harvested, te), p_unrefined = fused(unrefined, te))
+  })), pred_csv, row.names = FALSE)
+}
+```
+
+The network followed the deep neural network of @Mullissa_2023, three fully connected hidden layers each followed by batch normalisation, a rectified linear unit and dropout, taking the three-value feature vector of one polarisation and returning the probabilities of burned and stable forest. Separate networks were trained for VV and VH with the Adam optimiser at a learning rate of 0.001, a cross-entropy loss and 50 epochs, and their probabilities of burning were multiplied, as in equation 1 of @Mullissa_2023. The hidden layers held 256, 256 and 128 units rather than units tuned by Hyperband, and batches held 1,024 samples rather than 32, to keep training within the capacity of the 8 GB computer the study was run on. For comparison, the same network was trained on the unrefined MTBS candidates of each fold, which isolates the effect of label harvesting as @Mullissa_2023 did.
+
+## Accuracy assessment
+
+```{r}
+#| label: agreement
+#| echo: true
+#| output: false
+confirm <- function(p, doy, low = 0.6, high = 0.8, window = 90) {  # Bayesian updating of Reiche et al. (2018), thresholds of Mullissa et al. (2023)
+  p <- p[order(doy)]; doy <- sort(doy); post <- NA; start <- NA
+  for (t in seq_along(p)) {
+    if (!is.na(post) && p[t] >= low && doy[t] - start <= window) {
+      post <- post * p[t] / (post * p[t] + (1 - post) * (1 - p[t])); if (post > high) return(1L)
+    } else if (p[t] >= low) { post <- p[t]; start <- doy[t] } else post <- NA
+  }
+  0L
+}
+pred <- read.csv(pred_csv); pred$point <- paste(pred$event_id, pred$pid); folds_n <- unique(pred[, c("fold", "n_train", "n_initial", "n_harvested", "n_harvested_burned")])
+points <- do.call(rbind, lapply(split(pred, pred$point), function(d) data.frame(
+  event_id = d$event_id[1], pid = d$pid[1], year = d$year[1], lon = d$lon[1], lat = d$lat[1], fold = d$fold[1], burned = d$burned[1], n_images = nrow(d),
+  harvested = confirm(d$p_harvested, d$doy), unrefined = confirm(d$p_unrefined, d$doy))))
+score <- function(x, y) c(precision = sum(x & y) / sum(x), recall = sum(x & y) / sum(y), F1 = 2 * sum(x & y) / (sum(x) + sum(y)))
+agree <- rbind(`With label harvesting` = score(points$harvested, points$burned), `Without label harvesting` = score(points$unrefined, points$burned))
+```
+
+Each held-out point was classed as burned by the Bayesian updating that @Mullissa_2023 applied to their alerts, in which an image with a fused probability of 0.6 or more opened a low-confidence detection, later images updated its posterior probability, and the detection was confirmed when the posterior exceeded 0.8 within 90 days and discarded when a later probability fell below 0.6. Confirmed detections were compared with the MTBS candidate class of each point to give precision, recall and F1 score across the five held-out folds, with and without label harvesting. These measure agreement with MTBS rather than accuracy, since MTBS was the source of the training labels and is itself unvalidated; an independent reference set interpreted from optical imagery at a stratified random sample, following @Olofsson_2014, was being prepared when this draft was written.
+
+```{r}
+#| label: reference-sample
+#| echo: true
+#| output: false
+# Sentinel-2 surface reflectance, Earth Engine COPERNICUS/S2_SR_HARMONIZED, masked with Cloud Score+ GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+# https://developers.google.com/earth-engine/datasets/catalog/GOOGLE_CLOUD_SCORE_PLUS_V1_S2_HARMONIZED
+ref_csv <- "02.inputs/derived/reference_sample.csv"; chip_dir <- "03.outputs/reference_chips"
+if (!file.exists(ref_csv)) {
+  set.seed(20260913)
+  points$stratum <- paste(ifelse(points$harvested == 1, "detected", "not detected"), ifelse(points$burned == 1, "MTBS burned", "MTBS stable"))
+  ref <- do.call(rbind, lapply(split(points, points$stratum), function(d) d[sample(nrow(d), min(nrow(d), 75)), ]))
+  write.csv(transform(ref, interpreted_burned = NA), ref_csv, row.names = FALSE)  # filled by the interpreter from the chips
+}
+ref <- read.csv(ref_csv); dir.create(chip_dir, showWarnings = FALSE)
+s2 <- ee$ImageCollection("COPERNICUS/S2_SR_HARMONIZED")$linkCollection(ee$ImageCollection("GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED"), list("cs"))
+for (r in seq_len(nrow(ref))) for (y in ref$year[r] - c(2, 0)) {
+  png <- file.path(chip_dir, sprintf("%s_%d_%d.png", ref$event_id[r], ref$pid[r], y)); if (file.exists(png)) next
+  pt <- ee$Geometry$Point(c(ref$lon[r], ref$lat[r]))
+  img <- s2$filterBounds(pt)$filterDate(sprintf("%d-06-01", y), sprintf("%d-10-01", y))$map(function(i) i$updateMask(i$select("cs")$gte(0.6)))$median()
+  download.file(img$getThumbURL(list(region = pt$buffer(600)$bounds(), dimensions = 240L, bands = list("B12", "B8", "B4"), min = 0, max = 3500)), png, mode = "wb", quiet = TRUE)
+}
+```
+
+## Disturbance interactions
+
+```{r}
+#| label: pest-points
+#| echo: true
+#| output: false
+# USFS Forest Health Protection aerial detection survey damage areas, Alaska Region 10, all years.
+# https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip
+ids <- sf::st_read("02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE, query = paste(
+  "SELECT SURVEY_YEAR, DCA_CODE, DCA_COMMON_NAME, Shape FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10 WHERE DCA_CODE >= 10000 AND DCA_CODE < 30000"))
+ids$agent <- ifelse(ids$DCA_CODE >= 20000, "diseases", ids$DCA_COMMON_NAME)  # codes 1xxxx insects, 2xxxx diseases
+pts_xy <- unique(samples[, c("event_id", "pid", "year", "burned", "lon", "lat")])
+hit <- sf::st_intersects(sf::st_transform(sf::st_as_sf(pts_xy, coords = c("lon", "lat"), crs = 4326), 3338), ids)
+prior <- do.call(rbind, lapply(seq_along(hit), function(i) { h <- hit[[i]][ids$SURVEY_YEAR[hit[[i]]] < pts_xy$year[i] - 1]
+  if (length(h)) data.frame(i = i, agent = unique(c(ids$agent[h], "any insect or disease"))) }))
+interactions <- do.call(rbind, lapply(split(prior, prior$agent), function(a) {
+  pts_xy$hit <- seq_len(nrow(pts_xy)) %in% a$i
+  f <- reshape(aggregate(hit ~ event_id + burned, pts_xy, mean), idvar = "event_id", timevar = "burned", direction = "wide")
+  f <- f[complete.cases(f) & f$hit.0 + f$hit.1 > 0, ]
+  w <- if (nrow(f) >= 5) wilcox.test(f$hit.1, f$hit.0, paired = TRUE, exact = FALSE) else list(statistic = NA, p.value = NA)
+  data.frame(agent = a$agent[1], fires = nrow(f), burned = 100 * mean(pts_xy$hit[pts_xy$burned == 1]),
+             stable = 100 * mean(pts_xy$hit[pts_xy$burned == 0]), V = unname(w$statistic), p = w$p.value)
+}))
+interactions$p_holm <- p.adjust(interactions$p, "holm")
+interactions <- interactions[order(-interactions$fires), ]
+```
+
+Prior insect and disease damage was recorded at every burned and stable candidate point from the aerial detection survey polygons of any insect (damage causal agent codes 10000 to 19999) or disease (20000 to 29999) mapped in any survey year before the fire, each insect kept as its own agent, the diseases pooled because few were recorded near the fires, and any agent pooled as a further test. Because points within a fire share its landscape and survey coverage, the share of points with prior damage was compared between burned and stable points within each fire, by a Wilcoxon signed-rank test across the fires in which any point carried damage by that agent, for every agent recorded at five or more such fires, with the p-values adjusted by the method of Holm across agents.
+
+# Results
+
+## Label harvesting
+
+```{r}
+#| label: fig-change
+#| echo: true
+#| fig-cap: "Change in slope-corrected backscatter from the historical median at burned and stable candidate points in the images of the summer after each fire, with the harvesting thresholds (dashed) where the two densities met."
+#| fig-width: 7
+#| fig-height: 3
+ch <- do.call(rbind, lapply(c("VV", "VH"), function(p) data.frame(pol = p, change = samples[[p]] - samples[[paste0(p, "_med")]], burned = samples$burned)))
+ggplot(ch, aes(change, colour = factor(burned, 1:0, c("Burned candidates", "Stable candidates")))) + geom_density() +
+  geom_vline(data = data.frame(pol = names(thr_all), x = thr_all), aes(xintercept = x), linetype = 2) + facet_wrap(~pol) +
+  coord_cartesian(xlim = c(-10, 6)) + labs(x = "Change from historical median (dB)", y = "Density", colour = NULL) + th
+```
+
+Of the `r sampled[["fires"]]` wildfires sampled, `r sampled[["empty"]]` held no candidate points in forest, and `r length(unique(samples$event_id))` kept candidates with five or more historical scenes, giving `r format(nrow(samples), big.mark = ",")` image samples at `r format(nrow(unique(samples[, c("event_id", "pid")])), big.mark = ",")` points. The median change from the historical median was `r sprintf("%.2f", median((samples$VH - samples$VH_med)[samples$burned == 1]))` dB in VH and `r sprintf("%.2f", median((samples$VV - samples$VV_med)[samples$burned == 1]))` dB in VV at burned candidates, against `r sprintf("%.2f", median((samples$VH - samples$VH_med)[samples$burned == 0]))` and `r sprintf("%.2f", median((samples$VV - samples$VV_med)[samples$burned == 0]))` dB at stable candidates, and the densities met at `r sprintf("%.2f", thr_all[["VH"]])` dB in VH and `r sprintf("%.2f", thr_all[["VV"]])` dB in VV (@fig-change). Across the five folds the thresholds kept `r round(100 * sum(folds_n$n_initial) / sum(folds_n$n_train))` per cent of training samples as initial labels, and the intersection with the initial networks kept `r round(100 * sum(folds_n$n_harvested) / sum(folds_n$n_train))` per cent as final labels, `r round(100 * sum(folds_n$n_harvested_burned) / sum(folds_n$n_harvested))` per cent of them burned.
+
+## Burned area detection
+
+```{r}
+#| label: detection-map
+#| echo: true
+#| output: false
+map_tif <- "03.outputs/example_detection.tif"
+ex <- subset(wild, year >= 2019 & ha > 5000 & ha < 20000); ex <- ex[which.max(ex$ha), ]
+g <- all_fires$filter(ee$Filter$eq("Event_ID", ex$event_id))$geometry(); region <- g$buffer(3000)$bounds()
+if (!file.exists(map_tif)) {
+  set.seed(20260913); torch::torch_manual_seed(20260913)
+  m <- pair(harvest(samples[samples$event_id != ex$event_id, ]))  # the mapped fire takes no part in training
+  post <- s1$filterBounds(g)$filter(summer(ex$year + 1, ex$year + 1)); ids <- unlist(post$aggregate_array("system:index")$getInfo())
+  stack <- lapply(ids, function(id) {
+    img <- ee$Image(post$filter(ee$Filter$eq("system:index", id))$first())
+    hist <- s1$filterBounds(img$geometry())$filter(summer(ex$year - 2, ex$year - 1))$
+      filter(ee$Filter$eq("relativeOrbitNumber_start", img$get("relativeOrbitNumber_start")))$map(flatten)
+    x <- ee$Image$cat(flatten(img), hist$median()$rename(c("VV_med", "VH_med")), hist$reduce(ee$Reducer$percentile(list(2L)))$rename(c("VV_p2", "VH_p2")))
+    f <- tempfile(fileext = ".tif")
+    download.file(x$getDownloadURL(list(region = region, scale = 30, crs = "EPSG:3338", format = "GEO_TIFF", bands = as.list(bands))), f, mode = "wb", quiet = TRUE)
+    r <- terra::rast(f); names(r) <- bands; v <- as.data.frame(r, na.rm = FALSE); ok <- complete.cases(v)
+    out <- r[[1]]; terra::values(out) <- NA; out[which(ok)] <- fused(m, v[ok, ]); terra::time(out) <- as.Date(img$date()$format("YYYY-MM-dd")$getInfo()); out
+  })
+  probs <- terra::rast(stack); doy <- as.integer(format(terra::time(probs), "%j"))
+  terra::writeRaster(terra::app(probs, function(p) { k <- !is.na(p); if (!any(k)) NA else confirm(p[k], doy[k]) }), map_tif, overwrite = TRUE)
+}
+detected <- terra::rast(map_tif)
+perim <- sf::st_as_sf(ee_to_sf(ee$FeatureCollection(list(ee$Feature(g)))), crs = 4326) |> sf::st_transform(3338)
+map_share <- c(inside = terra::global(terra::mask(detected, terra::vect(perim)), "mean", na.rm = TRUE)[[1]],
+               outside = terra::global(terra::mask(detected, terra::vect(perim), inverse = TRUE), "mean", na.rm = TRUE)[[1]])
+map_cap <- sprintf("Burned forest confirmed from Sentinel-1 in June to September %d for the %s fire of %s (%s ha), which took no part in training, with its MTBS perimeter.",
+                   ex$year + 1, tools::toTitleCase(tolower(ex$name)), format(as.Date(ex$ignition), "%d %B %Y"), format(round(ex$ha), big.mark = ","))
+```
+
+```{r}
+#| label: fig-map
+#| echo: true
+#| fig-cap: !expr map_cap
+#| fig-width: 7
+#| fig-height: 4
+ggplot() + tidyterra::geom_spatraster(data = as.factor(detected)) + geom_sf(data = perim, fill = NA, colour = "black", linewidth = 0.3) +
+  scale_fill_manual(NULL, values = c(`0` = "grey85", `1` = "firebrick"), labels = c("Not confirmed", "Burned"), na.translate = FALSE) + th
+```
+
+In the held-out `r tools::toTitleCase(tolower(ex$name))` fire, `r round(100 * map_share[["inside"]])` per cent of the mapped pixels inside the MTBS perimeter and `r round(100 * map_share[["outside"]])` per cent of those outside it were confirmed as burned in the summer after the fire (@fig-map).
+
+## Agreement assessment
+
+```{r}
+#| label: tbl-agreement
+#| echo: true
+#| tbl-cap: "Agreement of confirmed burned detections with the MTBS candidate class at held-out points across five spatial folds."
+fmt_tbl(data.frame(Method = rownames(agree), round(agree, 2), check.names = FALSE))
+```
+
+With label harvesting, detections confirmed at `r format(nrow(points), big.mark = ",")` held-out points agreed with the MTBS candidate class at a precision of `r sprintf("%.2f", agree[1, "precision"])`, a recall of `r sprintf("%.2f", agree[1, "recall"])` and an F1 score of `r sprintf("%.2f", agree[1, "F1"])`, and without it at `r sprintf("%.2f", agree[2, "precision"])`, `r sprintf("%.2f", agree[2, "recall"])` and `r sprintf("%.2f", agree[2, "F1"])` (@tbl-agreement).
+
+## Pest interactions
+
+```{r}
+#| label: tbl-interactions
+#| echo: true
+#| tbl-cap: "Share of burned and stable candidate points with insect or disease damage recorded by the aerial detection survey before the fire, by agent, with the Wilcoxon signed-rank test of the within-fire difference for agents recorded at five or more fires."
+fmt_tbl(transform(interactions, burned = round(burned, 2), stable = round(stable, 2), p = signif(p, 2), p_holm = signif(p_holm, 2)) |>
+          setNames(c("Agent", "Fires", "Burned points (%)", "Stable points (%)", "V", "p", "p (Holm)")))
+```
+
+Before the fires, the aerial detection survey had recorded insect or disease damage of any kind at `r sprintf("%.1f", interactions$burned[interactions$agent == "any insect or disease"])` per cent of burned and `r sprintf("%.1f", interactions$stable[interactions$agent == "any insect or disease"])` per cent of stable candidate points, in `r interactions$fires[interactions$agent == "any insect or disease"]` fires (@tbl-interactions). `r nrow(interactions[!is.na(interactions$p), ]) - 1` single agents were recorded at five or more fires, and the smallest adjusted p-value among them was `r signif(min(interactions$p_holm[!is.na(interactions$p) & interactions$agent != "any insect or disease"]), 2)`, for `r interactions$agent[!is.na(interactions$p) & interactions$agent != "any insect or disease"][which.min(interactions$p_holm[!is.na(interactions$p) & interactions$agent != "any insect or disease"])]`.
+
+# Discussion
+
+The harvested labels inherited the limits of MTBS. Its severity thresholds were set by an analyst for each fire and have not been validated in the field, fires smaller than 405 ha are absent from it, and a stable point 2 to 10 km outside a mapped perimeter may therefore lie in a small unmapped burn. The forest baseline was tree cover in 2000 less recorded loss, which does not register forest that established or thinned without loss after 2000. Label harvesting removes candidates the radar contradicts, but it cannot recover burned forest that MTBS never mapped, so recall against MTBS is bounded by the record the labels came from.
+
+C-band backscatter responds to the loss of canopy structure and to soil moisture, so forest that burned at low severity without structural change may not be separable from stable forest, as @Ban_2020 found in boreal Alberta, and optical data remain more accurate where cloud-free images exist [@Zhang_2024a]. The features compared each image with a historical median and 2nd percentile from the same orbit, pre-event data that improved C-band burned area mapping in @Zhang_2024a, but only `r length(intersect(unique(samples$event_id), wild$event_id[wild$year == 2017]))` of the `r sum(wild$year == 2017)` wildfires of 2017 kept points with five or more historical scenes on the same orbit. The network was not tuned by Hyperband and used a 3 by 3 spatial mean in place of multi-temporal speckle filtering, both simplifications of @Mullissa_2023 made to fit the computing available.
+
+# Conclusion
+
+# References
+
+::: {#refs}
+:::
+
+# Statements and declarations
+
+## Funding
+
+Not yet declared. No funding source has been recorded for this work and none is asserted here.
+
+## Competing interests
+
+Not yet declared by the author.
+
+## Author contributions
+
+Not yet declared. The manuscript is drafted single-authored pending that declaration, and no co-author is listed on the strength of an assumption.
+
+## Data availability
+
+All inputs were publicly available and were read by the code shown in this manuscript. The MTBS burned area boundaries and annual burn severity mosaics, Sentinel-1 ground range detected scenes, the Copernicus 30 m digital elevation model and the Hansen Global Forest Change dataset were read in Google Earth Engine under the asset names given in the code, the aerial detection survey damage areas were downloaded from the United States Forest Service, and the state boundary from the United States Census Bureau. The sampled backscatter at each point, the fold predictions and the tables and figures are held with the manuscript under `02.inputs/derived` and `03.outputs`, and every number in the text is computed from them at render time.

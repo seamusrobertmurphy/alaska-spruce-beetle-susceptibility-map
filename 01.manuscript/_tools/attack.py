@@ -74,14 +74,14 @@ def attack_preregistration_drift(base):
 
 
 def attack_sample_lock(base):
-    """Move a fold assignment and confirm the lock check notices."""
+    """Move a block row and confirm the lock check notices."""
     with Perturb(ev.SAMPLE_CSV) as p:
         lines = p.before.decode().split("\n")
         if len(lines) < 3:
             return None, "sample table too short to perturb"
-        lines[2] = lines[2] + " "
+        lines[2] = lines[2].replace(",", ",9", 1)
         p.write("\n".join(lines).encode())
-        return ev.check_sample_lock(base)[0], "one byte added to a block row"
+        return ev.check_sample_lock(base)[0], "one coordinate changed in a block row"
 
 
 def drop_entry(text, key):

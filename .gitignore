@@ -43,6 +43,12 @@
 # back in; re-exclude them last so the ._* rule wins.
 02.inputs/**/._*
 
+# The per-area Sentinel-1 samples (635 MB over 178 areas) and the per-fire
+# samples of the archived wildfire draft (295 MB) are regenerable from the
+# s1-samples chunk and Earth Engine; never committed.
+02.inputs/derived/tile_samples/
+02.inputs/derived/fire_samples/
+
 # The sits analysis cube is regenerable rasters split from the composites by
 # the sits-cube-build manuscript chunk (~190 MB); never committed.
 02.inputs/derived/sits_cube/
