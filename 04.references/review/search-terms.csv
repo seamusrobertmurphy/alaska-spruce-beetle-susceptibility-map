@@ -1,0 +1,23 @@
+term,source,question,concept
+spruce beetle,keywords,q1 q2 q3,pop
+dendroctonus rufipennis,keywords,q1 q2 q3,pop
+white spruce,keywords,,
+host selection,keywords,q1 q3,trait
+tree size,keywords,q1,trait
+tree diameter,keywords,,
+stand structure,keywords,q1,trait
+stand susceptibility,keywords,,
+hazard rating,keywords,q1 q3,trait
+remote sensing,keywords,q2 q3,sensing
+sentinel-1,keywords,q2 q3,sensing
+canopy height,keywords,q2 q3,sensing
+aerial survey,keywords,q2,sensing
+alaska,keywords,,
+boreal forest,keywords,,
+mapping spruce stands susceptible,title,,
+sentinel-1 radar,title,,
+satellite canopy height,title,,
+susceptib*,"title and keywords (stem of susceptible, stand susceptibility)",q1 q3,trait
+diameter,keywords (part of tree diameter),q1,trait
+radar,title (part of sentinel-1 radar),q2 q3,sensing
+map*,title (stem of mapping),q2 q3,sensing
