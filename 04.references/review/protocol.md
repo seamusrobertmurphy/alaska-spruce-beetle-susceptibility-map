@@ -41,3 +41,10 @@ Search terms are selected in `04.references/review/search-terms.csv`, from candi
 
 ## Deviations
 
+2026-10-14. The Treesearch search page at research.fs.usda.gov returned the same four unrelated publications for every keyword query, so the grey literature was not found through it. The Forest Service research papers and the leaflet were fetched by their direct report URLs (fs.usda.gov/pnw/pubs and fs.usda.gov/foresthealth/docs/fidls), and the Rocky Mountain reports of 1954 to 1977 as National Agricultural Library scans on archive.org. Records found this way carry the route `grey` in the screening table only where no strand had retrieved them; Massey and Wygant (1954), Schmid and Frye (1976, 1977), Hard and Holsten (1985), Holsten and Hard (2001) and the leaflet had all been retrieved by a strand, so no grey row was added.
+
+2026-10-14. Semantic Scholar returned no reference list for any of the four Alaska papers of 1983 to 1994 used as chase seeds, only their citing papers, so the backward chase from them is a gap recorded in the synthesis. The OpenAlex strand searched titles and abstracts (`title_and_abstract.search`) rather than full text, to match the scope of the Semantic Scholar strand; the first run with the full-text `search` parameter was discarded before any record was screened.
+
+2026-10-14. One hundred and sixty records from the chase were appended to the screening table after the three strands had been screened, with their route and seed recorded, and screened under the same criteria.
+
+2026-10-14, 22:40. The working title was replaced by the title Seamus chose, "A statewide spruce beetle susceptibility map for Alaska from Sentinel-1 radar and satellite canopy height, validated against crown-scale mortality in the Susitna valley". Every selected term in `search-terms.csv` still appears in the title or the keywords, so the `review-queries` chunk passes unchanged and no query was rerun.

@@ -47,6 +47,8 @@
 # samples of the archived wildfire draft (295 MB) are regenerable from the
 # s1-samples chunk and Earth Engine; never committed.
 02.inputs/derived/tile_samples/
+02.inputs/derived/tile_samples_pre/
+02.inputs/derived/landscape_tiles/
 02.inputs/derived/fire_samples/
 
 # The sits analysis cube is regenerable rasters split from the composites by
@@ -96,3 +98,21 @@ INDEX.md
 02.inputs/derived/s1_cube/
 02.inputs/derived/s1_reg_test/
 .Rhistory
+
+# Regenerable radar stores of the 10 m design (36 GB cube, 6 GB scene cache, two 5.5 GB
+# block stacks), the set-aside 10 m statewide run, the 1 km read-back of the statewide
+# asset (31 MB, rebuilt by the statewide-map chunk), the stand cell layers of the old
+# design, the wildfire draft's chips and predictions, and stray render files. Added
+# 2026-10-15 before the redraft commit so that none of them can reach GitHub.
+02.inputs/derived/s1_blocks_10m/
+02.inputs/derived/s1_blocks_10m_mtfiltered/
+02.inputs/derived/s1_cube_10m/
+02.inputs/derived/s1_scene_cache_10m/
+02.inputs/derived/statewide_10m_run_*/
+02.inputs/derived/*.tif
+02.inputs/derived/*.gpkg
+02.inputs/derived/stand_cells_static.csv
+03.outputs/reference_chips/
+03.outputs/fire_fold_predictions.csv
+01.manuscript/_archive/*.html
+Rplots.pdf

@@ -1,0 +1,9 @@
+question,route,key,doi,title,year,venue,source_note
+q1,store-q1-pop-trait,jenkins2012fuels,10.1016/j.foreco.2012.02.036,Fuels and fire behavior dynamics in bark beetle-attacked forests in Western North America and implications for fire management,2012,Forest Ecology and Management,jenkins2012fuels
+q1,store-q1-pop-trait,kulakowski2006effect,10.1139/x06-182,The effect of fires on susceptibility of subalpine forests to a 19th century spruce beetle outbreak in western Colorado,2006,Canadian Journal of Forest Research,kulakowski2006effect
+q1,store-q1-pop-trait,duncan2017approximation,10.1137/15m1042085,Analytic Approximation of Invasion Wave Amplitude Predicts Severity of Insect Outbreaks,2017,SIAM Journal on Applied Mathematics,duncan2017approximation
+q1,store-q1-pop-trait,carlson2017,10.1371/journal.pone.0181778,Evidence of compounded disturbance effects on vegetation recovery following high-severity wildfire and spruce beetle outbreak,2017,PLOS ONE,carlson2017
+q2,store-q2-pop-sensing,jenkins2012fuels,10.1016/j.foreco.2012.02.036,Fuels and fire behavior dynamics in bark beetle-attacked forests in Western North America and implications for fire management,2012,Forest Ecology and Management,jenkins2012fuels
+q2,store-q2-pop-sensing,woodward2018mapping,10.3390/f9060336,Mapping Progression and Severity of a Southern Colorado Spruce Beetle Outbreak Using Calibrated Image Composites,2018,Forests,NA
+q2,store-q2-pop-sensing,zwieback2024severity,10.1016/j.isprsjprs.2024.05.013,Low-severity spruce beetle infestation mapped from high-resolution satellite imagery with a convolutional network,2024,ISPRS Journal of Photogrammetry and Remote Sensing,NA
+q3,store-q3-pop-trait-sensing,jenkins2012fuels,10.1016/j.foreco.2012.02.036,Fuels and fire behavior dynamics in bark beetle-attacked forests in Western North America and implications for fire management,2012,Forest Ecology and Management,jenkins2012fuels

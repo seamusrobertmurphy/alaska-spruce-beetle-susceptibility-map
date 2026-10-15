@@ -1,0 +1,10 @@
+strand,route,query,date,retrieved,reported_total,cap,capped,error
+library-science,store-q1-pop-trait,spruce beetle|dendroctonus rufipennis AND host selection|tree size|stand structure|hazard rating|susceptib*|diameter,2026-10-14,4,4,NA,FALSE,NA
+library-science,store-q2-pop-sensing,spruce beetle|dendroctonus rufipennis AND remote sensing|sentinel-1|canopy height|aerial survey|radar|map*,2026-10-14,3,3,NA,FALSE,NA
+library-science,store-q3-pop-trait-sensing,spruce beetle|dendroctonus rufipennis AND host selection|hazard rating|susceptib* AND remote sensing|sentinel-1|canopy height|radar|map*,2026-10-14,1,1,NA,FALSE,NA
+semantic-scholar,s2-q1-pop-trait,"(""spruce beetle"" | ""dendroctonus rufipennis"") + (""host selection"" | ""tree size"" | ""stand structure"" | ""hazard rating"" | susceptib* | diameter)",2026-10-14,109,109,3000,FALSE,NA
+semantic-scholar,s2-q2-pop-sensing,"(""spruce beetle"" | ""dendroctonus rufipennis"") + (""remote sensing"" | sentinel-1 | ""canopy height"" | ""aerial survey"" | radar | map*)",2026-10-14,40,40,3000,FALSE,NA
+semantic-scholar,s2-q3-pop-trait-sensing,"(""spruce beetle"" | ""dendroctonus rufipennis"") + (""host selection"" | ""hazard rating"" | susceptib*) + (""remote sensing"" | sentinel-1 | ""canopy height"" | radar | map*)",2026-10-14,5,5,3000,FALSE,NA
+openalex,oa-q1-pop-trait,"(""spruce beetle"" OR ""dendroctonus rufipennis"") AND (""host selection"" OR ""tree size"" OR ""stand structure"" OR ""hazard rating"" OR susceptible OR susceptibility OR diameter)",2026-10-14,127,127,3000,FALSE,NA
+openalex,oa-q2-pop-sensing,"(""spruce beetle"" OR ""dendroctonus rufipennis"") AND (""remote sensing"" OR sentinel-1 OR ""canopy height"" OR ""aerial survey"" OR radar OR map OR mapping OR mapped OR maps)",2026-10-14,42,42,3000,FALSE,NA
+openalex,oa-q3-pop-trait-sensing,"(""spruce beetle"" OR ""dendroctonus rufipennis"") AND (""host selection"" OR ""hazard rating"" OR susceptible OR susceptibility) AND (""remote sensing"" OR sentinel-1 OR ""canopy height"" OR radar OR map OR mapping OR mapped OR maps)",2026-10-14,6,6,3000,FALSE,NA
