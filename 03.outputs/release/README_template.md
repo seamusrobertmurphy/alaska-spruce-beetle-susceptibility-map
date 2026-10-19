@@ -1,6 +1,6 @@
 # Spruce beetle susceptibility map of Alaska
 
-A 90 m map of the spruce stands most at risk in the next spruce beetle outbreak, for forest managers. Version 1.0, built {{date}} from the code in the manuscript "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley" (Murphy, 2026, submitted to Ecological Indicators). The code that made every file here is in the manuscript, in the `statewide` and `statewide-release` chunks of `01.manuscript/manuscript.qmd` at https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle.
+A 90 m map of the spruce stands most at risk in the next spruce beetle outbreak, for forest managers. Version 1.0, built {{date}} from the code in the manuscript "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley" (Murphy, 2026, submitted to Ecological Indicators). The code that made every file here is in the manuscript, in the `statewide` and `statewide-release` chunks of `01.manuscript/manuscript.qmd` at https://github.com/seamusrobertmurphy/alaska-spruce-beetle-susceptibility-map.
 
 ## What it shows
 

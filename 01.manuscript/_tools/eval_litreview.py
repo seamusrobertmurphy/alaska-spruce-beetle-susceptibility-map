@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BIB = ROOT / "04.references" / "references.bib"
-UA = "deep-learn-alaska-spruce-beetle/1.0 (mailto:seamusrobertmurphy@gmail.com)"
+UA = "alaska-spruce-beetle-susceptibility-map/1.0 (mailto:seamusrobertmurphy@gmail.com)"
 # Both vocabularies seen in practice. The gate must match what reviewers
 # actually write, or it fails good work on wording, which is how a gate stops
 # being read. Widened 2026-09-09 after failing a sound review four ways.

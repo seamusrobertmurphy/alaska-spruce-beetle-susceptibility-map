@@ -1,6 +1,6 @@
 # Spruce beetle susceptibility map of Alaska
 
-A 90 m map of the spruce stands most at risk in the next spruce beetle outbreak, for forest managers. Version 1.0, built 18 October 2026 from the code in the manuscript "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley" (Murphy, 2026, submitted to Ecological Indicators). The code that made every file here is in the manuscript, in the `statewide` and `statewide-release` chunks of `01.manuscript/manuscript.qmd` at https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle.
+A 90 m map of the spruce stands most at risk in the next spruce beetle outbreak, for forest managers. Version 1.0, built 18 October 2026 from the code in the manuscript "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley" (Murphy, 2026, submitted to Ecological Indicators). The code that made every file here is in the manuscript, in the `statewide` and `statewide-release` chunks of `01.manuscript/manuscript.qmd` at https://github.com/seamusrobertmurphy/alaska-spruce-beetle-susceptibility-map.
 
 ## What it shows
 
@@ -85,7 +85,7 @@ The map was validated where the beetle has been, the Susitna valley, the Kenai P
 
 ## Citation
 
-Murphy, S. R. (2026). Spruce beetle susceptibility map of Alaska, 90 m, version 1.0 [data set]. https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle/releases/tag/map-v1.0. Derived from Copernicus Sentinel-1 and Lang et al. (2023). Manuscript: Murphy, S. R. (2026). A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley. Submitted to Ecological Indicators.
+Murphy, S. R. (2026). Spruce beetle susceptibility map of Alaska, 90 m, version 1.0 [data set]. https://github.com/seamusrobertmurphy/alaska-spruce-beetle-susceptibility-map/releases/tag/map-v1.0. Derived from Copernicus Sentinel-1 and Lang et al. (2023). Manuscript: Murphy, S. R. (2026). A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data in the Susitna valley. Submitted to Ecological Indicators.
 
 Lang, N., Jetz, W., Schindler, K. and Wegner, J. D. (2023). A high-resolution canopy height model of the Earth. Nature Ecology and Evolution 7, 1778 to 1789. https://doi.org/10.1038/s41559-023-02206-6
 

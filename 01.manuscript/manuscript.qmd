@@ -1145,7 +1145,7 @@ if (!file.exists(release_zip)) {
     auc_kenai = sprintf("%.2f", region_auc["AUC_VV", "kenai"]), auc_matsu = sprintf("%.2f", region_auc["AUC_VV", "matsu"]), auc_copper = sprintf("%.2f", region_auc["AUC_VV", "copper"]), auc_interior = sprintf("%.2f", region_auc["AUC_VV", "interior"]),
     forest_km2 = format(round(state_area$forest_km2[state_area$region == "alaska"]), big.mark = " "), susc_pct = share("alaska"), kenai_pct = share("kenai"), matsu_pct = share("matsu"), copper_pct = share("copper"), interior_pct = share("interior"),
     scenes = sprintf("%d", pooled_strip["scenes"]), angle_slope = sprintf("%.3f", angle_slope), ncol = format(nc, big.mark = " "), nrow = format(nr, big.mark = " "), x0 = format(x0, big.mark = " "), y1 = format(y1, big.mark = " "), size_full = sprintf("%.0f", file.size(full_tif) / 1e6), size_class = sprintf("%.0f", file.size(class_tif) / 1e6),
-    asset = asset_id, class_asset = class_asset, release_url = "https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle/releases/tag/map-v1.0")
+    asset = asset_id, class_asset = class_asset, release_url = "https://github.com/seamusrobertmurphy/alaska-spruce-beetle-susceptibility-map/releases/tag/map-v1.0")
   writeLines(fill(readLines(file.path(release_dir, "README_template.md")), vals), file.path(release_dir, "README.md"))
   files <- c(full_tif, class_tif, paste0(class_tif, ".aux.xml"), file.path(release_dir, c("spruce_susceptibility_alaska_90m_class.qml", "README.md", "LICENSE.txt"))); files <- files[file.exists(files)]
   utils::zip(release_zip, files, flags = "-j -0") }  # one archive, the GeoTIFFs stored without a second compression

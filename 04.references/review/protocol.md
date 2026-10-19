@@ -1,6 +1,6 @@
 # Review protocol
 
-Written 2026-10-14, before any query ran, for `deep-learn-alaska-spruce-beetle`. Follows `library-science/protocols/literature-review.md`. Frozen by the commit that adds it. Nothing above "Deviations" is edited after that commit.
+Written 2026-10-14, before any query ran, for `alaska-spruce-beetle-susceptibility-map` (named `deep-learn-alaska-spruce-beetle` until 2026-10-19). Follows `library-science/protocols/literature-review.md`. Frozen by the commit that adds it. Nothing above "Deviations" is edited after that commit.
 
 ## Objectives
 

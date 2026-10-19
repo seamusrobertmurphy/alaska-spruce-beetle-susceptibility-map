@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository eval for deep-learn-alaska-spruce-beetle.
+"""Repository eval for alaska-spruce-beetle-susceptibility-map.
 
 Run before and after every step of work. Hard checks fail the step and it is
 rolled back rather than argued with; soft checks fail only when they get worse
