@@ -1,0 +1,17 @@
+---
+title: ""
+format:
+  docx:
+    reference-doc: ../04.references/style-formal.docx
+engine: knitr
+---
+
+**A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data**
+
+Seamus Robert Murphy^a,\*^
+
+^a^ TÜV SÜD, 2187 Comox Avenue, Comox, British Columbia V9M 1P5, Canada
+
+\* Corresponding author. Email seamusrobertmurphy@gmail.com. ORCID 0000-0002-1792-0351.
+
+Original article submitted to Forestry: An International Journal of Forest Research, `r format(Sys.Date(), "%d %B %Y")`.

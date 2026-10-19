@@ -4,6 +4,7 @@ Written 2026-10-14, before any query ran, for `deep-learn-alaska-spruce-beetle`.
 
 ## Objectives
 
+Set by Seamus on 2026-10-14 and recorded verbatim in the project's working notes under Resume 2026-10-14. The study uses the crown labels and severity map of Zwieback et al. (2024) to validate that the pre-outbreak Sentinel-1 radar level separates the white spruce stands the outbreak killed from living stands, then maps susceptible spruce stands across Alaska for the forest managers preparing their stands against the next outbreak, testing the statewide map where the beetle has been and shrinking the extent if the accuracy fails. The review is built around what the saved results found, that the stands the beetle killed were the tallest and largest.
 
 1. Validate, against the crown labels and the severity map of Zwieback et al. (2024), that the Sentinel-1 radar level before the outbreak and satellite canopy height rank the stands the outbreak killed above the stands it left alive.
 2. Map the susceptible spruce stands across Alaska from those measures and test the map against the aerial detection survey and the Forest Inventory and Analysis plots of the regions the outbreak has reached, with the Tanana valley as the unattacked comparison.
@@ -48,3 +49,11 @@ Search terms are selected in `04.references/review/search-terms.csv`, from candi
 2026-10-14. One hundred and sixty records from the chase were appended to the screening table after the three strands had been screened, with their route and seed recorded, and screened under the same criteria.
 
 2026-10-14, 22:40. The working title was replaced by the title Seamus chose, "A statewide spruce beetle susceptibility map for Alaska from Sentinel-1 radar and satellite canopy height, validated against crown-scale mortality in the Susitna valley". Every selected term in `search-terms.csv` still appears in the title or the keywords, so the `review-queries` chunk passes unchanged and no query was rerun.
+
+2026-10-16. Correction to the first entry of 2026-10-14. That entry stated that Massey and Wygant (1954), Schmid and Frye (1977), Holsten and Hard (2001) and the spruce beetle leaflet had been retrieved by a strand, so that no grey row was needed. A check of the screening table on 2026-10-16 found only Schmid and Frye (1976) and Hard and Holsten (1985) there. The four missing reports and Werner and Holsten (1997) were added with the route `grey`.
+
+2026-10-16. Four sources outside the population of the questions, Dobson et al. (1992) and Santoro and Cartus (2018) on how radar backscatter follows forest biomass, and Hollaus and Vreugdenhil (2019) and Hechtl et al. (2025) on radar detection of bark beetle damage, were added with the route `hand-attribute` because rows of the attribute table rest on them.
+
+2026-10-16. Three `full_text` flags entered on 2026-10-14 claimed reading that had not happened, Bakaj et al. (2016) and Woodward et al. (2018), which were read only in abstract, and Ye et al. (2021), read only by title. They were corrected, and two doubled-title rows from Semantic Scholar that had been marked include were marked `duplicate`.
+
+2026-10-16. The attribute table was rebuilt with one row per measure the study entered, each resting on the literature alone, after the version of 2026-10-14 cited the study's own results as the reasoning for four rows.

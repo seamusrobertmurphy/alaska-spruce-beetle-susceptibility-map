@@ -1,0 +1,62 @@
+---
+title: "Supplementary material"
+author: "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data. Seamus Murphy, TÜV SÜD, 2187 Comox Ave, Comox, British Columbia V9M 1P5, Canada. seamusrobertmurphy@gmail.com."
+format:
+  docx:
+    reference-doc: ../04.references/style-forestry.docx
+    fig-dpi: 500
+bibliography: ../04.references/references.bib
+csl: ../04.references/forestry-scimed.csl
+engine: knitr
+execute:
+  echo: true
+  warning: false
+  message: false
+crossref:
+  title-delim: "."
+  tbl-title: "Table S"
+  tbl-prefix: "Table S"
+  fig-title: "Figure S"
+  fig-prefix: "Figure S"
+---
+
+```{r}
+#| label: supp-setup
+#| echo: true
+#| output: false
+# The figure below is drawn from the tables that the code of the main manuscript saved under 03.outputs; nothing is recomputed here.
+library(ggplot2)
+fmt_tbl <- function(df, right = NULL, caption = NULL) {
+  right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
+  left_cols <- setdiff(names(df), right_cols)
+  ft <- flextable::flextable(df)
+  ft <- flextable::fontsize(ft, size = 11, part = "all")
+  ft <- flextable::align(ft, align = "center", part = "header")
+  if (length(right_cols)) ft <- flextable::align(ft, j = right_cols, align = "right", part = "body")
+  if (length(left_cols)) ft <- flextable::align(ft, j = left_cols, align = "left", part = "body")
+  ft <- flextable::line_spacing(ft, space = 1, part = "all")
+  ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1, part = "all")
+  if (!is.null(caption)) ft <- flextable::set_caption(ft, caption)
+  flextable::set_table_properties(ft, layout = "autofit", width = 1)
+}
+stars <- function(p) ifelse(is.na(p), "", ifelse(p <= 0.0001, "****", ifelse(p <= 0.001, "***", ifelse(p <= 0.01, "**", ifelse(p <= 0.05, "*", "")))))
+th <- theme_bw(base_size = 8) + theme(panel.grid.minor = element_blank(), plot.title = element_text(face = "bold", size = 8.5))
+spread <- read.csv("../03.outputs/survey_by_latitude.csv"); frame_lat <- read.csv("../03.outputs/figure1_frame.csv")  # written by the survey-spread chunk of the manuscript
+by_year <- aggregate(ha ~ year, spread, sum)
+north <- function(y) 100 * sum(spread$ha[spread$year %in% y & spread$band >= 61]) / sum(spread$ha[spread$year %in% y])
+```
+
+```{r}
+#| label: fig-s1
+#| echo: true
+#| fig-cap: "Area of spruce beetle damage mapped by the aerial detection survey across Alaska in each survey year, by quarter-degree band of latitude, on a square-root colour scale; the dashed lines bound the latitudes of the frame of Figure 1 of the main text."
+#| fig-width: 7
+#| fig-height: 3.6
+ggplot(spread, aes(year, band + 0.125, fill = ha / 1000)) + geom_tile() +
+  geom_hline(yintercept = as.numeric(frame_lat[1, ]), linetype = "22", linewidth = 0.3) +
+  scale_fill_viridis_c("Thousand ha", option = "inferno", direction = -1, trans = "sqrt") + labs(x = NULL, y = "Latitude (° N)") + th
+```
+
+Alt text: A grid with the survey year along the bottom and quarter-degree bands of latitude up the side, each cell shaded by the area of spruce beetle damage the survey mapped in that band and year, with two dashed horizontal lines marking the latitudes covered by Figure 1 of the main text.
+
+Across Alaska, the survey mapped the most spruce beetle damage in `r by_year$year[which.max(by_year$ha)]`, `r format(round(max(by_year$ha)), big.mark = " ")` ha, and the least in `r by_year$year[which.min(by_year$ha)]`, `r format(round(min(by_year$ha)), big.mark = " ")` ha. Of the area mapped from 2016 to 2024, `r sprintf("%.0f", north(2016:2024))` per cent lay north of 61° N, against `r sprintf("%.0f", north(1997:2015))` per cent of the area mapped from `r min(spread$year)` to 2015 (@fig-s1).

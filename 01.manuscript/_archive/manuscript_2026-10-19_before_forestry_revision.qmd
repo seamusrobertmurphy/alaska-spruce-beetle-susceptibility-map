@@ -1,0 +1,1195 @@
+---
+title: "A statewide spruce beetle susceptibility map for Alaska from Sentinel-1 radar and satellite canopy height, validated against crown-scale mortality in the Susitna valley"
+date: today
+author:
+  - name: Seamus Murphy
+    orcid: 0000-0002-1792-0351
+keywords:
+  - spruce beetle
+  - Dendroctonus rufipennis
+  - white spruce
+  - host selection
+  - tree size
+  - tree diameter
+  - stand structure
+  - stand susceptibility
+  - hazard rating
+  - remote sensing
+  - Sentinel-1
+  - canopy height
+  - aerial survey
+  - Alaska
+  - boreal forest
+format:
+  html:
+    toc: true
+    number-sections: false
+    embed-resources: true
+    code-fold: false
+    df-print: kable
+  docx:
+    prefer-html: true
+    reference-doc: ../04.references/style-formal.docx
+    highlight-style: pygments
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+  error: false
+  comment: NA
+engine: knitr
+citeproc: true
+editor: visual
+bibliography: ../04.references/references.bib
+csl: ../04.references/apa.csl
+---
+
+```{r}
+#| label: setup
+#| echo: false
+#| output: false
+
+easypackages::packages(
+  "bslib", "blockCV",
+  "e1071", "exactextractr","elevatr", 
+  "gdalcubes", "gdalUtilities", "geojsonsf", "geos", "ggplot2", "ggstats", 
+  "ggspatial", "ggmap", "ggplotify", "ggpubr", "ggrepel", "giscoR", 
+  "hdf5r", "httr", "httr2", "htmltools",
+  "jsonlite", 
+  "leaflet.providers", "leafem", "libgeos","luz","lwgeom", "leaflet", "leafgl",
+  "ncdf4", "nnet", 
+  "openxlsx", "parallel", "plotly", "patchwork",
+  "randomForest", "raster", "Rcpp", "RcppArmadillo", "readr", "reticulate",
+  "RColorBrewer", "reactable", "rgl", "rsconnect","RStoolbox", "rts", "rgee",
+  "s2", "sf", "scales", "sits","spdep", "stars", "stringr","supercells", 
+  "terra", "testthat", "tidyverse", "tidyterra","tools", 
+  "tmap", "tmaptools", "terrainr", 
+  "xgboost",
+  prompt = F)
+
+# remove ExFAT artifacts
+sidecars<-list.files(".", pattern = "^\\._",recursive=T, all.files=T, full.names=T)
+file.remove(sidecars)
+
+# Assign working directory to repo root: '../manuscript.qmd'
+knitr::opts_knit$set(root.dir = here::here())
+
+# Point environment to your configured python
+#reticulate::use_python("/opt/local/bin/python", required=T)
+
+# Initialise Earth Engine; the project vvb-checks replaced murphys-deforisk on 2026-10-14 when the latter fell into the restricted mode of the noncommercial tier
+ee <- reticulate::import("ee"); ee_project <- "vvb-checks"
+ee$Initialize(project = ee_project)
+
+# Helper to visualize EE tile in tmap/leaflet
+ee_tile_url <- function(ee_image, vis_params) {
+  ee_image$getMapId(vis_params)$tile_fetcher$url_format}
+
+# EE FeatureCollection => sf
+ee_to_sf <- function(fc) {geojsonsf::geojson_sf(jsonlite::toJSON(fc$getInfo(), auto_unbox = T))}
+
+# table formatting
+fmt_tbl <- function(df, right = NULL, caption = NULL) {
+  right_cols <- union(names(df)[vapply(df, is.numeric, TRUE)], right)
+  left_cols <- setdiff(names(df), right_cols)
+  ft <- flextable::flextable(df)
+  ft <- flextable::fontsize(ft, size = 9, part = "all")
+  ft <- flextable::align(ft, align = "center", part = "header")
+  if (length(right_cols)) ft <- flextable::align(ft, j = right_cols, align = "right", part = "body")
+  if (length(left_cols)) ft <- flextable::align(ft, j = left_cols, align = "left", part = "body")
+  ft <- flextable::line_spacing(ft, space = 1, part = "all")
+  ft <- flextable::padding(ft, padding.top = 1, padding.bottom = 1,part = "all")
+  if (!is.null(caption)) ft <- flextable::set_caption(ft, caption)
+  flextable::set_table_properties(ft, layout = "autofit", width = 1)
+}
+
+# graph formatting
+th <- theme_bw(base_size = 8) + theme(
+	panel.grid.minor = element_blank(),
+  plot.title = element_text(face = "bold", size = 8.5))
+
+# map formatting
+tmap::tmap_mode("plot")
+in_km <- function(x, km = "+proj=utm +zone=5 +datum=WGS84 +units=km +no_defs") {
+  if (!inherits(x, "SpatRaster")) return(sf::st_transform(x, km))
+  ext(x) <- as.vector(ext(x)) / 1000
+  crs(x) <- km
+  x
+}
+
+frame_at_scale <- function(x, scale, width_in, height_in, crs = "EPSG:32605") {
+  bb <- sf::st_bbox(sf::st_transform(x, crs))
+  cx <- mean(bb[c("xmin", "xmax")]); cy <- mean(bb[c("ymin", "ymax")])
+  hw <- width_in  * 0.0254 * scale / 2
+  hh <- height_in * 0.0254 * scale / 2
+  sf::st_bbox(c(xmin = cx - hw, ymin = cy - hh, xmax = cx + hw, ymax = cy + hh),
+              crs = sf::st_crs(crs))
+}
+
+scale_label <- function(scale) paste0("1:", format(scale, big.mark = ",", scientific = F))
+
+map_frame <- function(title, legend=tmap::tm_pos_out("right","center"), ...) {
+	tmap::tm_grid(lines=T,labels.size = 0.55,lwd=0.2) +
+  tmap::tm_compass(position = c("left", "top"), size = 1.2, text.size = 0.5) +
+  tmap::tm_title(title, size = 0.8, fontface = "bold") +
+  tmap::tm_layout(
+  	frame = T, inner.margins = 0, 
+  	outer.margins = c(0.08, 0.08, 0.01, 0.01),
+    legend.position = legend, legend.text.size = 0.55,
+    legend.title.size = 0.65, component.autoscale = F)
+}
+
+```
+
+# Abstract
+
+```{r}
+#| label: abstract-numbers
+#| echo: true
+#| output: false
+struct_a <- as.matrix(read.csv("03.outputs/landscape_structure.csv", row.names = 1)); strip_a <- read.csv("03.outputs/statewide_strip.csv")  # the abstract renders before the chunks that compute its numbers, so it reads the copies they saved
+regions_a <- as.matrix(read.csv("03.outputs/statewide_regions.csv", row.names = 1)); area_a <- read.csv("03.outputs/statewide_area.csv")
+```
+
+Spruce beetle outbreaks in Alaska have killed the largest spruce first, so the tallest stands of large spruce are the ones most at risk in the next outbreak. Forest managers rate that hazard from tree diameter, basal area and spruce share measured on the ground, which cannot be measured across a state. No study had tested whether radar measures of stand structure pick out the stands an outbreak kills. This study scored the Sentinel-1 radar backscatter of 2014 to 2016, before the current outbreak reached the Susitna valley of Southcentral Alaska, and a canopy height map against a crown-scale map of the spruce the outbreak had killed there by 2021 (`r format(strip_a$n, big.mark = ",")` cells of 90 m). Every Sentinel-1 scene over Alaska was then pooled into a 90 m map of pre-outbreak backscatter and tested against the aerial detection survey where the outbreak has been recorded. The killed stands had returned more backscatter before the outbreak and were taller, with mean height of `r sprintf("%.1f", struct_a["dead", "height_eth"])` m against `r sprintf("%.1f", struct_a["alive", "height_eth"])` m for the spared stands. At the threshold where the backscatter map best separated the two, it classed `r sprintf("%.0f", 100 * strip_a$sens_VV)` per cent of the killed stands and `r sprintf("%.0f", 100 * strip_a$spec_VV)` per cent of the spared stands correctly, an overall accuracy of `r if (is.null(strip_a$acc_VV)) "NA" else sprintf("%.0f", 100 * strip_a$acc_VV)` per cent. On the Kenai Peninsula and in the Matanuska-Susitna Borough the map marked `r sprintf("%.0f", 100 * regions_a["above_dead", "kenai"])` and `r sprintf("%.0f", 100 * regions_a["above_dead", "matsu"])` per cent of the attacked forest as susceptible and `r sprintf("%.0f", 100 * regions_a["above_living", "kenai"])` and `r sprintf("%.0f", 100 * regions_a["above_living", "matsu"])` per cent of the unattacked, respectively. In the Copper River basin, where the attacked stands were `r sprintf("%.1f", regions_a["height_dead", "copper"])` m tall against `r sprintf("%.1f", regions_a["height_living", "copper"])` m, it marked `r if (max(regions_a[c("above_dead", "above_living"), "copper"]) < 0.01) "less than 1" else sprintf("%.0f", 100 * max(regions_a[c("above_dead", "above_living"), "copper"]))` per cent of either and only canopy height separated them. Backscatter and canopy height therefore marked the stands the beetle killed with no beetle data and no cruise, in the spruce forest of Southcentral Alaska but not in its open woodland. Of the `r format(round(area_a$forest_km2[area_a$region == "alaska"]), big.mark = ",")` km² of forest in Alaska, `r sprintf("%.0f", 100 * area_a$susceptible_km2[area_a$region == "alaska"] / area_a$forest_km2[area_a$region == "alaska"])` per cent lay at or above the threshold that separated the killed Susitna stands from the spared. This statewide map shows forest managers which stands to protect first in the next outbreak.
+
+# Introduction
+
+The spruce beetle, *Dendroctonus rufipennis* (Kirby) \[Coleoptera: Curculionidae: Scolytinae\], is a bark beetle whose hosts are all the spruces of North America, "with preference for large-diameter, mature trees" [@Fettig_2026, p. 1]. Its numbers grow in windthrown spruce, and the beetles often attack living trees once the windthrow is used up, which can lead to an outbreak [@Fettig_2026]. In Alaska, its preferred hosts are Lutz spruce (*Picea × lutzii* Little) and white spruce (*P. glauca* (Moench) Voss) [@Fettig_2026], and its outbreaks have been more frequent and severe in Lutz spruce than in white or Sitka spruce (*P. sitchensis* (Bong.) Carrière) [@Holsten_1990]. On the Kenai Peninsula, the beetle killed 29 per cent of the white spruce of the Resurrection Creek watershed between 1976 and 1980 [@Werner_1983]. The outbreak of the 1990s peaked in 1996, when more than 500,000 ha of spruce stands in Alaska were infested [@Holsten_2001]. The present outbreak has affected about 2 million acres of Southcentral Alaska, some 800,000 ha, since 2016, and had spread north to Cantwell and the Alaska Range by 2020 [@Zwieback_2024].
+
+The size of the trees killed was first recorded on the White River National Forest of Colorado in the 1940s, where the beetle "prefers the large, more mature trees" [@Massey_1954, p. 13]. There, 75 per cent of the spruce of 91 to 97 cm diameter had been killed by 1943, and as the large trees were used up the average diameter of the trees infested fell from 53 to 43 to 38 cm [@Massey_1954; @Schmid_1976]. In Alaska, the beetle likewise killed the larger spruce [@Baker_1974; @Holsten_1984]. At Resurrection Creek, mortality was greatest in the larger diameter classes early in the infestation, and smaller trees were attacked as the number of unattacked trees fell [@Werner_1983]. In the Copper River basin, mortality rose with tree size and fell with growth rate [@Doak_2004], and the Colorado outbreak of the 1940s left stands with smaller average and maximum diameters, heights and ages [@Veblen_1991].
+
+In white spruce stands on the Kenai Peninsula, in the early years of an outbreak, diameter predicted attack or death only when a large diameter was coupled with slower than average radial growth over the previous five years [@Hard_1983]. On 25 plots of the same peninsula, the attacked trees, whether killed or not, had grown more slowly than the unattacked trees [@Hard_1985]. The Forest Service guide to managing those stands described the susceptible trees as "often dominants or codominants in well-stocked stands" [@Hard_1985b, p. 7], so the trees the beetle takes first are often the tallest of the stand.
+
+Hazard ratings, scores of how likely a stand is to be attacked, applied the rule to the stand. In the Rocky Mountains, @Schmid_1976 rated stands on their position in the landscape, the average diameter of the spruce, the share of spruce in the canopy and their basal area, the cross-sectional area of the stems per hectare. On the Kenai Peninsula, a decision tree on basal area, spruce share, the share of the spruce basal area in trees over 25 cm in diameter, elevation and aspect predicted high hazard correctly for at least 73 per cent of the stands [@Reynolds_1994b]. The current Forest Service leaflet rates as most susceptible the stands in drainage bottoms whose spruce average more than 40 cm in diameter, whose basal area exceeds 34 m² per hectare and in which more than 60 per cent of the stand is live spruce [@Fettig_2026]. A rating also falls as an outbreak proceeds, so a stand is rated before the beetle arrives. In central Utah, stands rated high to mostly medium hazard before the outbreak of 1986 to 1998 were rated medium to primarily low by 1998, after average spruce diameter, basal area and overstory spruce had fallen [@Dymerski_2001]. Every rating takes its diameter, basal area and spruce share from a cruise, a ground inventory of the stand. The prevention a rating directs, thinning and partial cutting [@Hard_1985b; @Fettig_2007; @Hansen_2010; @Temperli_2014], therefore needs the susceptible stands found first.
+
+Remote sensing of the outbreak has mapped the damage after it appeared rather than the stands at risk. Landsat composites and dense time series mapped spruce beetle mortality in Colorado and its subtle change [@Woodward_2018; @Ye_2021], and the sensitivity of a Landsat series to mortality depended on the severity of that mortality [@Rodman_2021]. In the Susitna valley, about 90 per cent of the dead spruce mapped at crown scale on WorldView-2 imagery of 2021 stood in stands where dead crowns covered no more than 5 per cent of the ground [@Zwieback_2024, p. 412]. Landsat reflectance change related clearly to that cover only above 10 per cent [@Zwieback_2024]. Radar was scarcely used for insect damage before Sentinel-1 [@Hollaus_2019]. In Bavaria, it has since been fitted to the vitality of spruce attacked by bark beetles [@Hechtl_2025].
+
+Radar backscatter and canopy height measure the structure of a stand. Backscatter, the part of the radar pulse that a stand reflects back to the satellite, rises with the dry mass of the trees until it saturates, at about 100 tons per hectare at L-band [@Dobson_1992]. Sentinel-1 operates at the shorter C-band, where "the C-band backscattering coefficient shows much less sensitivity to total above-ground biomass" [@Dobson_1992, p. 412]. Boreal forest was the biome most studied for radar biomass, with 41 per cent of the studies, because the sensitivity of spaceborne backscatter was considered sufficient to cover its range of biomass [@Santoro_2018]. Canopy height is now mapped worldwide at 10 m from Sentinel-2 images fitted to the heights measured by the Global Ecosystem Dynamics Investigation (GEDI), a lidar on the International Space Station [@Lang_2023]. A map of tall stands is therefore a map of the large dominant spruce that the hazard ratings describe, drawn without a cruise.
+
+No study had scored radar backscatter or a canopy height map against the stands a spruce beetle outbreak killed, or mapped the stands susceptible to the beetle across a region. This study tested two hypotheses derived from that literature. @tbl-attributes lists the measures entered, the attribute of the hazard ratings each stands for and the direction expected in killed stands. The first was that the Sentinel-1 backscatter of a stand before an outbreak and its canopy height would rank the stands the outbreak killed above those it spared, because both measure the large dominant spruce the beetle takes first. In the Susitna valley, it was tested against the crown-scale map of dead spruce that @Zwieback_2024 made from a WorldView-2 image of 2 August 2021. The second was that a statewide map of pre-outbreak backscatter would rank attacked above unattacked forest wherever the aerial detection survey, the yearly flights in which observers map forest damage from an aircraft, had recorded the outbreak. Where that test failed, the map was to be narrowed to the regions in which it succeeded.
+
+```{r}
+#| label: tbl-attributes
+#| echo: true
+#| tbl-cap: "The measures the study entered, the attribute of the hazard ratings each stands for, the direction expected in the stands an outbreak killed, and the literature the expectation rests on."
+attr_tbl <- read.csv("04.references/review/attributes.csv", check.names = FALSE)  # the attribute table of the review, 04.references/review/synthesis.md
+knitr::kable(setNames(attr_tbl, c("Measure", "Stands for", "Expected in killed stands", "Basis")), format = "pipe")  # a pipe table, so that pandoc resolves the citations in its cells
+```
+
+# Study area
+
+```{r}
+#| label: areas
+#| echo: true
+#| output: false
+# Zwieback et al. (2024) dead spruce crown labels, Zenodo https://doi.org/10.5281/zenodo.10569990, CC-BY 4.0.
+# The list files name the WorldView-2 image each area was delineated on.
+lab_dir <- "02.inputs/zwieback-labels"
+areas <- rbind(transform(read.csv(file.path(lab_dir, "gpkg/list"), colClasses = "character"), set = "training", dir = "gpkg"),
+               transform(read.csv(file.path(lab_dir, "gpkg_validation/list_validation"), colClasses = "character"), set = "test", dir = "gpkg_validation"))
+areas$year <- ifelse(areas$image == "014782712010_01", 2021L, 2013L)  # the post-outbreak image of 2021-08-02 and the pre-outbreak image of 2013-07-14
+read_area <- function(i) lapply(c(extent = "_extent.gpkg", crowns = "_labels.gpkg"), function(s) sf::st_read(file.path(lab_dir, areas$dir[i], paste0(areas$roi[i], s)), quiet = TRUE))
+info <- lapply(seq_len(nrow(areas)), read_area)
+areas <- sf::st_sf(areas, crowns = sapply(info, function(a) nrow(a$crowns)), geometry = do.call(c, lapply(info, function(a) sf::st_geometry(a$extent))))
+cells_csv <- "02.inputs/derived/tile_cells.csv"
+if (!file.exists(cells_csv)) write.csv(do.call(rbind, lapply(which(areas$year == 2021), function(i) {  # dead crown cover of each 10 m cell, on the UTM 5N grid
+  a <- info[[i]]; b <- sf::st_bbox(a$extent)
+  tpl <- terra::rast(xmin = floor(b$xmin / 10) * 10, xmax = ceiling(b$xmax / 10) * 10, ymin = floor(b$ymin / 10) * 10, ymax = ceiling(b$ymax / 10) * 10, resolution = 10, crs = "EPSG:32605")
+  f <- if (nrow(a$crowns)) terra::rasterize(terra::vect(a$crowns), tpl, cover = TRUE) else terra::init(tpl, 0); f[is.na(f)] <- 0
+  d <- setNames(as.data.frame(f, xy = TRUE), c("x", "y", "dead"))
+  data.frame(roi = areas$roi[i], set = areas$set[i], d[sf::st_intersects(sf::st_as_sf(d, coords = c("x", "y"), crs = 32605), a$extent, sparse = FALSE)[, 1], ])
+})), cells_csv, row.names = FALSE)
+cells <- read.csv(cells_csv, colClasses = c(roi = "character"))
+used <- areas[areas$year == 2021, ]
+```
+
+```{r}
+#| label: fig-study
+#| echo: true
+#| fig-cap: "Alaska in the Alaska Albers projection (EPSG:3338), with the spruce beetle damage mapped by the aerial detection survey from 2016 to 2024, the four regions in which the statewide map was tested, and the validation strip of the Susitna valley in which Zwieback et al. (2024) mapped dead spruce crowns on a WorldView-2 image of 2 August 2021."
+#| fig-width: 7
+#| fig-height: 4.6
+# USFS Forest Health Protection aerial detection survey damage areas, Alaska Region 10, all years.
+# https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip
+# United States Census Bureau cartographic boundary file of states, 2023, 1:20,000,000.
+# https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_20m.zip
+# US Census TIGER/Line 2018 county boundaries, Earth Engine TIGER/2018/Counties (row `TIGER/2018/Counties` of 02.inputs/README.md).
+# https://developers.google.com/earth-engine/datasets/catalog/TIGER_2018_Counties
+ads_ak <- sf::st_transform(sf::st_read("02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE,
+                   query = "SELECT SURVEY_YEAR, Shape FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10 WHERE DCA_CODE = 11009 AND SURVEY_YEAR BETWEEN 2016 AND 2024"), 3338)
+frame <- sf::st_as_sfc(sf::st_bbox(sf::st_buffer(sf::st_convex_hull(sf::st_union(sf::st_transform(used, 3338))), 20000)))  # the label areas and 20 km around them
+ads <- sf::st_intersection(ads_ak, frame)
+states_zip <- "02.inputs/context/cb_2023_us_state_20m.zip"
+if (!file.exists(states_zip)) download.file("https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_20m.zip", states_zip, mode = "wb")
+alaska <- sf::st_transform(subset(sf::st_read(file.path("/vsizip", states_zip, "cb_2023_us_state_20m.shp"), quiet = TRUE), STUSPS == "AK"), 3338)
+regions <- list(kenai = "02122", matsu = "02170", copper = "02261", interior = c("02068", "02090", "02240"))  # the Kenai Peninsula Borough, the Matanuska-Susitna Borough, the Valdez-Cordova census area holding the Copper River basin, and the Denali Borough, Fairbanks North Star Borough and Southeast Fairbanks census area of the Tanana valley
+region_names <- c(kenai = "Kenai Peninsula", matsu = "Matanuska-Susitna", copper = "Copper River", interior = "Interior")
+regions_geojson <- "02.inputs/context/regions_tiger2018.geojson"
+if (!file.exists(regions_geojson)) download.file(ee$FeatureCollection("TIGER/2018/Counties")$filter(ee$Filter$inList("GEOID", as.list(unname(unlist(regions)))))$getDownloadURL("geojson"), regions_geojson, quiet = TRUE)  # unnamed, or reticulate sends a dictionary
+cty <- sf::st_transform(sf::st_read(regions_geojson, quiet = TRUE), 3338)
+reg_sf <- sf::st_cast(do.call(rbind, lapply(names(regions), function(nm) sf::st_sf(region = nm, geometry = sf::st_union(sf::st_geometry(cty[cty$GEOID %in% regions[[nm]], ]))))), "MULTIPOLYGON")  # one multipolygon per region, so that terra transfers every part
+reg_sf$name <- region_names[reg_sf$region]
+ggplot() + geom_sf(data = alaska, fill = "grey92", colour = "grey55", linewidth = 0.2) + geom_sf(data = ads_ak, fill = "#C0392B", colour = "#C0392B", linewidth = 0.1) +
+  geom_sf(data = reg_sf, fill = NA, colour = "black", linewidth = 0.4) + geom_sf(data = frame, fill = NA, colour = "#1F618D", linewidth = 0.7) +
+  ggrepel::geom_label_repel(data = reg_sf, aes(label = name, geometry = geometry), stat = "sf_coordinates", size = 2.6, label.size = 0.2, seed = 1, min.segment.length = 0) +
+  coord_sf(xlim = c(-1.55e6, 1.45e6), ylim = c(4.2e5, 2.35e6)) + labs(x = NULL, y = NULL) + th
+```
+
+The study covered the forest of Alaska, `r format(round(area_a$forest_km2[area_a$region == "alaska"]), big.mark = ",")` km² of 10 m cells with a canopy height of 5 m or more, which Sentinel-1 imaged from October 2014 (@fig-study). White and black spruce (*P. mariana* (Mill.) Britton et al.), Alaska birch (*Betula neoalaskana* Sarg.) and trembling aspen (*Populus tremuloides* Michx.) form the forest of the Interior and the Southcentral lowlands, with Lutz spruce on the Kenai Peninsula and Sitka spruce along the coast. The validation strip lay along the Parks Highway in the Susitna valley, between `r sprintf("%.1f", sf::st_bbox(sf::st_transform(used, 4326))["ymin"])`° N and `r sprintf("%.1f", sf::st_bbox(sf::st_transform(used, 4326))["ymax"])`° N, where @Zwieback_2024 delineated dead spruce crowns. Within 20 km of the strip, the aerial detection survey mapped the most spruce beetle damage in `r names(which.max(tapply(as.numeric(sf::st_area(ads)), ads$SURVEY_YEAR, sum)))`, `r format(round(max(tapply(as.numeric(sf::st_area(ads)), ads$SURVEY_YEAR, sum)) / 1e4), big.mark = ",")` ha. The map was tested in four regions. The Kenai Peninsula Borough held most of the Alaska plot studies [@Werner_1983; @Hard_1983; @Reynolds_1994b], the Matanuska-Susitna Borough contains the strip, the Valdez-Cordova census area contains the Copper River basin of @Doak_2004, and the fourth region, the Denali, Fairbanks North Star and Southeast Fairbanks areas of the Interior, was the one the outbreak had reached at Cantwell by 2020 [@Zwieback_2024].
+
+```{r}
+#| label: fig-spread
+#| echo: true
+#| fig-cap: "Area of spruce beetle damage mapped by the aerial detection survey across Alaska in each survey year, by quarter-degree band of latitude, on a square-root colour scale; the dashed lines bound the latitudes of the frame of Figure 1."
+#| fig-width: 7
+#| fig-height: 3.6
+# USFS Forest Health Protection aerial detection survey damage areas, Alaska Region 10, all years.
+# https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip
+spread_csv <- "03.outputs/survey_by_latitude.csv"
+if (!file.exists(spread_csv)) {
+  pg <- sf::st_read("02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE,
+                    query = "SELECT SURVEY_YEAR, Shape FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10 WHERE DCA_CODE = 11009 AND SURVEY_YEAR <= 2024")
+  pg <- data.frame(year = pg$SURVEY_YEAR, ha = as.numeric(sf::st_area(pg)) / 1e4,
+                   lat = sf::st_coordinates(sf::st_transform(sf::st_centroid(sf::st_geometry(pg)), 4326))[, 2])
+  write.csv(aggregate(ha ~ year + band, transform(pg, band = floor(lat * 4) / 4), sum), spread_csv, row.names = FALSE)
+}
+spread <- read.csv(spread_csv); by_year <- aggregate(ha ~ year, spread, sum)
+north <- function(y) 100 * sum(spread$ha[spread$year %in% y & spread$band >= 61]) / sum(spread$ha[spread$year %in% y])
+ggplot(spread, aes(year, band + 0.125, fill = ha / 1000)) + geom_tile() +
+  geom_hline(yintercept = sf::st_bbox(sf::st_transform(frame, 4326))[c(2, 4)], linetype = "22", linewidth = 0.3) +
+  scale_fill_viridis_c("Thousand ha", option = "inferno", direction = -1, trans = "sqrt") + labs(x = NULL, y = "Latitude (° N)") + th
+```
+
+Across Alaska, the survey mapped the most spruce beetle damage in `r by_year$year[which.max(by_year$ha)]`, `r format(round(max(by_year$ha)), big.mark = ",")` ha, and the least in `r by_year$year[which.min(by_year$ha)]`, `r format(round(min(by_year$ha)), big.mark = ",")` ha. Of the area mapped from 2016 to 2024, `r sprintf("%.0f", north(2016:2024))` per cent lay north of 61° N, against `r sprintf("%.0f", north(1997:2015))` per cent of the area mapped from `r min(spread$year)` to 2015 (@fig-spread).
+
+# Data
+
+## Reference data
+
+The reference data were the dead spruce crowns that @Zwieback_2024 delineated by hand on a WorldView-2 image of 2 August 2021, `r sum(used$set == "training")` training areas of 512 m with `r format(sum(used$crowns[used$set == "training"]), big.mark = ",")` crowns and `r sum(used$set == "test")` test areas of 90 m with `r format(sum(used$crowns[used$set == "test"]), big.mark = ",")`, and their severity map, the fraction of each 90 m cell covered by dead spruce, reported with a root mean square error of 0.02. The severity map has no declared licence and was used for validation only. The `r sum(areas$crowns[areas$year == 2013])` crowns of the areas they delineated on a pre-outbreak image of 14 July 2013 were set aside. The delineators were "not able to directly identify a tree's species, whether it was alive or dead, or the mortality agent when assembling the test data" [@Zwieback_2024, p. 418], so a crown is a dead spruce in an area of outbreak rather than a confirmed beetle kill. It records that the spruce stood dead on that date, not the year it died. Each area was divided into 10 m cells on the WGS 84 UTM zone 5N grid of the labels, `r format(nrow(cells), big.mark = ",")` cells in all, and the fraction of each covered by dead crowns was computed. The aerial detection survey of the Forest Service gave the second label, its damage polygons recording survey year, host and mortality class and its surveyed-area polygons recording the ground the observers flew over. The Forest Inventory and Analysis plot and tree tables for Alaska [@Bechtold_2005] gave the ground check.
+
+## Satellite data
+
+```{r}
+#| label: s1-flatten
+#| echo: true
+#| output: false
+# Sentinel-1 GRD, Earth Engine COPERNICUS/S1_GRD.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S1_GRD
+# Copernicus GLO-30 DEM, Earth Engine COPERNICUS/DEM/GLO30_2024_1.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30_2024_1
+s1 <- ee$ImageCollection("COPERNICUS/S1_GRD")$filter(ee$Filter$eq("instrumentMode", "IW"))$
+  filter(ee$Filter$listContains("transmitterReceiverPolarisation", "VH"))
+dem <- ee$ImageCollection("COPERNICUS/DEM/GLO30_2024_1")$select("DEM")$mosaic()
+rad <- pi / 180
+flatten <- function(img, bands = c("VV", "VH"), smooth = TRUE) {  # volume-model slope correction of Vollrath et al. (2020), layover and shadow masked; smooth applies the 3 by 3 mean
+  theta <- img$select("angle")$multiply(rad)
+  phi <- ee$Image$constant(ee$Terrain$aspect(img$select("angle"))$reduceRegion(ee$Reducer$mean(), img$geometry(), 1000)$get("aspect"))$multiply(rad)
+  a_r <- ee$Terrain$slope(dem)$multiply(rad)$tan()$multiply(phi$subtract(ee$Terrain$aspect(dem)$multiply(rad))$cos())$atan()
+  g0 <- ee$Image$constant(10)$pow(img$select(bands)$divide(10))$divide(theta$cos())
+  corr <- ee$Image$constant(pi / 2)$subtract(theta)$add(a_r)$tan()$divide(ee$Image$constant(pi / 2)$subtract(theta)$tan())
+  g <- g0$divide(corr); if (smooth) g <- g$focalMean(1.5)
+  ee$Image(g$log10()$multiply(10)$updateMask(a_r$lt(theta)$And(a_r$gt(theta$subtract(pi / 2))))$
+    copyProperties(img, list("system:time_start", "relativeOrbitNumber_start")))
+}
+```
+
+Sentinel-1 ground range detected scenes in interferometric wide swath mode were read in Google Earth Engine [@Gorelick_2017], where each had been corrected for thermal noise, calibrated, terrain corrected and converted to decibels. Following the analysis-ready preparation of @Mullissa_2021, backscatter was normalised for slope with the volume scattering model of @Vollrath_2020, which also masks layover and radar shadow, on the Copernicus 30 m elevation model, because north of 60° N @Mullissa_2021 advised an alternative to the Shuttle Radar Topography Mission. Speckle was reduced with a 3 by 3 mean in linear power. The strip is imaged by the ascending orbit 65 and the descending orbit 131, which view the forest from opposite sides at different incidence angles, so the two were kept apart in the validation and pooled after a correction for incidence angle in the statewide map. Canopy height came from three sources made in different ways. The ETH Zurich model of 2020 fitted GEDI lidar heights to Sentinel-2 imagery at 10 m [@Lang_2023], and two surface models less the 10 m terrain model of the United States Geological Survey 3D Elevation Program gave the other two, the Copernicus GLO-30 surface from X-band radar of 2011 to 2015 and the ArcticDEM mosaic from optical stereo at 2 m [@Porter_2023]. The ALOS PALSAR yearly mosaics of the Japan Aerospace Exploration Agency gave L-band HH and HV backscatter at 25 m [@Shimada_2014], and the LANDFIRE existing vegetation type gave the vegetation class of each cell [@Rollins_2009]. The conifer top cover of 2020 from the Arctic-Boreal Vulnerability Experiment [@Macander_2022] defined living forest.
+
+# Methods
+
+## Literature review
+
+```{r}
+#| label: review-terms
+#| echo: true
+#| output: false
+terms_csv <- "04.references/review/search-terms.csv"
+if (!file.exists(terms_csv)) {  # every candidate term from the title and keywords, selected by hand in the file and frozen with the protocol
+  front <- rmarkdown::yaml_front_matter("01.manuscript/manuscript.qmd")
+  small <- c("a", "an", "and", "as", "at", "by", "do", "does", "for", "from", "how", "in", "into", "is", "its", "of", "on", "or", "the", "to", "under", "using", "versus", "what", "why", "with", "across")
+  phrases <- function(x) x |> stringr::str_to_lower() |> stringr::str_remove_all("[*_]") |> stringr::str_replace_all("[^[:alnum:][:space:]-]", " | ") |>
+    stringr::str_replace_all(paste0("\\b(", paste(small, collapse = "|"), ")\\b"), " | ") |> stringr::str_split_1("\\|") |> stringr::str_squish() |> purrr::keep(function(p) nchar(p) > 2)
+  dir.create(dirname(terms_csv), recursive = TRUE, showWarnings = FALSE)
+  dplyr::bind_rows(tibble::tibble(term = stringr::str_squish(stringr::str_to_lower(unlist(front$keywords))), source = "keywords"), tibble::tibble(term = phrases(front$title), source = "title")) |>
+    dplyr::distinct(term, .keep_all = TRUE) |> dplyr::mutate(question = NA, concept = NA) |> readr::write_csv(terms_csv, na = "")
+}
+```
+
+```{r}
+#| label: review-queries
+#| echo: true
+#| output: false
+front <- rmarkdown::yaml_front_matter("01.manuscript/manuscript.qmd")
+declared <- stringr::str_to_lower(paste(front$title, paste(unlist(front$keywords), collapse = " ")))
+term_regex <- function(x) if (stringr::str_ends(x, "\\*")) paste0("\\b", stringr::str_escape(stringr::str_remove(x, "\\*$"))) else paste0("\\b", stringr::str_escape(x), "\\b")
+terms <- readr::read_csv(terms_csv, col_types = readr::cols(.default = "c")) |> dplyr::filter(!is.na(question), !is.na(concept)) |>
+  dplyr::mutate(term = stringr::str_to_lower(term)) |> tidyr::separate_longer_delim(question, " ")
+stray <- terms$term[!purrr::map_lgl(terms$term, function(x) stringr::str_detect(declared, term_regex(x)))]
+if (nrow(terms) == 0) stop("No search terms selected in ", terms_csv)
+if (length(stray) > 0) stop("Not in the title or keywords: ", paste(unique(stray), collapse = ", "))  # a new word enters the search only by entering the keywords first
+queries <- terms |> dplyr::summarise(.by = c(question, concept), group = paste(term, collapse = "|")) |>
+  dplyr::summarise(.by = question, route = paste(c(dplyr::first(question), concept), collapse = "-"), concepts = paste(group, collapse = " AND "))
+```
+
+```{r}
+#| label: review-store
+#| echo: true
+#| output: false
+store_csv <- "02.inputs/derived/review-store-hits.csv"; log_csv <- "02.inputs/derived/review-search-log.csv"
+if (!file.exists(store_csv)) {
+  # library-science manifest and source notes, the central store at Github/library-science, https://github.com/seamusrobertmurphy/library-science
+  manifest <- readr::read_csv("../library-science/library/manifest.csv", show_col_types = FALSE)
+  notes <- tibble::tibble(path = list.files("../library-science/sources", "\\.md$", full.names = TRUE)) |>
+    dplyr::mutate(key = tools::file_path_sans_ext(basename(path)), note = purrr::map_chr(path, function(p) paste(readLines(p, warn = FALSE), collapse = " ")))
+  store <- manifest |> dplyr::filter(status %in% c("verified", "filed", "unverified"), !is.na(title) | !is.na(key)) |> dplyr::left_join(dplyr::select(notes, key, note), by = "key") |> dplyr::mutate(text = stringr::str_to_lower(paste(title, note)))
+  term_pat <- function(x) if (stringr::str_ends(x, "\\*")) paste0(stringr::str_remove(x, "\\*$"), "\\w*") else paste0(x, "\\b")
+  hits <- purrr::pmap(queries, function(question, route, concepts) {
+    patterns <- purrr::map_chr(stringr::str_split_1(concepts, " AND "), function(g) paste0("\\b(", paste(purrr::map_chr(stringr::str_split_1(g, "\\|"), term_pat), collapse = "|"), ")"))
+    keep <- purrr::reduce(purrr::map(patterns, function(r) stringr::str_detect(store$text, r)), `&`)
+    store[keep, ] |> dplyr::transmute(question, route = paste0("store-", route), key, doi, title, year, venue = container, source_note = dplyr::if_else(has_source_note == "yes", key, NA)) }) |> purrr::list_rbind()
+  readr::write_csv(hits, store_csv)
+  queries |> dplyr::transmute(strand = "library-science", route = paste0("store-", route), query = concepts, date = as.character(Sys.Date())) |>
+    dplyr::left_join(dplyr::count(hits, route, name = "retrieved"), by = "route") |> dplyr::mutate(retrieved = tidyr::replace_na(retrieved, 0L), reported_total = retrieved, cap = NA, capped = FALSE, error = NA) |> readr::write_csv(log_csv)
+}
+```
+
+```{r}
+#| label: review-semantic-scholar
+#| echo: true
+#| output: false
+s2_csv <- "02.inputs/derived/review-s2-hits.csv"
+if (!file.exists(s2_csv)) {
+  search_s2 <- function(question, route, concepts, cap = 3000) {
+    query <- paste(purrr::map_chr(stringr::str_split_1(concepts, " AND "), function(g) paste0("(", paste(purrr::map_chr(stringr::str_split_1(g, "\\|"), function(x) if (grepl(" ", x)) paste0('"', x, '"') else x), collapse = " | "), ")")), collapse = " + ")
+    papers <- list(); token <- NULL; total <- NA
+    repeat {
+      # Semantic Scholar Academic Graph bulk search, https://api.semanticscholar.org/api-docs/graph#tag/Paper-Data/operation/get_graph_paper_bulk_search
+      body <- httr2::request("https://api.semanticscholar.org/graph/v1/paper/search/bulk") |> httr2::req_url_query(query = query, fields = "title,year,venue,externalIds,citationCount,publicationTypes,abstract", token = token) |>
+        httr2::req_retry(max_tries = 10, backoff = function(i) 5 * i) |> httr2::req_perform() |> httr2::resp_body_json()
+      total <- body$total; token <- body$token; papers <- c(papers, body$data); Sys.sleep(1.5)
+      if (is.null(token) || length(papers) >= cap) break }
+    works <- purrr::list_rbind(purrr::map(papers, function(w) tibble::tibble(doi = w$externalIds$DOI %||% NA_character_, title = w$title %||% NA_character_, year = w$year %||% NA_integer_, venue = w$venue %||% NA_character_, type = paste(unlist(w$publicationTypes), collapse = " "), citations = w$citationCount %||% NA_integer_, abstract = w$abstract %||% NA_character_)))
+    list(hits = dplyr::mutate(works, question, route = paste0("s2-", route), .before = 1), log = tibble::tibble(strand = "semantic-scholar", route = paste0("s2-", route), query, date = as.character(Sys.Date()), retrieved = nrow(works), reported_total = total, cap, capped = total > cap, error = NA)) }
+  runs <- purrr::pmap(queries, search_s2)
+  readr::write_csv(purrr::list_rbind(purrr::map(runs, "hits")), s2_csv)
+  readr::read_csv(log_csv, col_types = readr::cols(.default = "c")) |> dplyr::bind_rows(purrr::list_rbind(purrr::map(runs, "log")) |> dplyr::mutate(dplyr::across(dplyr::everything(), as.character))) |> readr::write_csv(log_csv)
+}
+```
+
+```{r}
+#| label: review-openalex
+#| echo: true
+#| output: false
+oa_csv <- "02.inputs/derived/review-openalex-hits.csv"
+if (!file.exists(oa_csv)) {
+  stems <- c("susceptib*" = "susceptible OR susceptibility", "map*" = "map OR mapping OR mapped OR maps")  # OpenAlex takes no wildcard, so each stem is written out
+  search_oa <- function(question, route, concepts, cap = 3000) {
+    query <- paste(purrr::map_chr(stringr::str_split_1(concepts, " AND "), function(g) paste0("(", paste(purrr::map_chr(stringr::str_split_1(g, "\\|"), function(x) if (x %in% names(stems)) stems[[x]] else if (grepl(" ", x)) paste0('"', x, '"') else x), collapse = " OR "), ")")), collapse = " AND ")
+    works <- list(); cursor <- "*"; total <- NA
+    repeat {
+      # OpenAlex works search, https://docs.openalex.org/api-entities/works/search-works
+      body <- httr2::request("https://api.openalex.org/works") |> httr2::req_url_query(filter = paste0("title_and_abstract.search:", query), `per-page` = 200, cursor = cursor, mailto = "seamusrobertmurphy@gmail.com", select = "id,doi,title,publication_year,type,cited_by_count,primary_location,abstract_inverted_index") |>
+        httr2::req_retry(max_tries = 8, backoff = function(i) 5 * i, is_transient = function(r) httr2::resp_status(r) %in% c(401, 429, 500, 503)) |> httr2::req_perform() |> httr2::resp_body_json()  # titles and abstracts, the same scope as the Semantic Scholar strand; a 401 from OpenAlex has been transient
+      total <- body$meta$count; cursor <- body$meta$next_cursor; works <- c(works, body$results); Sys.sleep(0.5)
+      if (is.null(cursor) || length(body$results) == 0 || length(works) >= cap) break }
+    abstract <- function(ii) if (is.null(ii)) NA_character_ else { pos <- unlist(ii, use.names = FALSE); paste(rep(names(ii), lengths(ii))[order(pos)], collapse = " ") }  # the inverted index back into the abstract
+    hits <- purrr::list_rbind(purrr::map(works, function(w) tibble::tibble(doi = if (is.null(w$doi)) NA_character_ else sub("^https://doi.org/", "", w$doi), title = w$title %||% NA_character_, year = w$publication_year %||% NA_integer_,
+      venue = w$primary_location$source$display_name %||% NA_character_, type = w$type %||% NA_character_, citations = w$cited_by_count %||% NA_integer_, abstract = abstract(w$abstract_inverted_index))))
+    list(hits = dplyr::mutate(hits, question, route = paste0("oa-", route), .before = 1), log = tibble::tibble(strand = "openalex", route = paste0("oa-", route), query, date = as.character(Sys.Date()), retrieved = nrow(hits), reported_total = total, cap, capped = total > cap, error = NA)) }
+  runs <- purrr::pmap(queries, search_oa)
+  readr::write_csv(purrr::list_rbind(purrr::map(runs, "hits")), oa_csv)
+  readr::read_csv(log_csv, col_types = readr::cols(.default = "c")) |> dplyr::bind_rows(purrr::list_rbind(purrr::map(runs, "log")) |> dplyr::mutate(dplyr::across(dplyr::everything(), as.character))) |> readr::write_csv(log_csv)
+}
+```
+
+```{r}
+#| label: review-records
+#| echo: true
+#| output: false
+records_csv <- "02.inputs/derived/review-records.csv"
+if (!file.exists(records_csv)) {  # one row per unique record, joined on DOI or failing that on title; the decision, reason and full_text columns are filled by the reader and never overwritten
+  dplyr::bind_rows(readr::read_csv(store_csv, col_types = readr::cols(.default = "c")), readr::read_csv(s2_csv, col_types = readr::cols(.default = "c")), readr::read_csv(oa_csv, col_types = readr::cols(.default = "c"))) |>
+    dplyr::mutate(id = dplyr::coalesce(stringr::str_to_lower(doi), stringr::str_squish(stringr::str_to_lower(stringr::str_replace_all(title, "[^[:alnum:] ]", " "))))) |>
+    dplyr::summarise(.by = id, doi = dplyr::first(stats::na.omit(doi)), title = dplyr::first(title), year = dplyr::first(stats::na.omit(year)), venue = dplyr::first(stats::na.omit(venue)), questions = paste(sort(unique(question)), collapse = " "), routes = paste(sort(unique(route)), collapse = " "),
+      duplicates_merged = dplyr::n(), key = dplyr::first(stats::na.omit(key)), source_note = dplyr::first(stats::na.omit(source_note)), abstract = dplyr::first(stats::na.omit(abstract))) |>
+    dplyr::mutate(decision = NA, reason = NA, full_text = NA, attributes = NA) |> readr::write_csv(records_csv, na = "")
+}
+```
+
+```{r}
+#| label: review-chase
+#| echo: true
+#| output: false
+central <- c("10.1139/x83-097", "10.1093/forestscience/31.4.839", "10.1139/x94-268", "10.1139/x83-014", "10.1016/j.isprsjprs.2024.05.013")  # Hard et al. 1983, Hard 1985, Reynolds and Holsten 1994, Werner and Holsten 1983, Zwieback et al. 2024
+chase_csv <- "02.inputs/derived/review-chase-hits.csv"
+if (length(central) > 0 && !file.exists(chase_csv)) {
+  chase <- function(seed_doi, direction) {
+    # Semantic Scholar Academic Graph references and citations, https://api.semanticscholar.org/api-docs/graph#tag/Paper-Data
+    resp <- httr2::request(paste0("https://api.semanticscholar.org/graph/v1/paper/DOI:", seed_doi, "/", direction)) |> httr2::req_url_query(fields = "title,year,venue,externalIds,abstract", limit = 1000) |>
+      httr2::req_retry(max_tries = 10, backoff = function(i) 5 * i) |> httr2::req_error(is_error = function(r) httr2::resp_status(r) == 429) |> httr2::req_perform(); Sys.sleep(1.5)
+    if (httr2::resp_status(resp) != 200) return(tibble::tibble(seed = seed_doi, route = paste0("chase-", direction), error = httr2::resp_status_desc(resp)))
+    key <- if (direction == "references") "citedPaper" else "citingPaper"
+    purrr::list_rbind(purrr::map(httr2::resp_body_json(resp)$data, function(w) tibble::tibble(doi = w[[key]]$externalIds$DOI %||% NA_character_, title = w[[key]]$title %||% NA_character_, year = w[[key]]$year %||% NA_integer_, venue = w[[key]]$venue %||% NA_character_, abstract = w[[key]]$abstract %||% NA_character_))) |>
+      dplyr::mutate(seed = seed_doi, route = paste0("chase-", direction), .before = 1) }
+  readr::write_csv(purrr::list_rbind(purrr::pmap(tidyr::expand_grid(seed_doi = central, direction = c("references", "citations")), chase)), chase_csv)
+}
+```
+
+```{r}
+#| label: review-counts
+#| echo: true
+#| output: false
+records <- readr::read_csv(records_csv, show_col_types = FALSE); search_log <- readr::read_csv(log_csv, show_col_types = FALSE)
+review_counts <- c(retrieved = sum(search_log$retrieved), unique = sum(!records$questions %in% c("chase", "hand")), chased = sum(records$questions == "chase"), hand = sum(records$questions == "hand"),  # the three strands, the citation chase and the records added by hand
+  screened = nrow(records), included = sum(records$decision == "include", na.rm = TRUE), excluded = sum(records$decision == "exclude", na.rm = TRUE), full_text = sum(records$full_text == "yes", na.rm = TRUE), abstract_only = sum(records$decision == "include" & records$full_text == "abstract", na.rm = TRUE))
+review_reasons <- records |> dplyr::filter(decision == "exclude") |> dplyr::count(reason, name = "records", sort = TRUE)
+```
+
+The literature behind the hypotheses was reviewed under a protocol frozen on 14 October 2026, with questions on the tree and stand attributes that predict attack, on the remote sensing of spruce beetle damage, and on whether a susceptibility map had been made before from radar or canopy height data without a field cruise. Queries built from the title and keywords were run that day in the author's reference store, the Semantic Scholar bulk search and OpenAlex, and returned `r format(review_counts["retrieved"], big.mark = ",")` records, `r review_counts["unique"]` of them unique. One round of backward and forward citation chasing from five central records added `r review_counts["chased"]`, and `r review_counts["hand"]` were added by hand, the Forest Service reports of 1954 to 2026 and the radar studies behind the expected directions. One reader screened all `r review_counts["screened"]` on title and abstract and retained `r review_counts["included"]`, excluding most for bearing on none of the questions (`r review_reasons$records[review_reasons$reason == "wrong-concept"]`) or for concerning another insect or tree (`r review_reasons$records[review_reasons$reason == "wrong-population"]`). Every retained record behind an expected direction was read in full where its text could be reached. The `r review_counts["abstract_only"]` retained papers whose full text could not be reached are cited only for what their abstracts state.
+
+## Stand validation
+
+```{r}
+#| label: s1-samples
+#| echo: true
+#| output: false
+samp_dir <- "02.inputs/derived/tile_samples"
+months <- seq(as.Date("2017-06-01"), as.Date("2021-08-01"), by = "month"); ym <- format(months, "%Y%m"); orbits <- c(65L, 131L)
+composite <- function(col, bands, o, g, m) col$filterBounds(g)$filter(ee$Filter$eq("relativeOrbitNumber_start", o))$  # the median of the slope-corrected scenes of one orbit in one month
+  filterDate(format(m), format(seq(m, by = "month", length.out = 2)[2]))$map(function(img) flatten(img, bands))$median()$rename(paste0(bands, o, "_", format(m, "%Y%m")))
+sample_areas <- function(dir, comps) {  # sampled at the centre of every 10 m cell of every label area, one file per area
+  dir.create(dir, showWarnings = FALSE)
+  for (i in seq_len(nrow(used))) {
+    out <- file.path(dir, paste0(used$roi[i], ".csv")); if (file.exists(out)) next
+    xy <- sf::st_coordinates(sf::st_transform(used$geometry[i], 4326))
+    g <- ee$Geometry$Polygon(list(lapply(seq_len(nrow(xy)), function(k) c(xy[k, 1], xy[k, 2]))))
+    f <- tryCatch(ee$Image$cat(comps(g))$sample(region = g, scale = 10, projection = "EPSG:32605", geometries = TRUE, dropNulls = FALSE)$getInfo()$features,
+                  error = function(e) if (grepl("concurren|Too Many Requests|timed out|memory", conditionMessage(e))) NULL else stop(e))
+    if (is.null(f)) next  # left for the next pass when Earth Engine refuses the request under load
+    p <- sf::st_coordinates(sf::st_transform(sf::st_as_sf(data.frame(t(sapply(f, function(z) unlist(z$geometry$coordinates)))), coords = 1:2, crs = 4326), 32605))
+    write.csv(data.frame(roi = used$roi[i], x = round((p[, 1] - 5) / 10) * 10 + 5, y = round((p[, 2] - 5) / 10) * 10 + 5,
+                         dplyr::bind_rows(lapply(f, function(z) Filter(Negate(is.null), z$properties)))), out, row.names = FALSE)
+  }
+}
+spec <- expand.grid(o = orbits, m = format(months), stringsAsFactors = FALSE)
+sample_areas(samp_dir, function(g) unname(Map(function(o, m) composite(s1, c("VV", "VH"), o, g, as.Date(m)), spec$o, spec$m)))
+```
+
+```{r}
+#| label: s1-samples-pre
+#| echo: true
+#| output: false
+months_pre <- seq(as.Date("2014-10-01"), as.Date("2017-05-01"), by = "month")
+s1_all <- ee$ImageCollection("COPERNICUS/S1_GRD")$filter(ee$Filter$eq("instrumentMode", "IW"))$filter(ee$Filter$listContains("transmitterReceiverPolarisation", "VV"))  # every scene carries VV, only the dual-polarised scenes carry VH
+spec_pre <- expand.grid(b = c("VV", "VH"), o = orbits, m = format(months_pre), stringsAsFactors = FALSE)
+sample_areas("02.inputs/derived/tile_samples_pre", function(g) unname(Map(function(b, o, m) composite(if (b == "VV") s1_all else s1, b, o, g, as.Date(m)), spec_pre$b, spec_pre$o, spec_pre$m)))
+```
+
+The first hypothesis was tested on the stands of the label areas before it was tested on the landscape. For every month from October 2014 to August 2021, the month of the label image, the median slope-corrected backscatter of each orbit was composited in Earth Engine and sampled at the centre of every 10 m cell of every label area. From June 2017, VV and VH were available on both orbits, and before then VV on both orbits with VH on the ascending orbit in scattered months from April 2015.
+
+```{r}
+#| label: series
+#| echo: true
+#| output: false
+bands <- paste0(c("VV", "VH"), rep(orbits, each = 2))
+samples <- merge(cells, dplyr::bind_rows(lapply(list.files(samp_dir, "\\.csv$", full.names = TRUE), read.csv, colClasses = c(roi = "character"))), by = c("roi", "x", "y"))
+months_seen <- sapply(orbits, function(o) length(grep(paste0("^VV", o, "_"), names(samples))))
+cube <- array(NA_real_, c(nrow(samples), length(ym), length(bands)), list(NULL, ym, bands))
+for (b in bands) { has <- intersect(paste0(b, "_", ym), names(samples)); cube[, sub(".*_", "", has), b] <- as.matrix(samples[, has]) }
+samples <- cbind(samples[, c("roi", "set", "x", "y", "dead")], setNames(as.data.frame(sf::st_coordinates(sf::st_transform(sf::st_as_sf(samples[, c("x", "y")], coords = c("x", "y"), crs = 32605), 4326))), c("lon", "lat")))
+gaps <- mean(is.na(cube))
+fill <- function(v) if (sum(!is.na(v)) < 2) v else approx(seq_along(v), v, seq_along(v), rule = 2)$y  # linear interpolation across months without a scene
+cube <- aperm(apply(cube, c(1, 3), fill), c(2, 1, 3))
+complete <- rowSums(is.na(cube)) == 0
+window <- 24L; intervals <- c(1L, 2L, 3L, 6L)
+series <- function(end, k = 1L, rows = seq_len(nrow(samples))) {  # the 24 months ending in `end`, averaged over blocks of k months
+  j <- (match(end, ym) - window + 1):match(end, ym); blocks <- rep(seq_len(window / k), each = k); x <- cube[rows, j, , drop = FALSE]
+  if (k > 1) x <- aperm(apply(x, c(1, 3), function(v) tapply(v, blocks, mean)), c(2, 1, 3))
+  list(x = x, dates = months[j][!duplicated(blocks)])
+}
+as_sits <- function(rows, s) {  # a sits sample table, one time series per cell
+  tb <- tibble::tibble(longitude = samples$lon[rows], latitude = samples$lat[rows], start_date = s$dates[1], end_date = tail(s$dates, 1),
+                       label = ifelse(samples$dead[rows] >= 0.1, "dead", "alive"), cube = "S1",
+                       time_series = lapply(seq_along(rows), function(i) tibble::as_tibble(cbind(data.frame(Index = s$dates), s$x[i, , ]))))
+  class(tb) <- c("sits", class(tb)); tb
+}
+```
+
+```{r}
+#| label: folds
+#| echo: true
+#| output: false
+train <- samples$set == "training"; use <- (samples$dead >= 0.1 | samples$dead == 0) & complete
+ctr <- sf::st_as_sf(aggregate(cbind(x, y) ~ roi, samples[train, ], mean), coords = c("x", "y"), crs = 32605)
+folds <- blockCV::cv_spatial(ctr, k = 5, size = 15000, selection = "random", seed = 20260915, progress = FALSE, report = FALSE, plot = FALSE)
+samples$fold <- folds$folds_ids[match(samples$roi, ctr$roi)]
+```
+
+```{r}
+#| label: stands
+#| echo: true
+#| output: false
+# ABoVE modelled top cover by plant functional type, conifer top cover 2020 (Macander and Nelson 2022), ORNL DAAC https://doi.org/10.3334/ORNLDAAC/2032, row `covariates/` of 02.inputs/README.md.
+org <- aggregate(cbind(x0 = x, y0 = y) ~ roi, samples, min)
+samples$stand <- paste(samples$roi, (samples$x - org$x0[match(samples$roi, org$roi)]) %/% 90, (samples$y - org$y0[match(samples$roi, org$roi)]) %/% 90)
+g <- samples$stand %in% names(which(table(samples$stand) == 81))  # the 90 m cells wholly inside their area
+stands <- aggregate(cbind(x, y, dead) ~ stand + roi + set, samples[g, ], mean); stands$fold <- samples$fold[match(stands$roi, samples$roi)]
+ll <- sf::st_coordinates(sf::st_transform(sf::st_as_sf(stands, coords = c("x", "y"), crs = 32605), 4326)); stands$lon <- ll[, 1]; stands$lat <- ll[, 2]
+sq <- sf::st_buffer(sf::st_as_sf(stands, coords = c("x", "y"), crs = 32605), 45, endCapStyle = "SQUARE")
+conifer <- terra::rast("02.inputs/covariates/conifer_topcover_2020.tif"); sq <- terra::vect(sf::st_transform(sq, terra::crs(conifer)))
+stands$conifer <- terra::extract(terra::crop(conifer, terra::ext(sq) + 100), sq, fun = mean, na.rm = TRUE, ID = FALSE)[, 1]
+stands$label <- ifelse(stands$dead >= 0.01, "dead", ifelse(stands$dead == 0 & stands$conifer >= 5, "alive", NA))  # living forest is a stand with no dead crown and conifer top cover of 5 per cent or more
+pre <- dplyr::bind_rows(lapply(list.files("02.inputs/derived/tile_samples_pre", "\\.csv$", full.names = TRUE), read.csv, colClasses = c(roi = "character")))
+pre <- pre[match(paste(samples$roi, samples$x, samples$y), paste(pre$roi, pre$x, pre$y)), ]
+ym_all <- format(seq(as.Date("2014-10-01"), as.Date("2021-08-01"), by = "month"), "%Y%m")
+lin_mean <- function(M) { M <- as.matrix(M); 10 * log10(rowsum(10^(M / 10), samples$stand[g], na.rm = TRUE) / rowsum((!is.na(M)) + 0, samples$stand[g])) }  # the stand mean in linear power
+scube <- array(NA_real_, c(nrow(stands), length(ym_all), length(bands)), list(stands$stand, ym_all, bands))
+for (b in bands) { P <- pre[g, grep(paste0("^", b, "_"), names(pre)), drop = FALSE]; names(P) <- sub(".*_", "", names(P))
+  M <- lin_mean(cbind(P, setNames(as.data.frame(cube[g, , b]), ym))); scube[, colnames(M), b] <- M[stands$stand, ] }
+scube <- aperm(apply(scube, c(1, 3), fill), c(2, 1, 3))
+```
+
+```{r}
+#| label: tempcnn-stands
+#| echo: true
+#| output: false
+spred_csv <- "03.outputs/stand_predictions.csv"
+designs <- list(VV_2014 = list(bands = c("VV65", "VV131"), from = "201410"), all_2017 = list(bands = bands, from = "201706"))
+steps <- function(d) match(d$from, ym_all):length(ym_all)
+ok_st <- function(d) rowSums(is.na(scube[, steps(d), d$bands, drop = FALSE])) == 0
+as_sits_st <- function(rows, d) { j <- steps(d); dates <- as.Date(paste0(ym_all[j], "01"), "%Y%m%d")
+  tb <- tibble::tibble(longitude = stands$lon[rows], latitude = stands$lat[rows], start_date = dates[1], end_date = tail(dates, 1), label = dplyr::coalesce(stands$label[rows], "alive"), cube = "S1",
+                       time_series = lapply(rows, function(i) tibble::as_tibble(cbind(data.frame(Index = dates), scube[i, j, d$bands]))))
+  class(tb) <- c("sits", class(tb)); tb }
+fit_st <- function(rows, d) { set.seed(20260915); sits::sits_train(as_sits_st(rows, d), sits::sits_tempcnn(epochs = 60L, patience = 10L, seed = 20260915L, verbose = FALSE)) }
+p_dead_st <- function(m, rows, d) sapply(sits::sits_classify(as_sits_st(rows, d), m, multicores = 1L, progress = FALSE)$predicted, function(z) z$dead)
+strain_csv <- "03.outputs/stand_predictions_train.csv"  # each fold's network on its own training stands, for the overfitting ratio
+if (!file.exists(spred_csv) || !file.exists(strain_csv)) { torch::torch_manual_seed(20260915); out <- list(); fits <- list()
+  for (nm in names(designs)) { d <- designs[[nm]]; ok <- ok_st(d); lab <- ok & !is.na(stands$label); tr <- stands$set == "training"
+    for (f in 1:5) { m <- fit_st(which(lab & tr & stands$fold != f), d); te <- which(ok & tr & stands$fold == f); fits[[paste(nm, f)]] <- m
+      out[[length(out) + 1]] <- data.frame(stands[te, c("stand", "roi", "set", "fold", "dead", "conifer")], design = nm, p_dead = p_dead_st(m, te, d)) }
+    m <- fit_st(which(lab & tr), d); te <- which(ok & !tr)
+    out[[length(out) + 1]] <- data.frame(stands[te, c("stand", "roi", "set", "fold", "dead", "conifer")], design = nm, p_dead = p_dead_st(m, te, d)) }
+  write.csv(do.call(rbind, out), spred_csv, row.names = FALSE)
+  outt <- lapply(names(fits), function(k) { nm <- sub(" \\d$", "", k); f <- as.integer(sub("^.* ", "", k)); d <- designs[[nm]]; trn <- which(ok_st(d) & !is.na(stands$label) & stands$set == "training" & stands$fold != f)  # predicted after every fit, so the fits draw the same random numbers as before
+    data.frame(stands[trn, c("stand", "roi", "set", "fold", "dead", "conifer")], design = nm, fold_model = f, p_dead = p_dead_st(fits[[k]], trn, d)) })
+  write.csv(do.call(rbind, outt), strain_csv, row.names = FALSE) }
+```
+
+```{r}
+#| label: accuracy-stands
+#| echo: true
+#| output: false
+auc <- function(x, y) { r <- rank(x); n1 <- sum(y); (sum(r[y]) - n1 * (n1 + 1) / 2) / (n1 * (length(y) - n1)) }  # the area under the receiver operating characteristic curve, from the ranks
+sp <- read.csv(spred_csv, colClasses = c(roi = "character")); sp$hit <- sp$p_dead >= 0.5
+sp$label <- ifelse(sp$dead >= 0.01, TRUE, ifelse(sp$dead == 0 & sp$conifer >= 5, FALSE, NA))
+score_st <- function(d) { d <- d[!is.na(d$label), ]; tp <- sum(d$hit & d$label)
+  c(dead = sum(d$label), alive = sum(!d$label), precision = tp / sum(d$hit), recall = tp / sum(d$label), F1 = 2 * tp / (sum(d$hit) + sum(d$label)), AUC = auc(d$p_dead, d$label)) }
+sacc <- do.call(rbind, lapply(split(sp, list(sp$design, sp$set)), function(d) data.frame(design = d$design[1], set = d$set[1], t(score_st(d)))))
+sp$bin <- ifelse(sp$dead == 0, ifelse(sp$conifer >= 5, "Living forest", "No conifer"), as.character(cut(sp$dead, c(0, 0.01, 0.02, 0.05, 0.1, 1), c("0 to 0.01", "0.01 to 0.02", "0.02 to 0.05", "0.05 to 0.1", "0.1 to 1"))))
+sfloor <- with(sp[sp$set == "training", ], tapply(hit, list(bin, design), mean)); sfloor_n <- with(sp[sp$set == "training" & sp$design == "VV_2014", ], table(bin))
+sbase <- sapply(designs, function(d) { r <- ok_st(d) & !is.na(stands$label) & stands$set == "training"; sapply(d$bands, function(b) auc(rowMeans(scube[r, steps(d), b]), stands$label[r] == "dead")) })  # one band averaged over the design's months, with no training
+write.csv(sacc, "03.outputs/stand_accuracy.csv", row.names = FALSE)
+```
+
+```{r}
+#| label: change-stands
+#| echo: true
+#| output: false
+era <- function(a, b) which(ym_all >= a & ym_all <= b)
+lab_st <- !is.na(stands$label) & stands$set == "training"; dead_st <- stands$label == "dead"
+chg <- do.call(rbind, lapply(c("VV65", "VV131", "VH65"), function(b) data.frame(stand = stands$stand, band = b, dead = dead_st, labelled = lab_st, conifer = stands$conifer,  # VH on orbit 65 rests on the 11 dual-polarised months before June 2017, VH on orbit 131 has none
+  pre = rowMeans(scube[, era("201410", "201612"), b]), late = rowMeans(scube[, era("201906", "202108"), b]))))  # each stand against its own level before the outbreak reached the area
+chg$change <- chg$late - chg$pre
+change <- do.call(rbind, lapply(split(chg[chg$labelled, ], chg$band[chg$labelled]), function(d) data.frame(band = d$band[1],
+  auc_pre = auc(d$pre, d$dead), auc_late = auc(d$late, d$dead), auc_change = auc(d$change, d$dead), auc_conifer = auc(d$conifer, d$dead),
+  change_dead = mean(d$change[d$dead]), change_alive = mean(d$change[!d$dead]), t = unname(t.test(d$change[d$dead], d$change[!d$dead])$statistic), df = unname(t.test(d$change[d$dead], d$change[!d$dead])$parameter), p = t.test(d$change[d$dead], d$change[!d$dead])$p.value)))
+write.csv(change, "03.outputs/stand_change.csv", row.names = FALSE)  # read by the abstract, which renders before this chunk
+```
+
+The test was made at the 90 m scale at which @Zwieback_2024 reported severity. Each 512 m label area was divided into 90 m cells, and the `r format(nrow(stands), big.mark = ",")` cells wholly inside their area took the mean dead crown fraction and the mean backscatter, in linear power, of their 81 cells of 10 m. A stand was dead at a dead crown fraction of 0.01 or more and living at 0 with conifer top cover of 5 per cent or more, so that the living class contained forest and not treeless ground. Because @Zwieback_2024 related the change in Landsat shortwave infrared reflectance to severity, the change in VV between October 2014 to December 2016, before the survey recorded damage in any label area, and June 2019 to August 2021 was scored beside the level of each period. Each was scored by the area under the receiver operating characteristic curve, the chance that a killed stand drawn at random ranked above a living one. The change was also tested with a Welch t-test, so that a difference that existed before the outbreak could be told from a change the outbreak made. To test whether the full monthly series added anything to the level, the temporal convolutional network of @Pelletier_2019, as implemented in sits [@Simoes_2021], was trained on the series of each stand. The `r nrow(ctr)` training areas were dealt to five spatial folds of 15 km hexagons by blockCV [@Valavi_2019], so that no stand was scored by a network that had seen its area.
+
+## Landscape validation
+
+```{r}
+#| label: landscape
+#| echo: true
+#| output: false
+# Zwieback (2023) spruce beetle outbreak severity, Southcentral Alaska 2021, 90 m, Zenodo https://doi.org/10.5281/zenodo.8423568, no licence declared, validation use only (row `zwieback-severity/` of 02.inputs/README.md).
+sev <- terra::trim(terra::rast("02.inputs/zwieback-severity/merged_ref_h_c90c.tif"))
+land_tif <- "02.inputs/derived/landscape_s1_levels.tif"
+if (!file.exists(land_tif)) {
+  eras <- list(pre = c("2014-10-01", "2017-01-01"), late = c("2019-06-01", "2021-09-01"))
+  level <- function(o, e) s1_all$filter(ee$Filter$eq("relativeOrbitNumber_start", o))$filterDate(eras[[e]][1], eras[[e]][2])$map(function(img) flatten(img, "VV"))$mean()$rename(paste0("VV", o, "_", e))  # the mean slope-corrected VV of every scene of one orbit in one era
+  img <- ee$Image$cat(unname(Map(level, rep(orbits, 2), rep(names(eras), each = 2))))$setDefaultProjection("EPSG:32605", NULL, 10)$reduceResolution(ee$Reducer$mean(), maxPixels = 256L)  # the 81 cells of 10 m averaged into each 90 m cell
+  e <- as.vector(terra::ext(sev)); rows <- split(seq_len(nrow(sev)), ceiling(seq_len(nrow(sev)) / 10))
+  tile_dir <- "02.inputs/derived/landscape_tiles"; dir.create(tile_dir, showWarnings = FALSE)
+  for (r in rows) { f <- file.path(tile_dir, sprintf("rows_%03d.tif", min(r))); if (file.exists(f)) next  # ten rows per request, on the grid of the severity map, kept so that a failed run resumes
+    url <- img$getDownloadURL(list(crs = "EPSG:32605", crs_transform = c(90, 0, e[1], 0, -90, e[4] - (min(r) - 1) * 90), dimensions = c(ncol(sev), length(r)), format = "GEO_TIFF", filePerBand = FALSE))
+    for (attempt in 1:4) if (inherits(try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE), "try-error")) { unlink(f); Sys.sleep(30) } else break  # Earth Engine refuses a request now and then under load
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+  terra::writeRaster(terra::merge(terra::sprc(lapply(list.files(tile_dir, "^rows_.*\\.tif$", full.names = TRUE), terra::rast))), land_tif) }
+lv <- terra::rast(land_tif); names(lv) <- paste0("VV", rep(orbits, 2), "_", rep(c("pre", "late"), each = 2))  # the GeoTIFF carries no band names
+```
+
+```{r}
+#| label: landscape-test
+#| echo: true
+#| output: false
+# USFS Forest Health Protection aerial detection survey damage areas, Alaska Region 10, all years.
+# https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip
+con90 <- terra::project(terra::crop(conifer, terra::project(terra::as.polygons(terra::ext(lv), crs = "EPSG:32605"), terra::crs(conifer))), lv, method = "average")
+surv <- sf::st_read("02.inputs/ids-region10/AK_Region10_AllYears.gdb", quiet = TRUE, query = "SELECT SURVEY_YEAR, Shape FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10 WHERE DCA_CODE = 11009 AND SURVEY_YEAR BETWEEN 2017 AND 2024")
+in_surv <- terra::rasterize(terra::vect(sf::st_transform(surv, 32605)), lv, field = 1, background = 0)
+land <- na.omit(data.frame(sev = terra::values(terra::resample(sev, lv, method = "near"))[, 1], terra::values(lv), conifer = terra::values(con90)[, 1], survey = terra::values(in_surv)[, 1]))
+land$class <- ifelse(land$sev >= 0.01, "dead", ifelse(land$sev == 0 & land$conifer >= 5, "alive", NA)); lab_l <- !is.na(land$class); dead_l <- land$class == "dead"
+forest_l <- land$conifer >= 5
+land_auc <- sapply(c("VV65", "VV131"), function(b) c(level = auc(land[[paste0(b, "_pre")]][lab_l], dead_l[lab_l]), change = auc((land[[paste0(b, "_late")]] - land[[paste0(b, "_pre")]])[lab_l], dead_l[lab_l]),
+  rho = cor(land[[paste0(b, "_pre")]][forest_l], land$sev[forest_l], method = "spearman"), survey = auc(land[[paste0(b, "_pre")]][forest_l], land$survey[forest_l] == 1)))
+land_bins <- with(land[forest_l, ], tapply(VV131_pre, cut(sev, c(-1, 0, 0.01, 0.02, 0.05, 0.1, 1), c("0", "0 to 0.01", "0.01 to 0.02", "0.02 to 0.05", "0.05 to 0.1", "0.1 to 1")), mean))
+```
+
+```{r}
+#| label: landscape-structure
+#| echo: true
+#| output: false
+# ETH global canopy height 2020 at 10 m and its standard deviation (Lang et al. 2023), Earth Engine users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1 and ETH_GlobalCanopyHeightSD_2020_10m_v1.
+# https://doi.org/10.1038/s41559-023-02206-6 and https://gee-community-catalog.org/projects/canopy/
+# USGS 3D Elevation Program 10 m terrain, the Alaska 5 m interferometric radar terrain model resampled, Earth Engine USGS/3DEP/10m_collection.
+# https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_10m_collection
+# Copernicus GLO-30 surface model, Earth Engine COPERNICUS/DEM/GLO30_2024_1.
+# https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_DEM_GLO30_2024_1
+# ArcticDEM version 4 surface model mosaic at 2 m, Earth Engine UMN/PGC/ArcticDEM/V4/2m_mosaic.
+# https://developers.google.com/earth-engine/datasets/catalog/UMN_PGC_ArcticDEM_V4_2m_mosaic
+# JAXA ALOS PALSAR and PALSAR-2 yearly mosaics at 25 m, Earth Engine JAXA/ALOS/PALSAR/YEARLY/SAR.
+# https://developers.google.com/earth-engine/datasets/catalog/JAXA_ALOS_PALSAR_YEARLY_SAR
+struct_tif <- "02.inputs/derived/landscape_structure.tif"
+if (!file.exists(struct_tif)) {
+  at <- function(img, m) img$setDefaultProjection("EPSG:32605", NULL, m)$reduceResolution(ee$Reducer$mean(), maxPixels = 1024L)  # declare the source cell size, then average the cells inside each 90 m cell
+  gamma0 <- function(img) img$select(c("HH", "HV"))$pow(2)$multiply(10^-8.3)$updateMask(img$select("qa")$eq(255))  # digital number to linear gamma0, 10 log10(DN^2) - 83 dB, land cells only
+  lband <- function(y1, y2, e) ee$ImageCollection("JAXA/ALOS/PALSAR/YEARLY/SAR")$filterDate(paste0(y1, "-01-01"), paste0(y2, "-12-31"))$map(gamma0)$mean()$rename(paste0(c("HH", "HV"), "_", e))  # the years are filtered before the arithmetic, which drops the date stamp
+  img <- ee$Image$cat(list(
+    at(ee$Image("users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1")$rename("eth"), 10), at(ee$Image("users/nlang/ETH_GlobalCanopyHeightSD_2020_10m_v1")$rename("eth_sd"), 10),
+    at(ee$ImageCollection("USGS/3DEP/10m_collection")$mosaic()$select("elevation")$rename("dtm"), 10),
+    at(ee$ImageCollection("COPERNICUS/DEM/GLO30_2024_1")$mosaic()$select("DEM")$rename("glo"), 30),
+    at(ee$Image("UMN/PGC/ArcticDEM/V4/2m_mosaic")$select("elevation")$rename("arctic"), 10),
+    at(lband(2015, 2016, "pre"), 25), at(lband(2019, 2020, "late"), 25)))
+  e <- as.vector(terra::ext(sev)); rows <- split(seq_len(nrow(sev)), ceiling(seq_len(nrow(sev)) / 60))
+  tile_dir <- "02.inputs/derived/landscape_tiles"; dir.create(tile_dir, showWarnings = FALSE)
+  for (r in rows) { f <- file.path(tile_dir, sprintf("structure_%03d.tif", min(r))); if (file.exists(f)) next  # sixty rows per request, on the grid of the severity map
+    url <- img$getDownloadURL(list(crs = "EPSG:32605", crs_transform = c(90, 0, e[1], 0, -90, e[4] - (min(r) - 1) * 90), dimensions = c(ncol(sev), length(r)), format = "GEO_TIFF", filePerBand = FALSE))
+    for (attempt in 1:4) if (inherits(try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE), "try-error")) { unlink(f); Sys.sleep(30) } else break
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+  terra::writeRaster(terra::merge(terra::sprc(lapply(list.files(tile_dir, "^structure_.*\\.tif$", full.names = TRUE), terra::rast))), struct_tif) }
+st <- terra::rast(struct_tif); names(st) <- c("eth", "eth_sd", "dtm", "glo", "arctic", "HH_pre", "HV_pre", "HH_late", "HV_late")
+```
+
+```{r}
+#| label: structure-test
+#| echo: true
+#| output: false
+sv <- as.data.frame(terra::values(st))[as.integer(rownames(land)), ]  # the same cells as `land`, which na.omit left numbered by cell
+sv$arctic[!is.na(sv$arctic) & sv$arctic <= 0] <- NA  # the mosaic covers half the strip
+land <- cbind(land, height_eth = sv$eth, height_eth_sd = sv$eth_sd, height_glo = sv$glo - sv$dtm, height_arctic = sv$arctic - sv$dtm,  # surface model minus terrain model, an offset-free canopy height
+  HV_pre = 10 * log10(sv$HV_pre), HH_pre = 10 * log10(sv$HH_pre), HV_change = 10 * log10(sv$HV_late / sv$HV_pre))
+auc_ok <- function(x, y) { ok <- !is.na(x); auc(x[ok], y[ok]) }
+struct <- sapply(c("height_eth", "height_glo", "height_arctic", "HV_pre", "HH_pre", "HV_change", "VV65_pre", "VV131_pre"), function(v) { x <- land[[v]]; ok <- !is.na(x)
+  c(n = sum(ok & lab_l), AUC = auc_ok(x[lab_l], dead_l[lab_l]), dead = mean(x[ok & lab_l & dead_l]), alive = mean(x[ok & lab_l & !dead_l]),
+    rho_sev = cor(x[ok & forest_l], land$sev[ok & forest_l], method = "spearman"), rho_VV65 = cor(x[ok & forest_l], land$VV65_pre[ok & forest_l], method = "spearman"), rho_VV131 = cor(x[ok & forest_l], land$VV131_pre[ok & forest_l], method = "spearman")) })
+d <- na.omit(data.frame(y = dead_l[lab_l], land[lab_l, c("height_eth", "height_glo", "HV_pre", "HH_pre", "VV65_pre", "VV131_pre")]))
+fit_auc <- function(f) auc(predict(glm(f, family = binomial, data = d)), d$y)  # a logistic fit on the same cells, so the question is only whether a second source adds rank
+added <- sapply(list(height = y ~ height_eth + height_glo, c_band = y ~ VV65_pre + VV131_pre, l_band = y ~ HV_pre + HH_pre, c_band_height = y ~ VV65_pre + VV131_pre + height_eth + height_glo, l_band_height = y ~ HV_pre + HH_pre + height_eth + height_glo, all = y ~ VV65_pre + VV131_pre + HV_pre + HH_pre + height_eth + height_glo), fit_auc)
+struct_bins <- with(land[forest_l, ], sapply(list(height_eth = height_eth, height_glo = height_glo, HV_pre = HV_pre), function(x) tapply(x, cut(sev, c(-1, 0, 0.01, 0.02, 0.05, 0.1, 1), c("0", "0 to 0.01", "0.01 to 0.02", "0.02 to 0.05", "0.05 to 0.1", "0.1 to 1")), mean, na.rm = TRUE)))
+write.csv(struct, "03.outputs/landscape_structure.csv")  # read by the abstract, which renders before this chunk
+```
+
+```{r}
+#| label: landscape-landcover
+#| echo: true
+#| output: false
+# LANDFIRE existing vegetation type version 1.4.0, Alaska, 30 m, Earth Engine LANDFIRE/Vegetation/EVT/v1_4_0, image AK, with its class legend in the image properties.
+# https://developers.google.com/earth-engine/datasets/catalog/LANDFIRE_Vegetation_EVT_v1_4_0
+evt_tif <- "02.inputs/derived/landscape_landfire.tif"; evt_csv <- "02.inputs/derived/landfire_evt_classes.csv"
+if (!file.exists(evt_tif) || !file.exists(evt_csv)) {
+  ak <- ee$ImageCollection("LANDFIRE/Vegetation/EVT/v1_4_0")$filter(ee$Filter$eq("system:index", "AK"))$first()
+  p <- ak$getInfo()$properties; write.csv(data.frame(value = unlist(p$EVT_class_values), name = unlist(p$EVT_class_names)), evt_csv, row.names = FALSE)
+  img <- ak$select("EVT")$setDefaultProjection("EPSG:32605", NULL, 30)$reduceResolution(ee$Reducer$mode(), maxPixels = 1024L)  # the commonest 30 m class inside each 90 m cell
+  e <- as.vector(terra::ext(sev)); rows <- split(seq_len(nrow(sev)), ceiling(seq_len(nrow(sev)) / 60))
+  tile_dir <- "02.inputs/derived/landscape_tiles"; dir.create(tile_dir, showWarnings = FALSE)
+  for (r in rows) { f <- file.path(tile_dir, sprintf("landfire_%03d.tif", min(r))); if (file.exists(f)) next  # sixty rows per request, on the grid of the severity map
+    url <- img$getDownloadURL(list(crs = "EPSG:32605", crs_transform = c(90, 0, e[1], 0, -90, e[4] - (min(r) - 1) * 90), dimensions = c(ncol(sev), length(r)), format = "GEO_TIFF", filePerBand = FALSE))
+    for (attempt in 1:4) if (inherits(try(download.file(url, f, mode = "wb", quiet = TRUE), silent = TRUE), "try-error")) { unlink(f); Sys.sleep(30) } else break
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+  terra::writeRaster(terra::merge(terra::sprc(lapply(list.files(tile_dir, "^landfire_.*\\.tif$", full.names = TRUE), terra::rast))), evt_tif) }
+evt_classes <- read.csv(evt_csv)
+land$evt <- evt_classes$name[match(terra::values(terra::rast(evt_tif))[as.integer(rownames(land)), 1], evt_classes$value)]  # the same cells as `land`
+```
+
+```{r}
+#| label: landcover-test
+#| echo: true
+#| output: false
+cover <- t(sapply(split(which(lab_l), land$evt[lab_l]), function(i) { y <- dead_l[i]; big <- sum(y) >= 100 && sum(!y) >= 100  # dead and living cells by vegetation class, and whether height still ranks them inside one class
+  c(dead = sum(y), living = sum(!y), height_dead = mean(land$height_eth[i][y], na.rm = TRUE), height_living = mean(land$height_eth[i][!y], na.rm = TRUE),
+    AUC_height = if (big) auc_ok(land$height_eth[i], y) else NA, AUC_VV65 = if (big) auc_ok(land$VV65_pre[i], y) else NA, AUC_HV = if (big) auc_ok(land$HV_pre[i], y) else NA) }))
+cover <- cover[order(-(cover[, "dead"] + cover[, "living"])), ]
+dc <- na.omit(data.frame(y = dead_l[lab_l], cls = land$evt[lab_l], land[lab_l, c("height_eth", "VV65_pre")]))
+cover_added <- sapply(list(class = y ~ cls, height = y ~ height_eth, class_height = y ~ cls + height_eth, class_c_band = y ~ cls + VV65_pre), function(f) auc(predict(glm(f, family = binomial, data = dc)), dc$y))  # does height add rank once the class is known
+```
+
+Because the `r format(nrow(stands), big.mark = ",")` stands were chosen by @Zwieback_2024, the first hypothesis was then tested across their severity map, a strip `r ncol(sev) * 90 / 1000` by `r round(nrow(sev) * 90 / 1000)` km. The mean slope-corrected VV of every scene of each orbit in the two periods, the three canopy heights and the L-band mosaics of 2015 and 2016 were averaged into the 90 m cells of the map. Of the `r format(nrow(land), big.mark = ",")` cells with values, a cell was dead at a severity of 0.01 or more and living at 0 with conifer top cover of 5 per cent or more. Each source was scored as for the stands, and by Spearman's rank correlation with severity over the forest cells. Logistic regressions on the cells with every source present tested whether a second source improved the ranking given by the first. The level was scored against the survey polygons of 2017 to 2024 rasterised onto the same cells. The LANDFIRE class of each cell tested whether the height contrast was present within a cover class or was a contrast between host and non-host.
+
+## Statewide map
+
+```{r}
+#| label: statewide-angle
+#| echo: true
+#| output: false
+# Sentinel-1 GRD and the ETH canopy height 2020, read above; US Census TIGER/Line 2018 state boundaries, Earth Engine TIGER/2018/States (row `TIGER/2018/States` of 02.inputs/README.md).
+# https://developers.google.com/earth-engine/datasets/catalog/TIGER_2018_States
+angle_csv <- "03.outputs/statewide_angle.csv"
+ak <- ee$FeatureCollection("TIGER/2018/States")$filter(ee$Filter$eq("NAME", "Alaska"))$geometry()
+ak_box <- ee$Geometry$Rectangle(c(-170, 54, -129, 71.5), "EPSG:4326", FALSE)  # the forested state without the far Aleutians, which cross the antimeridian
+eth10 <- ee$Image("users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1")$select(0)$rename("height")
+forest10 <- eth10$gte(5)  # forest is a 10 m cell with canopy height of 5 m or more
+s1_pre <- s1_all$filterBounds(ak)$filterDate("2014-10-01", "2017-01-01")  # every VV scene over Alaska from October 2014 to December 2016
+if (!file.exists(angle_csv)) {  # how slope-corrected VV falls with incidence angle over forest, fitted inside each of 150 scenes drawn at random, so that scenes of every orbit can be pooled
+  fits <- s1_pre$randomColumn("r", 20261014L)$sort("r")$limit(150L)$map(function(img) { img <- ee$Image(img)  # flatten names its one band "constant", so it is renamed before the fit
+    ee$Feature(NULL, flatten(img, "VV")$rename("VV")$addBands(img$select("angle"))$updateMask(forest10)$select(list("angle", "VV"))$reduceRegion(ee$Reducer$linearFit(), img$geometry(), 300, maxPixels = 1e9, tileScale = 4))$set(list(orbit = img$get("relativeOrbitNumber_start"), date = img$date()$format("YYYY-MM-dd"))) })
+  fits <- dplyr::bind_rows(lapply(fits$getInfo()$features, function(f) Filter(Negate(is.null), f$properties)))
+  write.csv(data.frame(fits, slope_median = median(fits$scale, na.rm = TRUE)), angle_csv, row.names = FALSE) }
+angle_fit <- read.csv(angle_csv); angle_slope <- angle_fit$slope_median[1]  # dB per degree of incidence angle
+```
+
+```{r}
+#| label: statewide
+#| echo: true
+#| output: false
+task_csv <- "03.outputs/statewide_task.csv"; asset_id <- paste0("projects/", ee_project, "/assets/spruce_susceptibility_alaska_90m")
+norm_vv <- function(img) flatten(img, "VV", smooth = FALSE)$rename("VV")$subtract(img$select("angle")$subtract(38)$multiply(angle_slope))$rename("VV")  # slope-corrected VV brought to the mid-swath incidence angle of 38 degrees; the mean over scenes replaces the 3 by 3 filter
+lin <- function(img) ee$Image$constant(10)$pow(img$divide(10))$rename("VV")  # decibels to linear power; the constant image names the result "constant" unless renamed
+pre_vv <- s1_pre$map(norm_vv)
+pooled_lin <- pre_vv$map(lin)$reduce(ee$Reducer$mean()$combine(ee$Reducer$count(), sharedInputs = TRUE))  # the mean of every scene in linear power and the scene count in one pass
+pooled_s1 <- ee$Image$cat(list(pooled_lin$select("VV_mean")$log10()$multiply(10)$rename("VV"), pooled_lin$select("VV_count")$rename("scenes")))  # VV in decibels and the scene count, computed at whatever scale is requested, 90 m throughout this study, so each scene is read at the 90 m level of its image pyramid
+at90 <- function(img, crs = "EPSG:3338") img$setDefaultProjection(crs, NULL, 10)$reduceResolution(ee$Reducer$mean(), maxPixels = 256L)  # the 10 m cells averaged into each 90 m cell
+pooled_image <- function(crs = "EPSG:3338") { s <- at90(ee$Image$cat(list(eth10, forest10$unmask(0)$rename("forest"))), crs)  # canopy height as the cell mean and forest as the share of the cell, both from 10 m
+  ee$Image$cat(list(pooled_s1, s))$updateMask(s$select("forest")$gt(0)) }
+pooled <- pooled_image()
+if (!file.exists(task_csv)) {  # the 90 m statewide map, exported once to an asset of the Earth Engine project, where the managers and the figure below read it
+  task <- ee$batch$Export$image$toAsset(image = pooled$multiply(100)$round()$toInt16(), description = "spruce_susceptibility_alaska_90m", assetId = asset_id, region = ak_box, crs = "EPSG:3338", crsTransform = list(90, 0, 0, 0, -90, 0), maxPixels = 1e10, pyramidingPolicy = list(.default = "mean"), shardSize = 64L)  # a 64-cell shard reads a 576 by 576 window of 10 m cells; the default 256 exceeded the worker memory limit at 32 per cent on 2026-10-14
+  task$start(); write.csv(data.frame(task = task$id, asset = asset_id, started = format(Sys.time(), "%Y-%m-%d %H:%M")), task_csv, row.names = FALSE) }
+```
+
+```{r}
+#| label: statewide-strip
+#| echo: true
+#| output: false
+pooled_tif <- "02.inputs/derived/landscape_s1_pooled.tif"
+if (!file.exists(pooled_tif)) {  # the statewide product on the cells of the severity map, ten rows per request, so that the map is validated exactly as it is made
+  img <- pooled_image("EPSG:32605"); e <- as.vector(terra::ext(sev)); rows <- split(seq_len(nrow(sev)), ceiling(seq_len(nrow(sev)) / 10))
+  tile_dir <- "02.inputs/derived/landscape_tiles"; dir.create(tile_dir, showWarnings = FALSE)
+  for (r in rows) { f <- file.path(tile_dir, sprintf("pooled_%03d.tif", min(r))); if (file.exists(f)) next
+    for (attempt in 1:6) { ok <- !inherits(try({ url <- img$getDownloadURL(list(crs = "EPSG:32605", crs_transform = c(90, 0, e[1], 0, -90, e[4] - (min(r) - 1) * 90), dimensions = c(ncol(sev), length(r)), format = "GEO_TIFF", filePerBand = FALSE))
+      download.file(url, f, mode = "wb", quiet = TRUE) }, silent = TRUE), "try-error"); if (ok) break; unlink(f); Sys.sleep(30) }  # the request itself times out under load now and then, so it is retried with the download
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+  terra::writeRaster(terra::merge(terra::sprc(lapply(list.files(tile_dir, "^pooled_.*\\.tif$", full.names = TRUE), terra::rast))), pooled_tif) }
+pl <- terra::rast(pooled_tif); names(pl) <- c("VV_pooled", "scenes", "height_pooled", "forest")  # the GeoTIFF carries no band names
+pv <- as.data.frame(terra::values(pl))[as.integer(rownames(land)), ]; land$VV_pooled <- pv$VV_pooled; land$scenes <- pv$scenes
+youden <- function(x, y) { ok <- !is.na(x); x <- x[ok]; y <- y[ok]; th <- sort(unique(round(x, 2))); j <- sapply(th, function(t) mean(x[y] >= t) + mean(x[!y] < t) - 1); th[which.max(j)] }  # the threshold with the largest sum of the two correct rates
+pooled_strip <- c(n = sum(lab_l & !is.na(land$VV_pooled)), AUC = auc_ok(land$VV_pooled[lab_l], dead_l[lab_l]), AUC_height = auc_ok(land$height_eth[lab_l], dead_l[lab_l]), AUC_survey = auc_ok(land$VV_pooled[forest_l], land$survey[forest_l] == 1),
+  dead = mean(land$VV_pooled[lab_l & dead_l], na.rm = TRUE), alive = mean(land$VV_pooled[lab_l & !dead_l], na.rm = TRUE), scenes = median(land$scenes[forest_l], na.rm = TRUE), rho_height = cor(land$VV_pooled[forest_l], land$height_eth[forest_l], method = "spearman", use = "complete.obs"),
+  thr_VV = youden(land$VV_pooled[lab_l], dead_l[lab_l]), thr_height = youden(land$height_eth[lab_l], dead_l[lab_l]))
+pooled_strip["sens_VV"] <- mean(land$VV_pooled[lab_l & dead_l] >= pooled_strip["thr_VV"], na.rm = TRUE); pooled_strip["spec_VV"] <- mean(land$VV_pooled[lab_l & !dead_l] < pooled_strip["thr_VV"], na.rm = TRUE)  # the two correct rates at the threshold
+pooled_strip["n_dead"] <- sum(lab_l & dead_l & !is.na(land$VV_pooled)); pooled_strip["n_alive"] <- sum(lab_l & !dead_l & !is.na(land$VV_pooled)); pooled_strip["acc_VV"] <- mean((land$VV_pooled[lab_l] >= pooled_strip["thr_VV"]) == dead_l[lab_l], na.rm = TRUE)  # the share of all labelled cells classed correctly, the overall accuracy
+write.csv(data.frame(t(pooled_strip)), "03.outputs/statewide_strip.csv", row.names = FALSE)  # read by the abstract, which renders before this chunk
+```
+
+For the second hypothesis, every Sentinel-1 scene with VV over Alaska from October 2014 to December 2016 was pooled into one map. Slope-corrected VV falls with incidence angle across a swath, so scenes of different orbits cannot be averaged until that fall is removed. The fall was fitted as the slope of VV on incidence angle over the forest cells of each of 150 scenes drawn at random, at 300 m. The median slope over the `r sum(!is.na(angle_fit$scale))` scenes that covered forest, `r sprintf("%.3f", angle_slope)` dB per degree, adjusted every scene to the mid-swath angle of 38 degrees. Forest was a 10 m cell with an ETH Zurich canopy height of 5 m or more. The product was computed at 90 m on the Alaska Albers grid, each scene read at the 90 m level of its image pyramid, corrected for slope and averaged over scenes in linear power. The scene count, the mean canopy height of the 10 m cells and their forest share were added as further bands, and the product was exported as the Earth Engine asset named in the code. The product was validated as made, read on the cells of the severity map and scored against the dead and living cells, the survey and the ETH Zurich height. The threshold that maximised the index of @Youden_1950, the sum of the two correct rates less one, `r sprintf("%.2f", pooled_strip["thr_VV"])` dB, defined a susceptible cell in everything that follows, and the same rule gave `r sprintf("%.1f", pooled_strip["thr_height"])` m on the height map. At that threshold the two correct rates and the share of all labelled cells classed correctly, the overall accuracy, were computed.
+
+```{r}
+#| label: diagnostics
+#| echo: true
+#| output: false
+diag_csv <- c(sep = "03.outputs/diagnostics_separability.csv", fit = "03.outputs/diagnostics_fit.csv")
+M_index <- function(x, y) abs(mean(x[y]) - mean(x[!y])) / (sd(x[y]) + sd(x[!y]))  # Kaufman and Remer (1994), the difference of the class means over the sum of their standard deviations; above 1 is good separability
+stars <- function(p) ifelse(is.na(p), "", ifelse(p <= 0.0001, "****", ifelse(p <= 0.001, "***", ifelse(p <= 0.01, "**", ifelse(p <= 0.05, "*", "")))))
+confusion <- function(hit, y) { tp <- sum(hit & y); fp <- sum(hit & !y); fn <- sum(!hit & y); tn <- sum(!hit & !y); n <- length(y); po <- (tp + tn) / n  # the confusion matrix of a hard classification, read as Murphy et al. (2026) Table 8
+  pe <- ((tp + fp) * (tp + fn) + (fn + tn) * (fp + tn)) / n^2; ci <- binom.test(tp + tn, n)$conf.int
+  c(kappa = (po - pe) / (1 - pe), com_dead = fp / (tp + fp), com_living = fn / (fn + tn), om_dead = fn / (tp + fn), om_living = fp / (fp + tn), OA = po, OA_lo = ci[1], OA_hi = ci[2]) }
+score_source <- function(x, y, thr = NULL, M = TRUE) { ok <- !is.na(x); x <- x[ok]; y <- y[ok]; if (is.null(thr)) thr <- youden(x, y)  # one source or score against the label, at its Youden threshold unless one is given
+  ci <- as.numeric(pROC::ci.auc(pROC::roc(as.integer(y), x, quiet = TRUE, direction = "<"), method = "delong"))
+  c(dead = sum(y), living = sum(!y), M = if (M) M_index(x, y) else NA, p_M = if (M) wilcox.test(x[y], x[!y])$p.value else NA, AUC = ci[2], AUC_lo = ci[1], AUC_hi = ci[3], thr = thr, confusion(x >= thr, y)) }
+strip_sources <- c(VV_pooled = "Sentinel-1 VV, statewide product", VV65_pre = "Sentinel-1 VV, ascending orbit 65", VV131_pre = "Sentinel-1 VV, descending orbit 131", height_eth = "ETH canopy height 2020", height_glo = "GLO-30 surface minus terrain", height_arctic = "ArcticDEM surface minus terrain", HV_pre = "PALSAR L-band HV", HH_pre = "PALSAR L-band HH")
+if (!all(file.exists(diag_csv))) {
+  spt <- read.csv(strain_csv, colClasses = c(roi = "character")); spt$label <- ifelse(spt$dead >= 0.01, TRUE, ifelse(spt$dead == 0 & spt$conifer >= 5, FALSE, NA))
+  net_te <- sp[sp$design == "VV_2014" & sp$set == "training" & !is.na(sp$label), ]; net_te <- net_te[order(net_te$stand), ]; net_tr <- spt[spt$design == "VV_2014" & !is.na(spt$label), ]  # the network's held-out folds, in stand order, and its training stands
+  sep <- rbind(t(sapply(names(strip_sources), function(v) score_source(land[[v]][lab_l], dead_l[lab_l]))), network = score_source(net_te$p_dead, net_te$label, thr = 0.5, M = FALSE))
+  write.csv(data.frame(source = c(strip_sources, "Temporal network, crown labels, held-out folds"), label = c(rep("Severity map", length(strip_sources)), "Crown labels"), sep, row.names = NULL), diag_csv["sep"], row.names = FALSE)
+  dd <- na.omit(data.frame(cell = as.integer(rownames(land))[lab_l], y = dead_l[lab_l], land[lab_l, c("VV_pooled", "VV65_pre", "VV131_pre", "height_eth", "height_glo", "HV_pre", "HH_pre")]))  # the labelled cells with every source but the ArcticDEM, which covers half the strip
+  xy <- terra::xyFromCell(lv, dd$cell); lw <- spdep::nb2listw(spdep::knn2nb(spdep::knearneigh(xy, k = 8)))  # the cell coordinates, their eight nearest neighbours for Moran's I
+  set.seed(20261018); ac <- blockCV::cv_spatial_autocor(r = c(pl$VV_pooled, lv$VV65_pre, lv$VV131_pre, st$eth, st$glo - st$dtm, 10 * log10(st$HV_pre)), num_sample = 5000L, plot = FALSE, progress = FALSE)  # the autocorrelation range of the sources, the block size of the folds
+  blk <- min(max(ac$range, 1000), 15000); fd <- blockCV::cv_spatial(x = sf::st_as_sf(data.frame(xy), coords = c("x", "y"), crs = 32605), k = 5L, size = blk, selection = "random", seed = 20261018, progress = FALSE, report = FALSE, plot = FALSE)$folds_ids
+  fit_diag <- function(f, data, folds) { m <- glm(f, family = binomial, data = data); p <- fitted(m); y <- data$y; e <- y - p; n <- nrow(data)
+    r2 <- (1 - exp((m$deviance - m$null.deviance) / n)) / (1 - exp(-m$null.deviance / n)); p_lr <- pchisq(m$null.deviance - m$deviance, m$df.null - m$df.residual, lower.tail = FALSE)  # Nagelkerke's R2 and the likelihood ratio test against the null fit
+    grp <- cut(p, unique(quantile(p, seq(0, 1, length.out = 11))), include.lowest = TRUE); o <- tapply(y, grp, sum); ex <- tapply(p, grp, sum); ng <- tapply(p, grp, length); hl <- sum((o - ex)^2 / (ex * (1 - ex / ng)))  # Hosmer-Lemeshow over ten groups of fitted probability
+    mi <- spdep::moran.test(e, lw, randomisation = TRUE)
+    cv <- lapply(sort(unique(folds)), function(k) { mk <- glm(f, family = binomial, data = data[folds != k, ]); pk <- predict(mk, data[folds == k, ], type = "response")  # each fold held out in turn
+      list(train = sqrt(mean((data$y[folds != k] - fitted(mk))^2)), test = sqrt(mean((data$y[folds == k] - pk)^2)), p = pk, y = data$y[folds == k]) })
+    tr <- mean(sapply(cv, `[[`, "train")); te <- mean(sapply(cv, `[[`, "test")); pt <- unlist(lapply(cv, `[[`, "p")); yt <- unlist(lapply(cv, `[[`, "y"))
+    c(R2 = r2, p_R2 = p_lr, HL = hl, p_HL = pchisq(hl, nlevels(grp) - 2, lower.tail = FALSE), Brier = mean(e^2), RMSE = sqrt(mean(e^2)), rRMSE = 100 * sqrt(mean(e^2)) / mean(y), MAE = mean(abs(e)), RMSE_train = tr, RMSE_test = te, ratio = te / tr, U_bias = (mean(pt) - mean(yt))^2 / mean((pt - yt)^2), I = unname(mi$estimate[1]), p_I = mi$p.value, DW = sum(diff(e)^2) / sum(e^2)) }
+  fit_forms <- list("Sentinel-1 VV, statewide product" = y ~ VV_pooled, "Sentinel-1 VV, ascending orbit 65" = y ~ VV65_pre, "Sentinel-1 VV, descending orbit 131" = y ~ VV131_pre, "ETH canopy height 2020" = y ~ height_eth, "GLO-30 surface minus terrain" = y ~ height_glo, "PALSAR L-band HV" = y ~ HV_pre,
+    "Two canopy heights" = y ~ height_eth + height_glo, "Two C-band orbits" = y ~ VV65_pre + VV131_pre, "L-band HV and HH" = y ~ HV_pre + HH_pre, "C-band and heights" = y ~ VV65_pre + VV131_pre + height_eth + height_glo, "L-band and heights" = y ~ HV_pre + HH_pre + height_eth + height_glo, "All six sources" = y ~ VV65_pre + VV131_pre + HV_pre + HH_pre + height_eth + height_glo)  # the single sources and the six fits of the structure test
+  net_fold <- sapply(1:5, function(f) c(train = sqrt(mean((net_tr$label[net_tr$fold_model == f] - net_tr$p_dead[net_tr$fold_model == f])^2)), test = sqrt(mean((net_te$label[net_te$fold == f] - net_te$p_dead[net_te$fold == f])^2))))  # each fold's network on its training stands and on its held-out fold
+  e_net <- net_te$label - net_te$p_dead; mi_net <- spdep::moran.test(e_net, spdep::nb2listw(spdep::knn2nb(spdep::knearneigh(as.matrix(stands[match(net_te$stand, stands$stand), c("x", "y")]), k = 8))), randomisation = TRUE)
+  net_fit <- c(R2 = NA, p_R2 = NA, HL = NA, p_HL = NA, Brier = mean(e_net^2), RMSE = sqrt(mean(e_net^2)), rRMSE = 100 * sqrt(mean(e_net^2)) / mean(net_te$label), MAE = mean(abs(e_net)), RMSE_train = mean(net_fold["train", ]), RMSE_test = mean(net_fold["test", ]), ratio = mean(net_fold["test", ]) / mean(net_fold["train", ]),
+    U_bias = (mean(net_te$p_dead) - mean(net_te$label))^2 / mean(e_net^2), I = unname(mi_net$estimate[1]), p_I = mi_net$p.value, DW = sum(diff(e_net)^2) / sum(e_net^2))
+  write.csv(data.frame(model = c(names(fit_forms), "Temporal network, crown labels, held-out folds"), n = c(rep(nrow(dd), length(fit_forms)), nrow(net_te)), rbind(t(sapply(fit_forms, fit_diag, data = dd, folds = fd)), net_fit), range_m = ac$range, block_m = blk, row.names = NULL), diag_csv["fit"], row.names = FALSE) }
+diag_sep <- read.csv(diag_csv["sep"]); diag_fit <- read.csv(diag_csv["fit"])
+dsev <- diag_sep[diag_sep$label == "Severity map", ]; dnet_sep <- diag_sep[diag_sep$label == "Crown labels", ]; dfit <- diag_fit[!is.na(diag_fit$R2), ]; dnet_fit <- diag_fit[is.na(diag_fit$R2), ]  # the strip sources, the network, the logistic fits and the network again, as the text reads them
+```
+
+Every source on the severity map, and the network on the crown labels, was then scored by the metrics of @Murphy_2026. Before any model was fitted, the separability of the dead from the living cells on each source was measured by the index M of @Kaufman_1994, the difference of the two class means over the sum of their standard deviations, with M above 1 taken as good separability, and tested with the Wilcoxon rank-sum test. The area under the curve carried the 95 per cent confidence interval of @DeLong_1988. At the Youden threshold of each source, the confusion matrix gave Cohen's kappa [@Cohen_1960], the commission and omission error of each class and the overall accuracy with its exact binomial 95 per cent confidence interval. The threshold classifier was non-parametric, in that it assumed no distribution of the backscatter, and the network was a convolutional neural network with no distributional assumption. The logistic fits were parametric binomial regressions, and each was scored by Nagelkerke's R² [@Nagelkerke_1991] with the likelihood ratio test against the null fit, the Hosmer-Lemeshow test over ten groups of fitted probability [@Hosmer_1980], the Brier score [@Brier_1950], the root mean square error and mean absolute error of the fitted probability against the label, the root mean square error relative to the mean of the label, Moran's I of the residuals over the eight nearest cells [@Moran_1950] and the Durbin-Watson statistic of the residuals in the cell order of the strip [@Durbin_1950]. Overfitting was measured as in @Murphy_2026, the root mean square error of the held-out folds over that of the training folds, with 1.1 as the line above which a fit was rejected, and systematic bias as the bias share of Theil's U [@Theil_1966] on the held-out predictions, both over five spatial folds dealt by blockCV in blocks of `r sprintf("%.0f", diag_fit$block_m[1] / 1000)` km, no smaller than the `r sprintf("%.2f", diag_fit$range_m[1] / 1000)` km autocorrelation range of the sources on the strip. The network was scored by the same metrics on its held-out folds, with its overfitting ratio from the predictions of each fold's network on its own training stands.
+
+## Regional validation
+
+```{r}
+#| label: matsu
+#| echo: true
+#| output: false
+# US Census TIGER/Line 2018 county boundaries, Earth Engine TIGER/2018/Counties, GEOID 02170 the Matanuska-Susitna Borough (row `TIGER/2018/Counties` of 02.inputs/README.md).
+# https://developers.google.com/earth-engine/datasets/catalog/TIGER_2018_Counties
+# USFS Forest Health Protection aerial detection survey, Alaska Region 10, all years, the damage areas and the surveyed areas.
+# https://www.fs.usda.gov/foresthealth/docs/IDS_Data_for_Download/AK_Region10_AllYears.gdb.zip
+# ABoVE conifer top cover 2020 (Macander and Nelson 2022), ORNL DAAC https://doi.org/10.3334/ORNLDAAC/2032, read above as `conifer`; it covers nine tenths of the borough.
+# The height and radar sources are those of the landscape chunks above, ETH canopy height 2020, USGS 3DEP 10 m terrain, Copernicus GLO-30, ArcticDEM version 4, JAXA ALOS PALSAR yearly mosaics 2007 to 2010 and 2015 to 2016, and Sentinel-1 GRD.
+gdb <- "02.inputs/ids-region10/AK_Region10_AllYears.gdb"
+predictor_image <- function(crs = "EPSG:3338") {  # the pre-outbreak height and radar sources of the strip, averaged into the 90 m cells of the given grid
+  at3 <- function(img, m) img$setDefaultProjection(crs, NULL, m)$reduceResolution(ee$Reducer$mean(), maxPixels = 4096L)  # declare the source cell size, then average the cells inside each 90 m cell
+  gamma0 <- function(img) img$select(c("HH", "HV"))$pow(2)$multiply(10^-8.3)$updateMask(img$select("qa")$eq(255))
+  lband <- function(y1, y2, e) ee$ImageCollection("JAXA/ALOS/PALSAR/YEARLY/SAR")$filterDate(paste0(y1, "-01-01"), paste0(y2, "-12-31"))$map(gamma0)$mean()$rename(paste0(c("HH", "HV"), "_", e))
+  vv_pre <- function(o) s1_all$filter(ee$Filter$eq("relativeOrbitNumber_start", o))$filterDate("2014-10-01", "2017-01-01")$map(function(img) flatten(img, "VV"))$mean()$rename(paste0("VV", o))  # the same era as the strip
+  ee$Image$cat(list(at3(ee$Image("users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1")$rename("eth"), 10), at3(ee$ImageCollection("USGS/3DEP/10m_collection")$mosaic()$select("elevation")$rename("dtm"), 10),
+    at3(ee$ImageCollection("COPERNICUS/DEM/GLO30_2024_1")$mosaic()$select("DEM")$rename("glo"), 30), at3(ee$Image("UMN/PGC/ArcticDEM/V4/2m_mosaic")$select("elevation")$rename("arctic"), 10),
+    at3(lband(2007, 2010, "2007"), 25), at3(lband(2015, 2016, "2015"), 25), at3(vv_pre(orbits[1]), 10), at3(vv_pre(orbits[2]), 10))) }
+pull_cells <- function(smp, prefix, buffer = 0, crs = "EPSG:3338", img = predictor_image(crs)) {  # the 90 m cell of `img` holding each point, or the mean of the cells within `buffer` metres of it, a thousand points per request
+  tile_dir <- "02.inputs/derived/landscape_tiles"; dir.create(tile_dir, showWarnings = FALSE)
+  for (b in split(seq_len(nrow(smp)), ceiling(seq_len(nrow(smp)) / 1000))) { f <- file.path(tile_dir, sprintf("%s_%05d.csv", prefix, min(b))); if (file.exists(f)) next  # kept so that a failed run resumes
+    pts <- ee$FeatureCollection(lapply(b, function(i) list(type = "Feature", geometry = list(type = "Point", coordinates = c(smp$lon[i], smp$lat[i])), properties = list(cell = smp$cell[i]))))
+    if (buffer > 0) pts <- pts$map(function(ft) ee$Feature(ft)$buffer(buffer))
+    for (attempt in 1:4) { z <- try(img$reduceRegions(collection = pts, reducer = if (buffer > 0) ee$Reducer$mean() else ee$Reducer$first(), scale = 90, crs = crs, tileScale = 16)$getInfo()$features, silent = TRUE); if (inherits(z, "try-error")) Sys.sleep(30) else break }
+    if (inherits(z, "try-error")) stop("batch ", f, " did not return: ", z); write.csv(dplyr::bind_rows(lapply(z, function(q) Filter(Negate(is.null), q$properties))), f, row.names = FALSE) }
+  got <- dplyr::bind_rows(lapply(list.files(tile_dir, sprintf("^%s_[0-9]+\\.csv$", prefix), full.names = TRUE), read.csv)); got[match(smp$cell, got$cell), setdiff(names(got), "cell")] }
+region_sample <- function(geoids, csv, img = predictor_image(), prefix = paste0("region_", geoids[1]), n = 20000, reach = 10000, seed = 20261013) {  # one row per sampled 90 m cell of one or more boroughs, dead or living by the survey, with the bands of `img` read from Earth Engine
+  if (file.exists(csv)) return(read.csv(csv))
+  fc <- ee$FeatureCollection("TIGER/2018/Counties")$filter(ee$Filter$inList("GEOID", as.list(geoids))); tmp <- tempfile(fileext = ".geojson"); download.file(fc$getDownloadURL("geojson"), tmp, quiet = TRUE)
+  bor <- sf::st_union(sf::st_transform(sf::st_read(tmp, quiet = TRUE), 3338)); e <- sf::st_bbox(bor)
+  r <- terra::rast(terra::ext(floor(e$xmin / 90) * 90, ceiling(e$xmax / 90) * 90, floor(e$ymin / 90) * 90, ceiling(e$ymax / 90) * 90), resolution = 90, crs = "EPSG:3338")  # 90 m cells of the Alaska Albers grid with its origin at zero, the grid Earth Engine samples below
+  sb <- sf::st_read(gdb, quiet = TRUE, query = "SELECT SURVEY_YEAR, HOST_CODE, PERCENT_MID, Shape FROM DAMAGE_AREAS_FLAT_AllYears_AK_Rgn10 WHERE DCA_CODE = 11009 AND SURVEY_YEAR >= 2014")
+  sb <- sb[lengths(sf::st_intersects(sb, sf::st_as_sf(terra::as.polygons(terra::ext(r), crs = "EPSG:3338")))) > 0, ]; ws <- sb[sb$HOST_CODE == 94 & sb$SURVEY_YEAR %in% 2016:2024, ]  # spruce beetle on white spruce, 2016 to 2024
+  year <- terra::setValues(r, NA_integer_); for (y in 2024:2016) year <- terra::rasterize(terra::vect(ws[ws$SURVEY_YEAR == y, ]), year, field = y, update = TRUE)  # the first survey year in which a cell lay inside a white spruce polygon
+  pct <- terra::setValues(r, 0); for (p in sort(unique(ws$PERCENT_MID))) pct <- terra::rasterize(terra::vect(ws[ws$PERCENT_MID == p, ]), pct, field = p, update = TRUE)  # the highest mid-point of the polygon's mortality class over the years
+  any_sb <- terra::rasterize(terra::vect(sb), r, field = 1, background = 0)  # any spruce beetle polygon of any host or year, so a living cell was never marked
+  fl <- sf::st_read(gdb, quiet = TRUE, query = "SELECT SURVEY_YEAR, Shape FROM SURVEYED_AREAS_FLAT_AllYears_AK_Rgn10 WHERE SURVEY_YEAR BETWEEN 2016 AND 2024")
+  flown <- terra::rasterize(terra::vect(fl), r, field = 1, background = 0)  # the ground the surveyors flew over in those years
+  con <- terra::project(terra::crop(conifer, terra::project(terra::as.polygons(terra::ext(r), crs = "EPSG:3338"), terra::crs(conifer))), r, method = "average")
+  inb <- terra::rasterize(terra::vect(bor), r, field = 1, background = 0); strip <- terra::rasterize(terra::project(terra::as.polygons(terra::ext(sev), crs = "EPSG:32605"), "EPSG:3338"), r, field = 1, background = 0)
+  ok <- which(terra::values(inb)[, 1] == 1 & terra::values(strip)[, 1] == 0 & terra::values(flown)[, 1] == 1 & terra::values(con)[, 1] >= 5)  # conifer top cover of 5 per cent or more, flown, inside the borough and outside the severity strip
+  v <- data.frame(cell = ok, year = terra::values(year)[ok, 1], pct = terra::values(pct)[ok, 1], marked = terra::values(any_sb)[ok, 1], conifer = terra::values(con)[ok, 1])
+  set.seed(seed); dead <- v[sample(which(!is.na(v$year)), min(n, sum(!is.na(v$year)))), ]; dead$dist <- 0
+  living <- v[sample(which(v$marked == 0), min(4 * n, sum(v$marked == 0))), ]  # drawn four times over, then kept only within reach of a white spruce polygon
+  pts <- sf::st_as_sf(data.frame(terra::xyFromCell(r, living$cell)), coords = c("x", "y"), crs = 3338)
+  living$dist <- as.numeric(sf::st_distance(pts, ws[sf::st_nearest_feature(pts, ws), ], by_element = TRUE)); living <- head(living[living$dist <= reach, ], n)
+  smp <- rbind(dead, living); smp[, c("x", "y")] <- terra::xyFromCell(r, smp$cell); ll <- sf::st_coordinates(sf::st_transform(sf::st_as_sf(smp, coords = c("x", "y"), crs = 3338), 4326)); smp$lon <- ll[, 1]; smp$lat <- ll[, 2]; smp <- smp[order(round(smp$x / 20000), smp$y), ]  # sorted into 20 km columns, so that one request touches few image tiles
+  smp <- cbind(smp, pull_cells(smp, prefix, img = img)); write.csv(smp, csv, row.names = FALSE); smp }
+ms <- region_sample("02170", "02.inputs/derived/matsu_sample.csv")
+```
+
+```{r}
+#| label: matsu-test
+#| echo: true
+#| output: false
+ms$dead <- !is.na(ms$year); ms$arctic[!is.na(ms$arctic) & ms$arctic <= 0] <- NA
+ms <- cbind(ms, height_eth = ms$eth, height_glo = ms$glo - ms$dtm, height_arctic = ms$arctic - ms$dtm, HV_2007 = 10 * log10(ms$HV_2007), HH_2007 = 10 * log10(ms$HH_2007), HV_2015 = 10 * log10(ms$HV_2015), HH_2015 = 10 * log10(ms$HH_2015))[, -match(c("HV_2007", "HH_2007", "HV_2015", "HH_2015"), names(ms))]
+ms_vars <- c("height_eth", "height_glo", "height_arctic", "HV_2007", "HH_2007", "HV_2015", "HH_2015", "VV65", "VV131")
+ms_names <- c(height_eth = "ETH canopy height", height_glo = "the GLO-30 surface minus terrain", height_arctic = "the ArcticDEM surface minus terrain", HV_2007 = "L-band HV of 2007 to 2010", HH_2007 = "L-band HH of 2007 to 2010", HV_2015 = "L-band HV of 2015 and 2016", HH_2015 = "L-band HH of 2015 and 2016", VV65 = "the ascending C-band level", VV131 = "the descending C-band level")  # the sources as the text names them
+matsu <- sapply(ms_vars, function(v) { x <- ms[[v]]; ok <- !is.na(x); sev_ok <- ok & (ms$pct >= 20 | !ms$dead); edge <- ok & (ms$dead | ms$dist >= 500)  # every cell, then only the polygons of a fifth or more mortality, then only the living cells at least 500 m from a polygon edge
+  c(n = sum(ok), AUC = auc_ok(x, ms$dead), AUC_severe = auc(x[sev_ok], ms$dead[sev_ok]), AUC_edge = auc(x[edge], ms$dead[edge]), dead = mean(x[ok & ms$dead]), living = mean(x[ok & !ms$dead]), rho_pct = cor(x[ok], ms$pct[ok], method = "spearman")) })
+dm <- na.omit(ms[, c("dead", "height_eth", "height_glo", "HV_2007", "HH_2007", "VV65", "VV131")])
+ms_added <- sapply(list(height = dead ~ height_eth + height_glo, c_band = dead ~ VV65 + VV131, l_band = dead ~ HV_2007 + HH_2007, c_band_height = dead ~ VV65 + VV131 + height_eth + height_glo, l_band_height = dead ~ HV_2007 + HH_2007 + height_eth + height_glo, all = dead ~ VV65 + VV131 + HV_2007 + HH_2007 + height_eth + height_glo),
+  function(f) auc(predict(glm(f, family = binomial, data = dm)), dm$dead))  # the same six fits as the strip, on the cells with every source
+ms_year <- with(ms[ms$dead, ], sapply(list(height_eth = height_eth, height_glo = height_glo, height_arctic = height_arctic, HV_2007 = HV_2007), function(x) tapply(x, year, mean, na.rm = TRUE)))  # the stands first attacked in each year, by their height before the outbreak
+ms_year_n <- table(ms$year[ms$dead]); ms_trend <- with(ms[ms$dead, ], sapply(list(height_eth = height_eth, height_glo = height_glo, height_arctic = height_arctic, HV_2007 = HV_2007), function(x) cor(x, year, method = "spearman", use = "complete.obs")))
+```
+
+```{r}
+#| label: statewide-regions
+#| echo: true
+#| output: false
+pooled_region <- lapply(names(regions), function(nm) region_sample(regions[[nm]], sprintf("02.inputs/derived/statewide_%s.csv", nm), img = pooled, prefix = paste0("pooled_", nm), n = 5000))  # five thousand dead and five thousand living cells of each region, or every cell where fewer exist
+names(pooled_region) <- names(regions)
+region_auc <- sapply(pooled_region, function(s) { s$dead <- !is.na(s$year)
+  c(dead = sum(s$dead), living = sum(!s$dead), AUC_VV = auc_ok(s$VV, s$dead), AUC_height = auc_ok(s$height, s$dead), VV_dead = mean(s$VV[s$dead], na.rm = TRUE), VV_living = mean(s$VV[!s$dead], na.rm = TRUE), height_dead = mean(s$height[s$dead], na.rm = TRUE), height_living = mean(s$height[!s$dead], na.rm = TRUE),
+    above_dead = mean(s$VV[s$dead] >= pooled_strip["thr_VV"], na.rm = TRUE), above_living = mean(s$VV[!s$dead] >= pooled_strip["thr_VV"], na.rm = TRUE),  # the share of each class the strip's threshold calls susceptible
+    rho_year_height = if (sum(s$dead) >= 30) cor(s$height[s$dead], s$year[s$dead], method = "spearman", use = "complete.obs") else NA, years = length(unique(s$year[s$dead]))) })
+write.csv(region_auc, "03.outputs/statewide_regions.csv")  # read by the abstract, which renders before this chunk
+```
+
+The second hypothesis was tested against the aerial detection survey, the only label beyond the strip, in the four regions of @fig-study. In each region, a 90 m grid was laid on the Alaska Albers projection, and the survey's spruce beetle polygons on white spruce of 2016 to 2024 gave each cell its first year inside a polygon and the highest mortality class recorded over it. A cell was dead if it lay inside such a polygon and had conifer top cover of 5 per cent or more. A cell was living if it had that cover, lay inside the ground the surveyors flew over in those years, had never lain inside a spruce beetle polygon of any host or year, and lay within 10 km of a white spruce polygon, so that the living class contained forest the beetle could have reached and the surveyors had seen. The cells of the severity map were excluded. In each region, 5,000 dead and 5,000 living cells were drawn at random with a fixed seed, or every cell where fewer existed. Each region was scored by the area under the curve and by the share of each class at or above the strip's threshold. Spearman's rank correlation between the year a dead cell was first recorded and its canopy height tested whether the beetle moved from taller to shorter stands, as @Werner_1983 recorded on the Kenai Peninsula and @Massey_1954 on the White River. In the Matanuska-Susitna Borough, the nine single sources of the strip, with the PALSAR mosaics of 2007 to 2010 that predate every damage polygon, were also read at `r format(sum(ms$dead), big.mark = ",")` dead and `r format(sum(!ms$dead), big.mark = ",")` living cells drawn the same way. They were scored again with the dead cells restricted to polygons of 20 per cent mortality or more, so that the ceiling the survey label set on any source could be measured.
+
+## Ground plots
+
+```{r}
+#| label: fia
+#| echo: true
+#| output: false
+# USFS Forest Inventory and Analysis DataMart, Alaska PLOT and TREE tables as CSV, plot coordinates published fuzzed by up to about a mile (row `fia-alaska/` of 02.inputs/README.md).
+# https://apps.fs.usda.gov/fia/datamart/CSV/AK_PLOT.zip and https://apps.fs.usda.gov/fia/datamart/CSV/AK_TREE.zip
+fia_dir <- "02.inputs/fia-alaska"; dir.create(fia_dir, showWarnings = FALSE)
+for (t in c("PLOT", "TREE")) if (!file.exists(file.path(fia_dir, paste0("AK_", t, ".csv")))) { z <- file.path(fia_dir, paste0("AK_", t, ".zip")); options(timeout = 600)
+  download.file(paste0("https://apps.fs.usda.gov/fia/datamart/CSV/AK_", t, ".zip"), z, mode = "wb", quiet = TRUE); unzip(z, exdir = fia_dir); unlink(z) }
+fia_region <- function(counties, csv) {  # one row per forested plot of the named boroughs at its latest measurement, the white spruce tallied on it, and the satellite height at its published coordinate
+  if (file.exists(csv)) return(read.csv(csv, colClasses = c(CN = "character")))
+  pl <- read.csv(file.path(fia_dir, "AK_PLOT.csv"), colClasses = c(CN = "character")); pl <- pl[pl$COUNTYCD %in% counties & pl$PLOT_STATUS_CD == 1, ]
+  pl <- pl[order(-pl$MEASYEAR), ]; pl <- pl[!duplicated(paste(pl$COUNTYCD, pl$PLOT)), ]  # a remeasured plot enters once, at its latest visit
+  tr <- read.csv(file.path(fia_dir, "AK_TREE.csv"), colClasses = c(PLT_CN = "character")); ws <- tr[tr$PLT_CN %in% pl$CN & tr$SPCD == 94 & tr$STATUSCD %in% 1:2 & !is.na(tr$DIA), ]  # every live or standing dead white spruce tallied with a diameter; the Kenai remeasurements carry 699 dead trees tallied without one
+  ba <- function(d, tpa) sum(pi * (d * 0.0127)^2 * tpa * 2.471, na.rm = TRUE)  # basal area in square metres per hectare from diameter in inches and trees per acre
+  f <- do.call(rbind, lapply(split(ws, ws$PLT_CN), function(w) { dd <- w$STATUSCD == 2; data.frame(CN = w$PLT_CN[1], n_ws = nrow(w), n_dead = sum(dd), ba_ws = ba(w$DIA, w$TPA_UNADJ), dead_share = ba(w$DIA[dd], w$TPA_UNADJ[dd]) / ba(w$DIA, w$TPA_UNADJ),
+    ht_live = mean(w$HT[!dd]) * 0.3048, ht_dead = mean(w$HT[dd]) * 0.3048, ht_max = max(w$HT) * 0.3048, dia_live = mean(w$DIA[!dd]) * 2.54, dia_dead = mean(w$DIA[dd]) * 2.54,
+    beetle = sum(!dd & (w$DAMAGE_AGENT_CD1 %in% 11009 | w$DAMAGE_AGENT_CD2 %in% 11009 | w$DAMAGE_AGENT_CD3 %in% 11009)), recent = sum(dd & w$DECAYCD %in% 1:2)) }))  # live trees carrying the survey's spruce beetle code 11009, and dead trees still holding their bark and fine branches
+  f <- cbind(f, pl[match(f$CN, pl$CN), c("MEASYEAR", "LAT", "LON")]); names(f)[match(c("LAT", "LON"), names(f))] <- c("lat", "lon"); f$cell <- seq_len(nrow(f))
+  near <- pull_cells(f, paste0("fia_cell_", counties[1])); wide <- pull_cells(f, paste0("fia_800m_", counties[1]), buffer = 800); names(wide) <- paste0(names(wide), "_800m")  # the 90 m cell at the published coordinate, and the mean of the cells within 800 m of it, the fuzzing distance
+  f <- cbind(f, near, wide); write.csv(f, csv, row.names = FALSE); f }
+fia_regions <- list(matsu = fia_region(170, "02.inputs/derived/fia_matsu.csv"), kenai = fia_region(122, "02.inputs/derived/fia_kenai.csv"),  # Matanuska-Susitna and Kenai Peninsula boroughs
+  copper = fia_region(261, "02.inputs/derived/fia_copper.csv"), interior = fia_region(c(68, 90, 240, 290), "02.inputs/derived/fia_interior.csv"))  # Valdez-Cordova, and Denali, Fairbanks North Star, Southeast Fairbanks and Yukon-Koyukuk of the Interior, measured in 2014 to 2019 before the outbreak's front entered the Denali Borough
+```
+
+```{r}
+#| label: fia-test
+#| echo: true
+#| output: false
+fia_regions <- lapply(fia_regions, function(f) { for (s in c("", "_800m")) { f[[paste0("height_glo", s)]] <- f[[paste0("glo", s)]] - f[[paste0("dtm", s)]]; f[[paste0("HV_2007", s)]] <- 10 * log10(f[[paste0("HV_2007", s)]]) }; f })
+fia_ground <- sapply(fia_regions, function(f) { b <- f[f$n_dead > 0 & f$n_dead < f$n_ws, ]  # the plots holding both live and dead white spruce
+  c(plots = nrow(f), from = min(f$MEASYEAR), to = max(f$MEASYEAR), both = nrow(b), dia_dead = mean(b$dia_dead), dia_live = mean(b$dia_live), ht_dead = mean(b$ht_dead), ht_live = mean(b$ht_live),
+    V_dia = unname(wilcox.test(b$dia_dead, b$dia_live, paired = TRUE)$statistic), p_dia = wilcox.test(b$dia_dead, b$dia_live, paired = TRUE)$p.value,  # within one plot, were the trees that died the larger ones
+    V_ht = unname(wilcox.test(b$ht_dead, b$ht_live, paired = TRUE)$statistic), p_ht = wilcox.test(b$ht_dead, b$ht_live, paired = TRUE)$p.value,
+    dead_share = mean(f$dead_share), half_dead = sum(f$dead_share >= 0.5), beetle_plots = sum(f$beetle > 0), recent = sum(f$recent) / sum(f$n_dead),
+    rho_share_ht = cor(f$dead_share, f$ht_max, method = "spearman", use = "complete.obs"), AUC_ht_half = auc_ok(f$ht_max, f$dead_share >= 0.5)) })  # across plots, did the taller white spruce stands lose the larger share
+sat <- function(f, v, s = "_800m") { x <- f[[paste0(v, s)]]; ok <- !is.na(x); if (sum(ok) < 30) return(c(n = sum(ok), rho_ht = NA, AUC_half = NA))
+  c(n = sum(ok), rho_ht = cor(x[ok], f$ht_max[ok], method = "spearman"), AUC_half = auc(x[ok], f$dead_share[ok] >= 0.5)) }  # the satellite height around the published coordinate against the plot's own tallest tree and its dead share
+fia_remote <- sapply(fia_regions, function(f) unlist(lapply(c(eth = "eth", height_glo = "height_glo", HV_2007 = "HV_2007", VV65 = "VV65"), function(v) sat(f, v))))
+fia_fuzz <- sapply(c(eth = "eth", height_glo = "height_glo", HV_2007 = "HV_2007", VV65 = "VV65"), function(v) c(cell = sat(fia_regions$matsu, v, "")[["AUC_half"]], m800 = sat(fia_regions$matsu, v)[["AUC_half"]]))  # the Mat-Su cell at the coordinate against the 800 m mean
+pfmt <- function(p) if (p < 0.001) "p < 0.001" else sprintf("p = %.3f", p)  # the p-value as the text prints it
+write.csv(fia_ground, "03.outputs/fia_ground.csv")  # read by the abstract, which renders before this chunk
+```
+
+The second hypothesis was checked on the ground against the public Forest Inventory and Analysis plots of Alaska [@Bechtold_2005], comparing the dead with the live white spruce of each plot as the plot studies compared killed and surviving trees [@Werner_1983; @Doak_2004]. Every forested plot of the four regions was taken at its latest measurement, `r fia_ground["plots", "matsu"]` plots with white spruce in the Matanuska-Susitna Borough (measured `r fia_ground["from", "matsu"]` to `r fia_ground["to", "matsu"]`), `r fia_ground["plots", "kenai"]` on the Kenai Peninsula (`r fia_ground["from", "kenai"]` to `r fia_ground["to", "kenai"]`), `r fia_ground["plots", "copper"]` in the Valdez-Cordova census area (`r fia_ground["from", "copper"]` to `r fia_ground["to", "copper"]`) and `r fia_ground["plots", "interior"]` in the Interior with the Yukon-Koyukuk area added (`r fia_ground["from", "interior"]` to `r fia_ground["to", "interior"]`). The Interior plots were measured before the survey recorded the outbreak's front along the Nenana River, `r sprintf("%.1f", 100 * mean(pooled_region$interior$year[!is.na(pooled_region$interior$year)] >= 2020))` per cent of whose cells it first recorded in 2020 or later, so those plots stood for white spruce the beetle had not yet reached. The inventory records the diameter and height of every live or standing dead tree, and a decay class for the dead, but no cause or year of death. On the plots holding both live and dead white spruce, the mean diameter and height of the dead trees were set against those of the live trees with a paired Wilcoxon signed-rank test. Across all plots, the height of the tallest tree was correlated with the share of white spruce basal area dead, and it ranked the plots with at least half of that basal area dead by the area under the curve. The radar and height sources were read at each plot's published coordinate, which the inventory shifts by up to about 1.6 km, both for the 90 m cell holding it and as the mean of the cells within 800 m.
+
+# Results
+
+## Stand validation
+
+At the 90 m stand scale, on `r sum(sacc$dead[sacc$design == "VV_2014" & sacc$set == "training"], sacc$alive[sacc$design == "VV_2014" & sacc$set == "training"])` training stands labelled dead (`r sacc$dead[sacc$design == "VV_2014" & sacc$set == "training"]`) or living forest (`r sacc$alive[sacc$design == "VV_2014" & sacc$set == "training"]`), the mean VV level of October 2014 to December 2016, before the outbreak reached the areas, ranked the stands the outbreak would kill above the living stands with an area under the curve of `r sprintf("%.2f", change$auc_pre[change$band == "VV131"])` on the descending orbit and `r sprintf("%.2f", change$auc_pre[change$band == "VV65"])` on the ascending (@tbl-validation). The dead stands were `r sprintf("%.1f", with(chg[chg$labelled & chg$band == "VV131", ], mean(pre[dead]) - mean(pre[!dead])))` dB brighter before the outbreak. The change from that level to June 2019 to August 2021 separated nothing, an area under the curve of `r sprintf("%.2f", change$auc_change[change$band == "VV131"])` to `r sprintf("%.2f", max(change$auc_change))`, with the dead stands changing by `r sprintf("%.2f", change$change_dead[change$band == "VV131"])` dB against `r sprintf("%.2f", change$change_alive[change$band == "VV131"])` dB for the living [Welch t-test, t(`r sprintf("%.0f", change$df[change$band == "VV131"])`) = `r sprintf("%.2f", change$t[change$band == "VV131"])`, `r pfmt(change$p[change$band == "VV131"])`]. Conifer cover alone gave `r sprintf("%.2f", change$auc_conifer[1])`, so the pre-outbreak brightness was not canopy density. The network trained on the full monthly series reached an F1 score of `r sprintf("%.2f", sacc$F1[sacc$design == "VV_2014" & sacc$set == "training"])` and an area under the curve of `r sprintf("%.2f", sacc$AUC[sacc$design == "VV_2014" & sacc$set == "training"])` on held-out folds. Its root mean square error was `r sprintf("%.2f", dnet_fit$RMSE_train)` on its own training stands against `r sprintf("%.2f", dnet_fit$RMSE_test)` on the held-out folds, a ratio of `r sprintf("%.2f", dnet_fit$ratio)` above the 1.1 line of @Murphy_2026, so the network was overfitted. The untrained mean of one band matched it at `r sprintf("%.2f", max(unlist(sbase)))`, so the level alone was carried forward.
+
+```{r}
+#| label: tbl-validation
+#| echo: true
+#| tbl-cap: "Area under the receiver operating characteristic curve for ranking the stands the outbreak killed above the living stands, by source and by label. The crown labels are the 90 m stand cells of the Zwieback et al. (2024) training areas, the severity map their 90 m map of 2021, and the survey the aerial detection survey polygons of 2016 to 2024 across the rest of the Matanuska-Susitna Borough. The statewide product is the pooled, angle-corrected VV level of every scene; the two orbits are the single-orbit levels of the same months."
+vt <- data.frame(Source = c("Sentinel-1 VV, statewide product", "Sentinel-1 VV, ascending orbit 65", "Sentinel-1 VV, descending orbit 131", "ETH canopy height 2020", "GLO-30 surface minus terrain", "ArcticDEM surface minus terrain", "PALSAR L-band HV", "Conifer top cover"),
+  `Crown labels` = c(NA, change$auc_pre[change$band == "VV65"], change$auc_pre[change$band == "VV131"], NA, NA, NA, NA, change$auc_conifer[1]),
+  `Severity map` = c(pooled_strip["AUC"], struct["AUC", "VV65_pre"], struct["AUC", "VV131_pre"], struct["AUC", "height_eth"], struct["AUC", "height_glo"], struct["AUC", "height_arctic"], struct["AUC", "HV_pre"], NA),
+  `Survey, Matanuska-Susitna` = c(NA, matsu["AUC", "VV65"], matsu["AUC", "VV131"], matsu["AUC", "height_eth"], matsu["AUC", "height_glo"], matsu["AUC", "height_arctic"], matsu["AUC", "HV_2015"], NA), check.names = FALSE)
+vt[, -1] <- lapply(vt[, -1], function(x) ifelse(is.na(x), "", sprintf("%.2f", x)))
+fmt_tbl(vt)
+```
+
+## Landscape validation
+
+Across the `r format(nrow(land), big.mark = ",")` cells of the severity map, `r format(sum(dead_l[lab_l]), big.mark = ",")` dead and `r format(sum(!dead_l[lab_l]), big.mark = ",")` living forest, the pre-outbreak VV level ranked dead above living with an area under the curve of `r sprintf("%.2f", land_auc["level", "VV65"])` on the ascending orbit and `r sprintf("%.2f", land_auc["level", "VV131"])` on the descending. Its rank correlation with severity over every forest cell was `r sprintf("%.2f", land_auc["rho", "VV65"])` and `r sprintf("%.2f", land_auc["rho", "VV131"])` on the two orbits, respectively, and the mean level rose with every severity bin from `r sprintf("%.2f", land_bins["0"])` dB at zero to `r sprintf("%.2f", land_bins["0.1 to 1"])` dB at 0.1 or more on the descending orbit. The change between the two periods gave `r sprintf("%.2f", land_auc["change", "VV65"])` and `r sprintf("%.2f", land_auc["change", "VV131"])` on the same orbits. The three canopy heights ranked the cells as well as the radar did. ETH Zurich canopy height gave `r sprintf("%.2f", struct["AUC", "height_eth"])`, with mean height of `r sprintf("%.1f", struct["dead", "height_eth"])` m for the dead cells against `r sprintf("%.1f", struct["alive", "height_eth"])` m for the living, the GLO-30 surface minus terrain `r sprintf("%.2f", struct["AUC", "height_glo"])` and the ArcticDEM surface minus terrain `r sprintf("%.2f", struct["AUC", "height_arctic"])`. L-band HV of 2015 and 2016 gave `r sprintf("%.2f", struct["AUC", "HV_pre"])`, and height and the C-band level were correlated over the forest cells [Spearman's rho `r sprintf("%.2f", struct["rho_VV65", "height_eth"])`]. On the `r format(nrow(d), big.mark = ",")` cells with every source, logistic fits gave an area under the curve of `r sprintf("%.3f", added["height"])` for height alone, `r sprintf("%.3f", added["c_band"])` for C-band alone and `r sprintf("%.3f", added["all"])` for all three together. The contrast was present inside the vegetation classes. Within every LANDFIRE class with at least 100 cells of each kind, height ranked dead above living, with areas under the curve from `r sprintf("%.2f", min(cover[, "AUC_height"], na.rm = TRUE))` to `r sprintf("%.2f", max(cover[, "AUC_height"], na.rm = TRUE))`. In Alaska Sub-boreal White Spruce Forest, the one white spruce class with enough cells, height gave `r sprintf("%.2f", cover["Alaska Sub-boreal White Spruce Forest", "AUC_height"])`, with mean height of `r sprintf("%.1f", cover["Alaska Sub-boreal White Spruce Forest", "height_dead"])` m for the dead cells against `r sprintf("%.1f", cover["Alaska Sub-boreal White Spruce Forest", "height_living"])` m for the living, while logistic fits gave `r sprintf("%.3f", cover_added["class"])` for the class alone and `r sprintf("%.3f", cover_added["class_height"])` for class and height together.
+
+No single source reached a separability of M = 1 on the severity map, the index running from `r sprintf("%.2f", min(dsev$M))` for `r dsev$source[which.min(dsev$M)]` to `r sprintf("%.2f", max(dsev$M))` for `r dsev$source[which.max(dsev$M)]`, though every source separated the two classes [Wilcoxon rank-sum, p < 0.001] (@tbl-diagnostics). At their Youden thresholds the sources classed `r sprintf("%.0f", 100 * min(dsev$OA))` to `r sprintf("%.0f", 100 * max(dsev$OA))` per cent of the labelled cells correctly, with Cohen's kappa of `r sprintf("%.2f", min(dsev$kappa))` to `r sprintf("%.2f", max(dsev$kappa))`, and the commission error of the dead class stayed below `r sprintf("%.0f", 100 * max(dsev$com_dead))` per cent while that of the living class ran from `r sprintf("%.0f", 100 * min(dsev$com_living))` to `r sprintf("%.0f", 100 * max(dsev$com_living))` per cent, because the living class was the smaller. The logistic fits reached Nagelkerke's R² of `r sprintf("%.2f", min(dfit$R2))` to `r sprintf("%.2f", max(dfit$R2))`, Brier scores of `r sprintf("%.3f", min(dfit$Brier))` to `r sprintf("%.3f", max(dfit$Brier))` and root mean square errors of `r sprintf("%.2f", min(dfit$RMSE))` to `r sprintf("%.2f", max(dfit$RMSE))` against a mean label of `r sprintf("%.2f", mean(dead_l[lab_l]))`, with ratios of held-out to training error of `r sprintf("%.3f", min(dfit$ratio))` to `r sprintf("%.3f", max(dfit$ratio))`, so none was overfitted, while the Hosmer-Lemeshow test rejected the calibration of every fit and the residuals were clustered in space [Moran's I `r sprintf("%.2f", min(dfit$I))` to `r sprintf("%.2f", max(dfit$I))`, p < 0.001; Durbin-Watson `r sprintf("%.2f", min(dfit$DW))` to `r sprintf("%.2f", max(dfit$DW))`] (@tbl-fit).
+
+```{r}
+#| label: tbl-diagnostics
+#| echo: true
+#| tbl-cap: "Separability and classification accuracy of each source at its own Youden threshold against the dead and living cells of the severity map, and of the temporal network at a probability of 0.5 on the held-out folds of the crown labels. M is the separability index of Kaufman and Remer (1994), the difference of the class means over the sum of their standard deviations, starred by the Wilcoxon rank-sum test; AUC is the area under the receiver operating characteristic curve with the 95 per cent confidence interval of DeLong et al. (1988); the threshold is in the source's own unit, decibels for radar, metres for height and probability for the network; κ is Cohen's kappa; commission and omission errors are given for each class; OA is the overall accuracy with its exact binomial 95 per cent confidence interval. * p ≤ 0.05, ** p ≤ 0.01, *** p ≤ 0.001, **** p ≤ 0.0001."
+ds <- diag_sep; f2 <- function(x) ifelse(is.na(x), "", sprintf("%.2f", x))
+dt <- data.frame(Source = ds$source, Dead = format(ds$dead, big.mark = ","), Living = format(ds$living, big.mark = ","), M = ifelse(is.na(ds$M), "", paste0(f2(ds$M), stars(ds$p_M))), `AUC (95% CI)` = sprintf("%.2f (%.2f, %.2f)", ds$AUC, ds$AUC_lo, ds$AUC_hi), Threshold = f2(ds$thr), κ = f2(ds$kappa),
+  `Commission dead` = f2(ds$com_dead), `Commission living` = f2(ds$com_living), `Omission dead` = f2(ds$om_dead), `Omission living` = f2(ds$om_living), `OA (95% CI)` = sprintf("%.2f (%.2f, %.2f)", ds$OA, ds$OA_lo, ds$OA_hi), check.names = FALSE)
+fmt_tbl(dt)
+```
+
+```{r}
+#| label: tbl-fit
+#| echo: true
+#| tbl-cap: "Fit and overfitting diagnostics of the logistic fits of the dead and living cells of the severity map on each source and combination, and of the temporal network on the crown labels. R² is Nagelkerke's, starred by the likelihood ratio test against the null fit; HL is the Hosmer-Lemeshow statistic over ten groups, starred by its test; Brier is the mean squared error of the fitted probability against the label, RMSE its root, rRMSE the root relative to the mean of the label in per cent and MAE the mean absolute error; the RMSE ratio is the root mean square error of the held-out folds over that of the training folds across five spatial folds, 1.1 being the line above which a fit is overfitted (Murphy et al. 2026); U bias is the bias share of Theil's U on the held-out predictions; I is Moran's I of the residuals over the eight nearest cells, starred by its test; DW is the Durbin-Watson statistic of the residuals in cell order. * p ≤ 0.05, ** p ≤ 0.01, *** p ≤ 0.001, **** p ≤ 0.0001."
+df <- diag_fit
+ft <- data.frame(Model = df$model, n = format(df$n, big.mark = ","), `R²` = ifelse(is.na(df$R2), "", paste0(sprintf("%.3f", df$R2), stars(df$p_R2))), HL = ifelse(is.na(df$HL), "", paste0(sprintf("%.0f", df$HL), stars(df$p_HL))), Brier = sprintf("%.3f", df$Brier), RMSE = sprintf("%.3f", df$RMSE), `rRMSE (%)` = sprintf("%.1f", df$rRMSE), MAE = sprintf("%.3f", df$MAE),
+  `RMSE ratio` = sprintf("%.2f", df$ratio), `U bias` = sprintf("%.3f", df$U_bias), I = paste0(sprintf("%.3f", df$I), stars(df$p_I)), DW = sprintf("%.2f", df$DW), check.names = FALSE)
+fmt_tbl(ft)
+```
+
+## Statewide map
+
+```{r}
+#| label: statewide-map
+#| echo: true
+#| output: false
+state_tif <- "02.inputs/derived/statewide_1km.tif"
+if (!file.exists(state_tif)) {  # the exported asset read back at 1 km for the figure and the area table, once the export has finished
+  task <- read.csv(task_csv)
+  repeat { st <- ee$data$getTaskStatus(task$task)[[1]]$state; if (st == "COMPLETED") break; if (st %in% c("FAILED", "CANCELLED")) stop("export ", st); Sys.sleep(120) }
+  a90 <- ee$Image(asset_id)$divide(100)  # the asset is masked where the 90 m cell holds no forest, so VV, scenes and height average over forest cells and the forest share is unmasked to zero before it is averaged, or the share would run high
+  img <- ee$Image$cat(list(a90$select(list("VV", "scenes", "height")), a90$select("forest")$unmask(0)))$reduceResolution(ee$Reducer$mean(), maxPixels = 256L)  # 90 m cells averaged into each 1 km cell
+  b <- sf::st_bbox(sf::st_transform(sf::st_as_sfc(sf::st_bbox(c(xmin = -170, ymin = 54, xmax = -129, ymax = 71.5), crs = 4326)), 3338)); x0 <- floor(b$xmin / 1000) * 1000; y1 <- ceiling(b$ymax / 1000) * 1000
+  nc <- ceiling((b$xmax - x0) / 1000); nr <- ceiling((y1 - b$ymin) / 1000); rows <- split(seq_len(nr), ceiling(seq_len(nr) / 500))
+  tile_dir <- "02.inputs/derived/landscape_tiles"
+  for (r in rows) { f <- file.path(tile_dir, sprintf("state_%04d.tif", min(r))); if (file.exists(f)) next
+    for (attempt in 1:6) { ok <- !inherits(try({ url <- img$getDownloadURL(list(crs = "EPSG:3338", crs_transform = c(1000, 0, x0, 0, -1000, y1 - (min(r) - 1) * 1000), dimensions = c(nc, length(r)), format = "GEO_TIFF", filePerBand = FALSE))
+      download.file(url, f, mode = "wb", quiet = TRUE) }, silent = TRUE), "try-error"); if (ok) break; unlink(f); Sys.sleep(30) }
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+  terra::writeRaster(terra::merge(terra::sprc(lapply(list.files(tile_dir, "^state_.*\\.tif$", full.names = TRUE), terra::rast))), state_tif) }
+alaska_geojson <- "02.inputs/context/alaska_tiger2018.geojson"  # the full-resolution state polygon, for clipping; the 1:20,000,000 outline above is for drawing
+if (!file.exists(alaska_geojson)) download.file(ee$FeatureCollection("TIGER/2018/States")$filter(ee$Filter$eq("NAME", "Alaska"))$getDownloadURL("geojson"), alaska_geojson, quiet = TRUE)
+state <- terra::mask(terra::rast(state_tif), terra::vect(sf::st_transform(sf::st_read(alaska_geojson, quiet = TRUE), 3338))); names(state) <- c("VV", "scenes", "height", "forest")  # the export rectangle runs east of the border, where the scene search returned nothing, so the map is clipped to the state
+vv <- state$VV; vv[state$scenes == 0] <- NA; state$VV <- vv  # a cell no scene covered carries no level
+state_area <- do.call(rbind, lapply(c(names(regions), "alaska"), function(nm) {  # square kilometres of forest and of susceptible forest, the forest share of each 1 km cell summed
+  v <- if (nm == "alaska") as.data.frame(terra::values(state)) else terra::extract(state, terra::vect(reg_sf[reg_sf$region == nm, ]), ID = FALSE)
+  v <- v[!is.na(v$forest) & v$forest > 0, ]
+  data.frame(region = nm, forest_km2 = sum(v$forest), susceptible_km2 = sum(v$forest[!is.na(v$VV) & v$VV >= pooled_strip["thr_VV"]]), tall_km2 = sum(v$forest[!is.na(v$height) & v$height >= pooled_strip["thr_height"]]), scenes = median(v$scenes, na.rm = TRUE)) }))
+write.csv(state_area, "03.outputs/statewide_area.csv", row.names = FALSE)
+```
+
+```{r}
+#| label: statewide-release
+#| echo: true
+#| output: false
+# The release package for managers: the 90 m asset read back whole, clipped to the state, as Cloud Optimized GeoTIFFs with a README, a licence and a QGIS style, zipped for one download from the GitHub release, and the two assets opened to every Earth Engine user. The sources are those of the statewide chunks above.
+release_dir <- "03.outputs/release"; release_zip <- file.path(release_dir, "spruce_susceptibility_alaska_90m.zip"); class_asset <- paste0(asset_id, "_class"); class_csv <- "03.outputs/statewide_class_task.csv"
+a90 <- ee$Image(asset_id); thr100 <- round(100 * pooled_strip["thr_VV"]); public <- reticulate::dict(readers = list(), writers = list(), all_users_can_read = TRUE)
+if (!file.exists(class_csv)) {  # the class map as its own asset: 1 no forest, 2 forest below the threshold, 3 forest at or above it, 4 forest no scene covered, masked outside the state
+  cls <- a90$select("forest")$unmask(0)$gt(0)$multiply(ee$Image(1)$add(a90$select("VV")$unmask(0)$gte(thr100))$where(a90$select("scenes")$unmask(0)$eq(0), 3))$add(1)$clip(ak)$rename("class")$toByte()
+  task <- ee$batch$Export$image$toAsset(image = cls, description = "spruce_susceptibility_alaska_90m_class", assetId = class_asset, region = ak_box, crs = "EPSG:3338", crsTransform = list(90, 0, 0, 0, -90, 0), maxPixels = 1e10, pyramidingPolicy = list(.default = "mode"))
+  task$start(); write.csv(data.frame(task = task$id, asset = class_asset, started = format(Sys.time(), "%Y-%m-%d %H:%M")), class_csv, row.names = FALSE) }
+ee$data$setAssetAcl(asset_id, public)  # readable by every Earth Engine user
+if (!file.exists(release_zip)) {
+  tile_dir <- "02.inputs/derived/release_tiles"; dir.create(tile_dir, showWarnings = FALSE); dir.create(release_dir, showWarnings = FALSE)
+  g <- ee$data$getAsset(asset_id)$bands[[1]]$grid; x0 <- g$affineTransform$translateX; y1 <- g$affineTransform$translateY; nc <- g$dimensions$width; nr <- g$dimensions$height  # the asset's own grid
+  fetch <- function(img, prefix, step) { for (r in split(seq_len(nr), ceiling(seq_len(nr) / step))) for (cc in split(seq_len(nc), ceiling(seq_len(nc) / step))) {  # square tiles under the 48 MB request limit, each retried
+    f <- file.path(tile_dir, sprintf("%s_%05d_%05d.tif", prefix, min(r), min(cc))); if (file.exists(f)) next
+    for (attempt in 1:6) { ok <- !inherits(try({ url <- img$getDownloadURL(list(crs = "EPSG:3338", crs_transform = c(90, 0, x0 + (min(cc) - 1) * 90, 0, -90, y1 - (min(r) - 1) * 90), dimensions = c(length(cc), length(r)), format = "GEO_TIFF", filePerBand = FALSE)); download.file(url, f, mode = "wb", quiet = TRUE) }, silent = TRUE), "try-error"); if (ok) break; unlink(f); Sys.sleep(30) }
+    if (!file.exists(f)) stop("tile ", f, " did not download") }
+    list.files(tile_dir, paste0("^", prefix, "_.*\\.tif$"), full.names = TRUE) }
+  full_tiles <- fetch(a90$clip(ak)$unmask(-32768L), "full", 2000L)  # four Int16 bands with their masks, 2,000 by 2,000 cells a request, -32768 where the cell holds no forest or lies outside the state
+  repeat { st <- ee$data$getTaskStatus(read.csv(class_csv)$task)[[1]]$state; if (st == "COMPLETED") break; if (st %in% c("FAILED", "CANCELLED")) stop("class export ", st); Sys.sleep(120) }
+  ee$data$setAssetAcl(class_asset, public)
+  class_tiles <- fetch(ee$Image(class_asset)$unmask(0L, FALSE), "class", 4800L)  # one Byte band read from the finished asset, 0 outside the state, which the download declares as no data
+  full_tif <- file.path(release_dir, "spruce_susceptibility_alaska_90m.tif"); class_tif <- file.path(release_dir, "spruce_susceptibility_alaska_90m_class.tif")
+  vrt <- file.path(tile_dir, "full.vrt"); sf::gdal_utils("buildvrt", full_tiles, vrt, quiet = TRUE)
+  x <- readLines(vrt); for (i in 1:4) x <- sub(sprintf('(<VRTRasterBand dataType="Int16" band="%d"[^>]*>)', i), sprintf("\\1<Description>%s</Description><Scale>0.01</Scale><Offset>0</Offset>", c("VV", "scenes", "height", "forest")[i]), x); writeLines(x, vrt)  # band names and the 0.01 scale factor, carried into the GeoTIFF
+  sf::gdal_utils("translate", vrt, full_tif, options = c("-of", "COG", "-co", "COMPRESS=DEFLATE", "-co", "PREDICTOR=2", "-co", "RESAMPLING=AVERAGE", "-co", "BIGTIFF=IF_SAFER", "-co", "NUM_THREADS=ALL_CPUS"), quiet = TRUE)
+  cvrt <- file.path(tile_dir, "class.vrt"); sf::gdal_utils("buildvrt", class_tiles, cvrt, options = c("-srcnodata", "0", "-vrtnodata", "0"), quiet = TRUE)
+  cl <- terra::rast(cvrt); levels(cl) <- data.frame(id = 1:4, class = c("no forest", "forest below threshold", "susceptible", "forest, no radar scene")); terra::coltab(cl) <- data.frame(value = 1:4, col = c("#f0f0f0", "#a1d99b", "#d7301f", "#9e9ac8"))
+  terra::writeRaster(cl, class_tif, filetype = "COG", datatype = "INT1U", NAflag = 0, gdal = c("COMPRESS=DEFLATE", "RESAMPLING=NEAREST", "BIGTIFF=IF_SAFER", "NUM_THREADS=ALL_CPUS"), overwrite = TRUE)
+  fill <- function(txt, vals) { for (k in names(vals)) txt <- gsub(paste0("{{", k, "}}"), vals[[k]], txt, fixed = TRUE); txt }  # the README from its template, every number from the saved tables
+  share <- function(nm) sprintf("%.0f", 100 * state_area$susceptible_km2[state_area$region == nm] / state_area$forest_km2[state_area$region == nm])
+  vals <- list(date = format(Sys.Date(), "%d %B %Y"), thr = sprintf("%.2f", pooled_strip["thr_VV"]), thr100 = sprintf("%d", thr100), thr_height = sprintf("%.1f", pooled_strip["thr_height"]), n_dead = format(pooled_strip["n_dead"], big.mark = ","), n_alive = format(pooled_strip["n_alive"], big.mark = ","),
+    sens = sprintf("%.0f", 100 * pooled_strip["sens_VV"]), spec = sprintf("%.0f", 100 * pooled_strip["spec_VV"]), oa = sprintf("%.0f", 100 * pooled_strip["acc_VV"]), auc = sprintf("%.2f", pooled_strip["AUC"]), kappa = sprintf("%.2f", dsev$kappa[dsev$source == "Sentinel-1 VV, statewide product"]),
+    auc_kenai = sprintf("%.2f", region_auc["AUC_VV", "kenai"]), auc_matsu = sprintf("%.2f", region_auc["AUC_VV", "matsu"]), auc_copper = sprintf("%.2f", region_auc["AUC_VV", "copper"]), auc_interior = sprintf("%.2f", region_auc["AUC_VV", "interior"]),
+    forest_km2 = format(round(state_area$forest_km2[state_area$region == "alaska"]), big.mark = ","), susc_pct = share("alaska"), kenai_pct = share("kenai"), matsu_pct = share("matsu"), copper_pct = share("copper"), interior_pct = share("interior"),
+    scenes = sprintf("%d", pooled_strip["scenes"]), angle_slope = sprintf("%.3f", angle_slope), ncol = format(nc, big.mark = ","), nrow = format(nr, big.mark = ","), x0 = format(x0, big.mark = ","), y1 = format(y1, big.mark = ","), size_full = sprintf("%.0f", file.size(full_tif) / 1e6), size_class = sprintf("%.0f", file.size(class_tif) / 1e6),
+    asset = asset_id, class_asset = class_asset, release_url = "https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle/releases/tag/map-v1.0")
+  writeLines(fill(readLines(file.path(release_dir, "README_template.md")), vals), file.path(release_dir, "README.md"))
+  files <- c(full_tif, class_tif, paste0(class_tif, ".aux.xml"), file.path(release_dir, c("spruce_susceptibility_alaska_90m_class.qml", "README.md", "LICENSE.txt"))); files <- files[file.exists(files)]
+  utils::zip(release_zip, files, flags = "-j -0") }  # one archive, the GeoTIFFs stored without a second compression
+```
+
+```{r}
+#| label: fig-statewide
+#| echo: true
+#| fig-cap: "The statewide susceptibility map at 1 km, the mean of the 90 m product over the forest cells of each 1 km cell. Left, the slope-corrected Sentinel-1 VV level of October 2014 to December 2016 brought to a 38 degree incidence angle; right, the ETH canopy height of 2020. Cells with less than a fifth of their area in forest are blank. Black outlines are the four test regions and the blue frame the validation strip."
+#| fig-width: 7.2
+#| fig-height: 3.9
+forest_ok <- state$forest >= 0.2
+pan <- function(layer, name, pal, lim) ggplot() + geom_sf(data = alaska, fill = "grey95", colour = NA) + tidyterra::geom_spatraster(data = terra::mask(state[[layer]], forest_ok, maskvalues = FALSE)) +
+  scale_fill_viridis_c(name, option = pal, limits = lim, oob = scales::squish, na.value = NA) + geom_sf(data = reg_sf, fill = NA, colour = "black", linewidth = 0.3) + geom_sf(data = frame, fill = NA, colour = "#1F618D", linewidth = 0.6) +
+  coord_sf(xlim = c(-1.55e6, 1.45e6), ylim = c(4.2e5, 2.35e6)) + labs(x = NULL, y = NULL) + th + theme(legend.position = "bottom", legend.key.width = grid::unit(1.2, "cm"), legend.text = element_text(size = 7), legend.title = element_text(size = 8), axis.text = element_blank(), axis.ticks = element_blank())
+pan("VV", "VV (dB)", "magma", c(-12, -6)) + pan("height", "Canopy height (m)", "viridis", c(5, 30))
+```
+
+The pooled product, read on the `r format(pooled_strip["n"], big.mark = ",")` labelled cells of the severity map from a median of `r pooled_strip["scenes"]` scenes per cell, ranked dead above living with an area under the curve of `r sprintf("%.2f", pooled_strip["AUC"])`, with mean VV of `r sprintf("%.2f", pooled_strip["dead"])` dB for the dead cells against `r sprintf("%.2f", pooled_strip["alive"])` dB for the living. Its rank correlation with ETH Zurich height over the forest cells was `r sprintf("%.2f", pooled_strip["rho_height"])`. At the threshold of `r sprintf("%.2f", pooled_strip["thr_VV"])` dB, it called `r sprintf("%.0f", 100 * pooled_strip["sens_VV"])` per cent of the dead cells and `r sprintf("%.0f", 100 * (1 - pooled_strip["spec_VV"]))` per cent of the living cells susceptible, an overall accuracy of `r sprintf("%.0f", 100 * pooled_strip["acc_VV"])` per cent. Against the survey polygons on the same cells it gave `r sprintf("%.2f", pooled_strip["AUC_survey"])`. Across Alaska (@fig-statewide), the map covered `r format(round(state_area$forest_km2[state_area$region == "alaska"]), big.mark = ",")` km² of forest, `r sprintf("%.0f", 100 * state_area$susceptible_km2[state_area$region == "alaska"] / state_area$forest_km2[state_area$region == "alaska"])` per cent of it at or above the threshold. The share ranged from `r sprintf("%.0f", 100 * min(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2)))` per cent in the `r region_names[state_area$region[state_area$region != "alaska"]][which.min(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2))]` region to `r sprintf("%.0f", 100 * max(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2)))` per cent in the `r region_names[state_area$region[state_area$region != "alaska"]][which.max(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2))]` region (@tbl-area).
+
+```{r}
+#| label: tbl-area
+#| echo: true
+#| tbl-cap: "Forest and susceptible forest in the four test regions and in Alaska, from the 1 km map. Forest is the area of 10 m cells with canopy height of 5 m or more; susceptible forest is the forest whose pre-outbreak VV level reached the strip's threshold, and tall forest the forest whose canopy height reached the strip's height threshold. Scenes is the median number of Sentinel-1 scenes behind a forest cell."
+fmt_tbl(data.frame(Region = c(region_names[state_area$region[state_area$region != "alaska"]], "Alaska"), `Forest (km²)` = format(round(state_area$forest_km2), big.mark = ","), `Susceptible (km²)` = format(round(state_area$susceptible_km2), big.mark = ","),
+  `Susceptible (%)` = sprintf("%.0f", 100 * state_area$susceptible_km2 / state_area$forest_km2), `Tall (km²)` = format(round(state_area$tall_km2), big.mark = ","), Scenes = round(state_area$scenes), check.names = FALSE))
+```
+
+## Regional validation
+
+Against the aerial detection survey, the radar map ranked attacked above unattacked forest with an area under the curve of `r sprintf("%.2f", region_auc["AUC_VV", "kenai"])` on the Kenai Peninsula and `r sprintf("%.2f", region_auc["AUC_VV", "matsu"])` in the Matanuska-Susitna Borough, where the attacked stands were `r sprintf("%.1f", region_auc["VV_dead", "matsu"] - region_auc["VV_living", "matsu"])` dB brighter and `r sprintf("%.1f", region_auc["height_dead", "matsu"] - region_auc["height_living", "matsu"])` m taller than the unattacked. In the Copper River basin, where the survey had recorded damage only since 2022, it gave `r sprintf("%.2f", region_auc["AUC_VV", "copper"])`, and both classes were darker (`r sprintf("%.1f", region_auc["VV_dead", "copper"])` against `r sprintf("%.1f", region_auc["VV_living", "copper"])` dB) and shorter (`r sprintf("%.1f", region_auc["height_dead", "copper"])` against `r sprintf("%.1f", region_auc["height_living", "copper"])` m) than in the two southern regions. In the Interior, it gave `r sprintf("%.2f", region_auc["AUC_VV", "interior"])`. The `r format(region_auc["dead", "interior"], big.mark = ",")` dead cells of that sample all lay between `r sprintf("%.1f", min(pooled_region$interior$lat[!is.na(pooled_region$interior$year)]))`° N and `r sprintf("%.1f", max(pooled_region$interior$lat[!is.na(pooled_region$interior$year)]))`° N along the Nenana River, and `r sprintf("%.0f", 100 * mean(pooled_region$interior$year[!is.na(pooled_region$interior$year)] >= 2021))` per cent of them were first recorded in 2021 or later. The height map gave `r sprintf("%.2f", region_auc["AUC_height", "kenai"])`, `r sprintf("%.2f", region_auc["AUC_height", "matsu"])`, `r sprintf("%.2f", region_auc["AUC_height", "copper"])` and `r sprintf("%.2f", region_auc["AUC_height", "interior"])` in the same four regions, respectively (@tbl-regions). In the Matanuska-Susitna Borough, the nine single sources scored from `r sprintf("%.2f", min(matsu["AUC", ]))` to `r sprintf("%.2f", max(matsu["AUC", ]))` against the same label, the highest being `r ms_names[colnames(matsu)[which.max(matsu["AUC", ])]]`. Limiting the dead cells to polygons of 20 per cent mortality or more changed nothing, `r sprintf("%.2f", min(matsu["AUC_severe", ]))` to `r sprintf("%.2f", max(matsu["AUC_severe", ]))`, so the survey label set the ceiling. The stands the survey first recorded in 2016 and 2017 were the tallest, `r sprintf("%.1f", ms_year["2016", "height_eth"])` and `r sprintf("%.1f", ms_year["2017", "height_eth"])` m on ETH Zurich height, and those first recorded in 2024 the shortest, `r sprintf("%.1f", ms_year["2024", "height_eth"])` m, with Spearman's rho between year and height of `r sprintf("%.2f", ms_trend["height_eth"])` over cohorts of `r format(min(ms_year_n), big.mark = ",")` to `r format(max(ms_year_n), big.mark = ",")` cells.
+
+```{r}
+#| label: tbl-regions
+#| echo: true
+#| tbl-cap: "The statewide product against the aerial detection survey in four regions. Dead cells lay inside a spruce beetle polygon on white spruce of 2016 to 2024; living cells were forest the surveyors flew over, never inside a spruce beetle polygon of any year, within 10 km of one. AUC is the area under the curve for ranking dead above living; the two shares are the cells of each class the strip's VV threshold called susceptible; rho is Spearman's correlation between the year a dead cell was first recorded and its canopy height."
+rt <- data.frame(Region = region_names[colnames(region_auc)], Dead = format(region_auc["dead", ], big.mark = ","), Living = format(region_auc["living", ], big.mark = ","),
+  `AUC, VV` = sprintf("%.2f", region_auc["AUC_VV", ]), `AUC, height` = sprintf("%.2f", region_auc["AUC_height", ]), `VV dead (dB)` = sprintf("%.1f", region_auc["VV_dead", ]), `VV living (dB)` = sprintf("%.1f", region_auc["VV_living", ]),
+  `Susceptible, dead (%)` = sprintf("%.0f", 100 * region_auc["above_dead", ]), `Susceptible, living (%)` = sprintf("%.0f", 100 * region_auc["above_living", ]), `rho year, height` = ifelse(is.na(region_auc["rho_year_height", ]), "", sprintf("%.2f", region_auc["rho_year_height", ])), check.names = FALSE)
+fmt_tbl(rt)
+```
+
+## Ground plots
+
+On the ground, the trees that died were the large ones. In the Matanuska-Susitna Borough, on the `r fia_ground["both", "matsu"]` plots holding both live and dead white spruce, the dead trees averaged `r sprintf("%.1f", fia_ground["dia_dead", "matsu"])` cm in diameter and `r sprintf("%.1f", fia_ground["ht_dead", "matsu"])` m in height against `r sprintf("%.1f", fia_ground["dia_live", "matsu"])` cm and `r sprintf("%.1f", fia_ground["ht_live", "matsu"])` m for the live trees [paired Wilcoxon signed-rank test, V = `r format(fia_ground["V_dia", "matsu"], big.mark = ",")`, `r pfmt(fia_ground["p_dia", "matsu"])` for diameter and V = `r format(fia_ground["V_ht", "matsu"], big.mark = ",")`, `r pfmt(fia_ground["p_ht", "matsu"])` for height]. Across the `r fia_ground["plots", "matsu"]` plots, the share of white spruce basal area standing dead rose with the height of the tallest tree [Spearman's rho `r sprintf("%.2f", fia_ground["rho_share_ht", "matsu"])`], which ranked the `r fia_ground["half_dead", "matsu"]` plots with at least half their basal area dead with an area under the curve of `r sprintf("%.2f", fia_ground["AUC_ht_half", "matsu"])`. On the Kenai Peninsula, the dead trees on the `r fia_ground["both", "kenai"]` plots holding both were again the larger, `r sprintf("%.1f", fia_ground["dia_dead", "kenai"])` cm and `r sprintf("%.1f", fia_ground["ht_dead", "kenai"])` m against `r sprintf("%.1f", fia_ground["dia_live", "kenai"])` cm and `r sprintf("%.1f", fia_ground["ht_live", "kenai"])` m for the live trees [V = `r format(fia_ground["V_dia", "kenai"], big.mark = ",")`, `r pfmt(fia_ground["p_dia", "kenai"])` and V = `r format(fia_ground["V_ht", "kenai"], big.mark = ",")`, `r pfmt(fia_ground["p_ht", "kenai"])`]. In the Copper River basin, the dead trees were `r sprintf("%.1f", fia_ground["dia_dead", "copper"])` cm in diameter against `r sprintf("%.1f", fia_ground["dia_live", "copper"])` cm on `r fia_ground["both", "copper"]` plots [V = `r format(fia_ground["V_dia", "copper"], big.mark = ",")`, `r pfmt(fia_ground["p_dia", "copper"])`], with no difference in height [V = `r format(fia_ground["V_ht", "copper"], big.mark = ",")`, `r pfmt(fia_ground["p_ht", "copper"])`]. On the Interior plots, the dead white spruce on `r fia_ground["both", "interior"]` plots holding both were no thicker than the live ones, `r sprintf("%.1f", fia_ground["dia_dead", "interior"])` against `r sprintf("%.1f", fia_ground["dia_live", "interior"])` cm [V = `r format(fia_ground["V_dia", "interior"], big.mark = ",")`, `r pfmt(fia_ground["p_dia", "interior"])`], and were shorter, `r sprintf("%.1f", fia_ground["ht_dead", "interior"])` against `r sprintf("%.1f", fia_ground["ht_live", "interior"])` m [V = `r format(fia_ground["V_ht", "interior"], big.mark = ",")`, `r pfmt(fia_ground["p_ht", "interior"])`]. The ETH Zurich canopy height around a plot's published coordinate ranked the half-dead plots at `r sprintf("%.2f", fia_remote["eth.AUC_half", "matsu"])` in the Matanuska-Susitna Borough, against `r sprintf("%.2f", fia_ground["AUC_ht_half", "matsu"])` for the plot's own tallest tree.
+
+# Discussion
+
+Over the Susitna valley label areas of @Zwieback_2024, the Sentinel-1 VV level of October 2014 to December 2016 ranked the stands the outbreak would kill above those it left alive, with areas under the curve of `r sprintf("%.2f", change$auc_pre[change$band == "VV131"])` on the crown labels and `r sprintf("%.2f", pooled_strip["AUC"])` for the statewide product on the severity map, while the change through the outbreak in the same cells ranked nothing. The first hypothesis was therefore supported against the best ground truth this outbreak has, and what the level validated was a measurement of the stand before the outbreak and not a detection of mortality. Three canopy heights made in different ways ranked the same cells at `r sprintf("%.2f", min(struct["AUC", c("height_eth", "height_glo", "height_arctic")]))` to `r sprintf("%.2f", max(struct["AUC", c("height_eth", "height_glo", "height_arctic")]))`, and the dead cells stood `r sprintf("%.1f", struct["dead", "height_eth"] - struct["alive", "height_eth"])` m taller on the ETH Zurich map. The product's rank correlation with that height over the forest was `r sprintf("%.2f", pooled_strip["rho_height"])`, so the radar level measured stand height and the map is a map of tall stands. Height, the C-band level and L-band HV each ranked the cells in the direction the review expected.
+
+## Stand height
+
+That the tall stands died is the oldest finding in the spruce beetle literature. On the Kenai Peninsula, "Mortality was greatest in the larger diameter classes during the early part of the infestation" [@Werner_1983, p. 96], in the Copper River basin, "Mortality increased with increasing DBH and decreasing BAI" [@Doak_2004, p. 810], that is with larger diameter and slower growth, and the Forest Service synthesis reduced the plot studies to the rule that "Spruce beetles preferentially attack and kill large diameter trees that have been growing slowly at breast height" [@Hard_1985b, p. 7]. The present study found the rule at the scale of the stand, from free radar and canopy height data with no beetle in the predictor. The inventory plots confirmed it in the same decade, in that the dead white spruce stood `r sprintf("%.1f", fia_ground["dia_dead", "matsu"] - fia_ground["dia_live", "matsu"])` cm thicker and `r sprintf("%.1f", fia_ground["ht_dead", "matsu"] - fia_ground["ht_live", "matsu"])` m taller than the live trees beside them in the Matanuska-Susitna Borough. On the Interior plots measured before the outbreak's front arrived, the dead trees were no thicker and `r sprintf("%.1f", fia_ground["ht_live", "interior"] - fia_ground["ht_dead", "interior"])` m shorter, as ordinary mortality takes the suppressed trees, so the size effect belongs to the beetle. The qualification of @Hard_1983 [p. 678], that diameter mattered "unless large diameter was coupled with slower than average radial growth in the last 5 years", is one the map does not include, because none of the measures here records growth, and height alone ranked the strip's stands at `r sprintf("%.2f", struct["AUC", "height_eth"])` without it. The order of attack was the same, in that the stands the survey recorded first in the Matanuska-Susitna Borough, in 2016 and 2017, were the tallest and each year's new stands were shorter through to 2024, as the average diameter of infested trees fell from 53 to 43 to 38 cm through the White River outbreak [@Schmid_1976, p. 2]. The contrast was present inside each LANDFIRE class with enough cells, so it was a contrast between tall and short stands of the same cover and not between host and non-host.
+
+## Hazard ratings
+
+The second hypothesis applied that finding to the hazard rating, which since @Schmid_1976 [p. 1] has scored stands "on the basis of physiographic location, tree diameter, basal area, and percentage of spruce in the canopy". Those ratings take their diameter, basal area and spruce share from a cruise, and the thresholds now in use [@Fettig_2026, p. 8] have never been applied to the forest of a state. The map gives the hazard part of such a rating at 90 m across `r format(round(state_area$forest_km2[state_area$region == "alaska"]), big.mark = ",")` km² of forest from free data. Of that forest, `r sprintf("%.0f", 100 * state_area$susceptible_km2[state_area$region == "alaska"] / state_area$forest_km2[state_area$region == "alaska"])` per cent lay at or above the threshold that separated the killed strip stands from the spared, from `r sprintf("%.0f", 100 * min(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2)))` per cent in the Interior to `r sprintf("%.0f", 100 * max(with(state_area[state_area$region != "alaska", ], susceptible_km2 / forest_km2)))` per cent on the Kenai Peninsula (@tbl-area). It is hazard and not risk, in the distinction @Reynolds_1994 drew when a panel of experts set stand hazard and windthrown trees as "the two most important factors determining risk of a spruce beetle outbreak", because the map includes no windthrow, no beetle population and no spruce share. A tall birch or aspen stand therefore scores as a tall spruce stand would, and a manager reads the map with the stand map in hand. What it directs is the prevention @Hard_1985b [p. 2] prescribed, "Mark all spruce trees 14 inches (36 cm) or larger in diameter for removal regardless of growth rate", before the beetle arrives.
+
+## The survey ceiling
+
+Against the aerial detection survey, the map ranked attacked above unattacked forest at `r sprintf("%.2f", region_auc["AUC_VV", "kenai"])` on the Kenai Peninsula and `r sprintf("%.2f", region_auc["AUC_VV", "matsu"])` in the Matanuska-Susitna Borough. In the borough, every one of nine sources scored between `r sprintf("%.2f", min(matsu["AUC", ]))` and `r sprintf("%.2f", max(matsu["AUC", ]))` against the survey label, where the crown map had scored them at `r sprintf("%.2f", struct["AUC", "VV65_pre"])` to `r sprintf("%.2f", struct["AUC", "height_eth"])`. The survey is drawn from an aircraft at a scale at which a polygon of 2 per cent mortality is mostly living forest, and restricting the dead cells to polygons of 20 per cent mortality or more changed nothing. The ceiling is therefore the label's, and the regional numbers are a lower bound on the map's skill. In the Copper River basin, the radar level failed where the height map did not, `r sprintf("%.2f", region_auc["AUC_VV", "copper"])` against `r sprintf("%.2f", region_auc["AUC_height", "copper"])`, because the attacked stands there were `r sprintf("%.1f", region_auc["height_dead", "copper"])` m tall against `r sprintf("%.1f", region_auc["height_dead", "matsu"])` m in the Matanuska-Susitna Borough and both classes averaged near `r sprintf("%.0f", region_auc["VV_living", "copper"])` dB. C-band backscatter is much less sensitive to forest biomass than L-band [@Dobson_1992]. The radar map is therefore validated for the Kenai Peninsula and the Susitna lowlands, and the height map is the product for the Copper River basin, the shrinking of the extent the design allowed for. The area the radar map calls susceptible in the Valdez-Cordova census area (@tbl-area) is the tall Sitka spruce forest of Prince William Sound. In the Interior, the map scored `r sprintf("%.2f", region_auc["AUC_VV", "interior"])` at the front of the outbreak along the Nenana River, where `r sprintf("%.0f", 100 * mean(pooled_region$interior$year[!is.na(pooled_region$interior$year)] >= 2021))` per cent of the recorded cells date from 2021 or later and the polygons contain stands the beetle has entered and not yet killed through.
+
+## Limits
+
+The crown labels and severity map are one image of one valley on one date, and the severity map has no declared licence and was used for validation only. The threshold was set on that valley, so a region whose stands are taller or shorter will have more or fewer cells above it than the beetle will take. The ETH Zurich height is a 2020 model whose estimates "saturate around 25 to 30 m" [@Lang_2023, p. 1779], just above the mean `r sprintf("%.1f", struct["dead", "height_eth"])` m of the strip's dead stands. The GLO-30 and ArcticDEM surfaces, the 2007 to 2010 PALSAR mosaic and the 2014 to 2016 radar predate the outbreak and gave the same ranking. The pooling of orbits depends on one fitted fall of backscatter with incidence angle, `r sprintf("%.3f", angle_slope)` dB per degree, and on `r min(state_area$scenes[state_area$region != "alaska"])` to `r max(state_area$scenes[state_area$region != "alaska"])` scenes behind a forest cell in the four regions. Crown-scale detection in Alaska needs airborne hyperspectral and lidar data to reach "78% accuracy for all three health statuses" [@Cessna_2021], and Landsat detects the outbreak only above a severity of 0.1 [@Zwieback_2024]. The map offered here detects no outbreak at all, and claims only to say, before one arrives, where it will go.
+
+# Conclusion
+
+Validated against the crown labels and severity map of @Zwieback_2024, the pre-outbreak Sentinel-1 level and three independent canopy heights ranked the stands the spruce beetle killed in the Susitna valley above those it spared, with areas under the curve of `r sprintf("%.2f", pooled_strip["AUC"])` to `r sprintf("%.2f", change$auc_pre[change$band == "VV131"])`. The stands that died stood `r sprintf("%.1f", struct["dead", "height_eth"] - struct["alive", "height_eth"])` m taller before the outbreak reached them, the finding the plot studies have reported since 1954 at the scale of the tree, found here at the scale of the stand with no beetle in the predictor. Pooled across every scene over Alaska, the level gave a 90 m map of susceptible stands across `r format(round(state_area$forest_km2[state_area$region == "alaska"]), big.mark = ",")` km² of forest. The map ranked attacked above unattacked forest on the Kenai Peninsula and in the Susitna lowlands, where the inventory plots confirmed it on the ground, and failed in the open woodland of the Copper River basin, where the height map ranked them instead. The two maps give the hazard part of a stand rating with no cruise, and show forest managers which stands to protect first in the next outbreak.
+
+# References
+
+::: {#refs}
+:::
+
+# Statements and declarations
+
+## Funding
+
+Not yet declared. No funding source has been recorded for this work and none is asserted here.
+
+## Competing interests
+
+Not yet declared by the author.
+
+## Author contributions
+
+Not yet declared. The manuscript is drafted single-authored pending that declaration, and no co-author is listed on the strength of an assumption.
+
+## Data availability
+
+All inputs were publicly available and were read by the code shown in this manuscript, except the severity map of Zwieback (2023), which carries no declared licence and was used for validation only. The crown labels of @Zwieback_2024 were downloaded from Zenodo under the licence given in the code. The Sentinel-1 scenes, the Copernicus 30 m digital elevation model, the ETH Zurich canopy height, the United States Geological Survey 3D Elevation Program terrain, the ArcticDEM mosaic, the PALSAR mosaics, the LANDFIRE vegetation type and the census boundaries were read in Google Earth Engine under the asset names given in the code. The aerial detection survey damage and surveyed areas and the Forest Inventory and Analysis tables were downloaded from the United States Forest Service, and the conifer top cover from the Oak Ridge National Laboratory Distributed Active Archive Center. The 90 m statewide map and its class map are held as public Earth Engine assets named in the code, and both are packaged with a README as Cloud Optimized GeoTIFFs for one download from the GitHub release at https://github.com/seamusrobertmurphy/deep-learn-alaska-spruce-beetle/releases/tag/map-v1.0. The sampled backscatter of each cell, the regional samples, the screening table of the literature review and the tables and figures are held with the manuscript under `02.inputs/derived`, `04.references/review` and `03.outputs`, and every number in the text is computed from them at render time.

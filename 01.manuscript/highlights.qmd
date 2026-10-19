@@ -1,0 +1,32 @@
+---
+title: ""
+format:
+  docx:
+    reference-doc: ../04.references/style-formal.docx
+engine: knitr
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: highlight-numbers
+# Each bullet is at most 85 characters including spaces, the journal's limit; the numbers are read from the tables the manuscript writes.
+strip <- read.csv("../03.outputs/statewide_strip.csv"); area <- read.csv("../03.outputs/statewide_area.csv")
+pct <- function(x) sprintf("%.0f", 100 * x); ak <- area[area$region == "alaska", ]
+h <- c("Spruce beetle outbreaks in Alaska kill the tallest stands of large spruce first",
+  sprintf("Pre-outbreak Sentinel-1 backscatter classed %s%% of killed and spared stands correctly", pct(strip$acc_VV)),
+  "The backscatter level measures stand height, the susceptibility plot studies describe",
+  sprintf("A 90 m map covers %s km² of Alaska forest, %s%% of it at or above the threshold", format(round(ak$forest_km2), big.mark = ","), pct(ak$susceptible_km2 / ak$forest_km2)),
+  "Public Earth Engine assets give managers the map before the next outbreak")
+stopifnot(all(nchar(h) <= 85))
+```
+
+Highlights
+
+```{r}
+#| label: highlight-list
+#| output: asis
+cat(paste0("- ", h, "\n"), sep = "")
+```

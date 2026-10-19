@@ -12,6 +12,7 @@ against CrossRef before it enters `references.bib`.
 Supplied by Seamus 2026-08-10. The block below is **stale as of 2026-08-14**: it was
 written before the corpus was read, lists three of the eight PDFs on disk, and its
 "none yet read, none yet verified" statement is contradicted by the project record in
+the project's working notes, which report all seven seed papers read in full and summarised
 2026-08-10/11 and every `references.bib` entry CrossRef-verified. The rows are left
 verbatim rather than rewritten from memory; rebuilding them is a separate job.
 

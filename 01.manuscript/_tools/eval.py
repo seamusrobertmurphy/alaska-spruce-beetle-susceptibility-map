@@ -922,7 +922,9 @@ def check_references_resolve_in_page(base):
 
 def check_restore_point(base):
     """A restore point exists for the current session."""
+    art = "~/.cache/manuscript-eval/restore"
     d = os.path.expanduser(
+        "~/.cache/manuscript-eval/restore")
     if not os.path.isdir(d):
         return "fail", "no restore directory", "present", art
     n = len([x for x in os.listdir(d) if not x.startswith("._")])

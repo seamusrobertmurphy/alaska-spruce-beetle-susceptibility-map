@@ -1718,9 +1718,6 @@ sits_tempcnn_twohead <- function(samples = NULL, onset_lo, onset_hi, w_onset = 1
 }
 ```
 
-## Generative artificial intelligence
-
-
 # Results
 
 The seed round, the TempCNN trained on the machine crown candidates over the 160 blocks between June 2017 and December 2025, is reported in the detection and climate tables below as what it is, a result on machine labels that fixes the pipeline and chooses what is annotated next, and not the confirmatory test of any hypothesis. The severity and onset tables remain shells, because both need the six-stratum and onset heads that annotated labels alone can train, and every cell in them displays as pending. Each subsection states the decision rule its table is read against, all of them fixed by pre-registration, so the reading was committed before the numbers arrived rather than fitted to them.

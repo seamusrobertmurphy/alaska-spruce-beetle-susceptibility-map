@@ -1,0 +1,7 @@
+Spruce beetle susceptibility map of Alaska, 90 m. Copyright 2026 Seamus Robert Murphy.
+
+This data product is released under the Creative Commons Attribution 4.0 International licence (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/. You may copy, redistribute, adapt and use it for any purpose, including commercially, provided you give appropriate credit (see the citation in README.md), link to the licence and state any changes.
+
+The product is derived from open data: Copernicus Sentinel-1 scenes (European Union, Copernicus open data), the ETH Zurich global canopy height map of 2020 (Lang et al. 2023, CC BY 4.0) and the United States Census Bureau TIGER/Line 2018 state boundary (public domain). The licences of those sources apply to them.
+
+The product is supplied as is, with no warranty of any kind. It is a map of stand structure validated where the spruce beetle has been, not a forecast of where the beetle will attack.

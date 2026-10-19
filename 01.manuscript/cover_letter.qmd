@@ -1,0 +1,39 @@
+---
+title: ""
+format:
+  docx:
+    reference-doc: ../04.references/style-formal.docx
+engine: knitr
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: letter-numbers
+# Every number below is read from the tables the manuscript writes, so the letter cannot disagree with the paper.
+strip <- read.csv("../03.outputs/statewide_strip.csv"); area <- read.csv("../03.outputs/statewide_area.csv"); regions <- read.csv("../03.outputs/statewide_regions.csv", row.names = 1)
+pct <- function(x) sprintf("%.0f", 100 * x); share <- function(nm) pct(area$susceptible_km2[area$region == nm] / area$forest_km2[area$region == nm])
+```
+
+`r format(Sys.Date(), "%d %B %Y")`
+
+Chief Editor
+Forestry: An International Journal of Forest Research
+
+Dear Editor,
+
+I wish to submit "A spruce beetle susceptibility map of Alaska using Sentinel-1 radar and crown-scale mortality data" for consideration as an original article in Forestry.
+
+Spruce beetle outbreaks in Alaska kill the largest spruce first, so the tallest stands of large spruce are the ones most at risk in the next outbreak. Managers rate that hazard from stand measurements on the ground, which cannot be made across a state, and no study had tested whether radar measures of stand structure pick out the stands an outbreak kills. The manuscript makes that test and then maps the stands across Alaska.
+
+Scored against the crown-scale map of the spruce the current outbreak had killed in the Susitna valley by 2021, `r format(strip$n, big.mark = ",")` cells of 90 m, the pre-outbreak Sentinel-1 backscatter classed `r pct(strip$sens_VV)` per cent of the killed stands and `r pct(strip$spec_VV)` per cent of the spared stands correctly, an overall accuracy of `r pct(strip$acc_VV)` per cent. Pooled across every scene over Alaska, it gave a 90 m map covering `r format(round(area$forest_km2[area$region == "alaska"]), big.mark = ",")` km² of forest, `r share("alaska")` per cent of it at or above the threshold, which ranked attacked above unattacked forest in the aerial detection survey on the Kenai Peninsula and in the Matanuska-Susitna Borough and failed in the open woodland of the Copper River basin, where the canopy height map ranked them instead. The map gives the hazard part of a stand rating with no cruise, and it is a public Google Earth Engine asset that a forest manager can read before the beetle arrives.
+
+On the journal's measure of 1,000 words per page including tables, figures and references, the manuscript runs close to the twelve pages normally allowed, because the validation reports the full set of separability, classification, calibration, overfitting and autocorrelation diagnostics in two tables.
+
+The manuscript is original, has not been published and is not under consideration elsewhere. I am the sole author and have read and approved the manuscript. I have no competing interests to declare, and the work received no funding. The names, addresses and e-mail addresses of four potential referees, two of them working outside Canada, are given in the submission form.
+
+Yours sincerely,
+
+Dr Seamus Murphy

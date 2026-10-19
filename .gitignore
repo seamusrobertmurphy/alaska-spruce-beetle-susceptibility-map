@@ -116,3 +116,21 @@ INDEX.md
 03.outputs/fire_fold_predictions.csv
 01.manuscript/_archive/*.html
 Rplots.pdf
+
+# The 90 m release package of the statewide map, built by the statewide-release chunk:
+# the 180 download tiles (regenerable) and the two GeoTIFFs and the zip, which go to a
+# GitHub release and not into git (the four-band file is about 1 GB). The README,
+# licence, style and template beside them are committed. Added 2026-10-18.
+02.inputs/derived/release_tiles/
+03.outputs/release/*.tif
+03.outputs/release/*.zip
+
+# Word copies of the author's edits, the submission folder's duplicates of the renders and
+# the journal's TIFF figures are build products that bloat the history; the renders in
+# 01.manuscript and the PNG figures the README shows are the committed copies. Added 2026-10-19.
+01.manuscript/_archive/*.docx
+03.outputs/submission/*.docx
+03.outputs/submission/*.tif
+03.outputs/figures/*.tif
+/cover_letter.docx
+01.manuscript/cover_letter/

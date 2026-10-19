@@ -2,6 +2,7 @@
 """Tests whether the Planetary Computer's Sentinel-1 RTC carries thermal noise.
 
 Written 2026-09-09 for the task at 05.tasks/2026-09-09-task-thermal-noise.md.
+The hypothesis under test, recorded in the project's memory note on Sentinel-1 radar,
 is that the 1.46 dB VH and 0.77 dB VV residual against S1GBM is uncorrected
 thermal noise, which would need the RTC product to have skipped the step the
 ESA noise annotation exists for.
